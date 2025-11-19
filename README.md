@@ -1,195 +1,70 @@
-# System Architecture & Data Flow
+# Participation Architecture (MVP)
 
-## 1. High-Level Overview
+🔍 **Governance Health & Delegate Fatigue Analytics for Arbitrum DAO**
 
-**Participation Architecture** is designed as a lightweight, modular data pipeline (ETL). It extracts raw voting history from off-chain governance platforms (Snapshot), processes it through a behavioral analysis engine based on Self-Determination Theory (SDT), and outputs actionable "Health Metrics" for Arbitrum DAO delegates.
-
-**Design Philosophy:** Privacy-first, client-side execution. No external database is required for the MVP phase; data is processed in-memory or cached locally.
-
----
-
-## 2. Data Flow Diagram
-
-The system follows a linear flow from Data Ingestion to Metric Calculation.
-
-```mermaid
-graph TD
-    A[Snapshot GraphQL API] -->|Raw Voting Data| B(Data Ingestion Module)
-    B -->|JSON Cache| C{Behavioral Analyzer}
-    
-    subgraph "Core Logic (Python)"
-    C -->|Calculate Frequency| D[Participation Rate]
-    C -->|Analyze Patterns| E[Fatigue Index]
-    end
-    
-    D --> F(Report Generator)
-    E --> F
-    
-    F -->|Export| G[results.json]
-    F -->|Visualize| H[Terminal / Dashboard MVP]
-```
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Status: Experimental](https://img.shields.io/badge/status-experimental-orange.svg)]()
 
 ---
 
-## 3. Module Description
+## 📋 Overview
 
-### A. Data Ingestion Layer (`/src/collector`)
+**Status:** Experimental / Research Preview  
+**Grant Category:** Developer Tooling / Governance Analytics
 
-**Purpose:** Extract raw voting data from Snapshot Hub
+### Project Goal
 
-- **Source:** Snapshot Hub (GraphQL API)
-- **Function:** Fetches voting history for specific Arbitrum spaces
-- **Privacy:** Only accesses public, on-chain/off-chain voting records. No PII (Personal Identifiable Information) is collected
+Current DAO governance tools track votes, but they don't track the **human cost of voting**. This tool parses Snapshot/on-chain data to diagnose **"Delegate Fatigue"** and visualize the health of the delegation market beyond simple participation rates.
 
-**Key Operations:**
-- Fetch proposals metadata
-- Retrieve individual votes per proposal
-- Cache data locally for offline analysis
+### Why This Matters
 
----
-
-### B. Behavioral Analysis Engine (`/src/analysis`)
-
-This is the core research component that translates raw data into "Delegate Fatigue" metrics.
-
-#### Implemented Metrics
-
-**Metric 1: Participation Rate**
-- Baseline activity tracking over rolling windows (30/90 days)
-- Formula: `votes_cast / total_proposals_in_window`
-- Output: Percentage (0.0 - 1.0)
-
-**Metric 2: Fatigue Index**
-- Identifies specific patterns such as rapid voting streaks followed by long inactivity (burnout signals)
-- Components:
-  - Long breaks between votes (inactivity penalty)
-  - Burnout detection (rapid activity → silence)
-  - Participation trend (declining vs stable)
-- Output: Score (0-100, higher = more fatigued)
-
-**Metric 3: Alignment Score** *(Planned for v2)*
-- Measures consistency of voting behavior
-- Detects strategic vs. conviction-based voting
+- 🔥 **Burnout Detection** - Identify delegates showing signs of governance fatigue
+- 📉 **Trend Analysis** - Track declining participation before it becomes critical
+- 🏥 **System Health** - Measure DAO vitality through behavioral patterns
+- 🎯 **Evidence-Based** - Grounded in Self-Determination Theory (SDT) and Ostrom's governance frameworks
 
 ---
 
-### C. Output Layer
+## ✨ Core Features (In Development)
 
-**Purpose:** Generate human-readable and machine-parseable reports
+### 🐍 Data Parser
+Python script to fetch raw voting patterns via Snapshot API
+- GraphQL integration with Snapshot Hub
+- Automatic caching for offline analysis
+- Rate-limited requests to respect API quotas
 
-- **Format:** Human-readable JSON and CSV reports
-- **Usage:** Data is structured to be easily readable by researchers or ingested by future frontend dashboards
+### 📊 Fatigue Index
+Custom metric based on Self-Determination Theory (SDT)
+- **Participation Rate** - Rolling 30/90 day activity windows
+- **Burnout Detection** - Identifies rapid voting → silence patterns
+- **Trend Analysis** - Declining vs. stable engagement over time
 
-**Output Types:**
-1. **JSON Results** - Individual delegate metrics
-2. **Health Summary** - Aggregate DAO statistics
-3. **Markdown Reports** - Executive summaries with tables
-
----
-
-## 4. Project Structure
-
-The project follows a standard Python research structure to ensure reproducibility.
-
-```bash
-participation-architecture/
-├── data/                  # Local cache for raw Snapshot data (git-ignored)
-│   ├── cache/            # Raw JSON from Snapshot API
-│   ├── results.json      # Analysis output
-│   └── report.md         # Generated reports
-├── docs/                  # Research notes & SDT methodology
-│   ├── sdt-framework.md  # Theoretical background
-│   └── metrics.md        # Metric definitions
-├── src/
-│   ├── collector.py       # API handlers & GraphQL queries
-│   ├── analysis.py        # SDT logic & metric calculations
-│   └── main.py            # CLI entry point
-├── tests/                 # Unit tests for data integrity
-│   ├── test_collector.py
-│   └── test_analysis.py
-├── architecture.md        # System documentation (This file)
-├── requirements.txt       # Python dependencies
-└── README.md              # Project overview
-```
+### 🛡️ Public Good
+Open Source (MIT), no token, privacy-preserving
+- ✅ No PII collection (only public wallet addresses)
+- ✅ Local-first processing (no external database)
+- ✅ Transparent algorithms (open-source metrics)
+- ✅ Community-owned research
 
 ---
 
-## 5. Tech Stack
+## 🚀 Quick Start
 
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| **Language** | Python 3.10+ | Core implementation |
-| **Data Processing** | Pandas | DataFrame operations |
-| **API Interface** | Requests / GraphQL | Snapshot API communication |
-| **Testing** | Pytest | Unit & integration tests |
-| **Documentation** | Markdown / Mermaid.js | System docs & diagrams |
+### Prerequisites
 
----
-
-## 6. Data Privacy & Ethics
-
-### Privacy Guarantees
-
-- ✅ **No PII Collection** - Only public wallet addresses (pseudonymous)
-- ✅ **No External Storage** - All data processed locally
-- ✅ **Opt-in Only** - Users control their participation data
-- ✅ **Transparent Metrics** - Open-source algorithms
-
-### Ethical Considerations
-
-1. **Stigma Prevention** - "Fatigue" is presented as a systemic issue, not individual failure
-2. **Actionable Insights** - Metrics designed to improve governance health, not punish delegates
-3. **Context Awareness** - System acknowledges valid reasons for inactivity (personal circumstances)
-
----
-
-## 7. Performance Characteristics
-
-### Scalability Metrics
-
-| Parameter | MVP Target | Notes |
-|-----------|-----------|-------|
-| Proposals Analyzed | 50-100 | Adjustable via CLI |
-| Delegates Tracked | 500-1000 | No hard limit |
-| Processing Time | < 2 minutes | For 100 proposals |
-| Memory Footprint | < 100 MB | In-memory processing |
-
-### API Rate Limits
-
-- **Snapshot API:** ~1 request/second (self-imposed)
-- **Caching Strategy:** 24-hour TTL for proposal data
-
----
-
-## 8. Future Enhancements (Roadmap)
-
-### Phase 2: Advanced Analytics
-- Alignment Score implementation
-- Network analysis (delegate clusters)
-- Predictive fatigue modeling
-
-### Phase 3: Dashboard
-- Web-based visualization
-- Real-time monitoring
-- Interactive delegate profiles
-
-### Phase 4: Integration
-- Tally API support
-- Multi-DAO comparison
-- Governance alerts system
-
----
-
-## 9. Dependencies & Setup
+- Python 3.10 or higher
+- pip (Python package manager)
+- Git
 
 ### Installation
 
 ```bash
-# Clone repository
-git clone https://github.com/your-org/participation-architecture
+# Clone the repository
+git clone https://github.com/TwojNick/participation-architecture.git
 cd participation-architecture
 
-# Create virtual environment
+# Create virtual environment (recommended)
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
@@ -197,61 +72,270 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Configuration
+### Basic Usage
 
-No API keys required - Snapshot Hub is publicly accessible.
-
-Optional: Set custom cache directory via environment variable:
 ```bash
-export PA_CACHE_DIR="/custom/path/to/cache"
+# 1. Collect data from Snapshot
+python src/main.py collect --proposals 50
+
+# 2. Run the analysis
+python src/main.py analyze
+
+# 3. Generate a report
+python src/main.py report --output data/report.md
+```
+
+### Example Output
+
+```
+📊 DAO HEALTH SUMMARY
+============================================================
+Total Delegates: 342
+Avg Participation 30d: 0.456 (45.6%)
+Avg Fatigue Score: 32.4/100
+At Risk Delegates: 28 (8.2%)
+Active Delegates: 156 (45.6%)
+
+TOP 10 AT-RISK DELEGATES (Highest Fatigue)
+============================================================
+delegate                                    fatigue_score  longest_break_days
+0x1234...5678                              87.5           120
+0xabcd...ef01                              82.3           95
+...
 ```
 
 ---
 
-## 10. Testing Strategy
+## 📂 Project Structure
 
-### Unit Tests
-- Mock API responses for deterministic testing
-- Validate metric calculations against known datasets
-- Edge case handling (empty votes, single-delegate scenarios)
+```
+participation-architecture/
+├── src/                   # Core Python logic
+│   ├── collector.py      # Snapshot API integration
+│   ├── analysis.py       # Fatigue metrics & SDT logic
+│   └── main.py           # CLI entry point
+├── data/                  # Local cache & results (git-ignored)
+│   ├── cache/            # Raw Snapshot data
+│   └── results.json      # Analysis output
+├── docs/                  # Research documentation
+├── tests/                 # Unit tests
+├── architecture.md        # Technical documentation & Data Flow
+├── requirements.txt       # Python dependencies
+├── README.md              # This file
+└── LICENSE                # MIT License
+```
 
-### Integration Tests
-- End-to-end pipeline validation
-- Real Snapshot API calls (rate-limited)
+---
 
-### Run Tests
+## 🧠 Theoretical Foundation
+
+### Self-Determination Theory (SDT)
+
+This project applies SDT to governance participation:
+
+- **Autonomy** - Delegates choose when/how to engage
+- **Competence** - Understanding proposals requires cognitive effort
+- **Relatedness** - Community connection influences sustained participation
+
+**Fatigue Hypothesis:** When these needs aren't met, delegates experience burnout, visible through:
+1. Extended voting gaps (loss of autonomy/competence)
+2. Burst-then-silence patterns (competence overwhelm)
+3. Declining trend (weakening relatedness)
+
+### Ostrom's Common-Pool Resource Framework
+
+DAOs are digital commons requiring active stewardship. This tool helps identify when "resource monitors" (delegates) are overextended.
+
+---
+
+## 📊 Metrics Explained
+
+### Participation Rate
+**Formula:** `votes_cast / total_proposals_in_window`
+
+Measures baseline activity over 30/90 day periods.
+
+### Fatigue Score (0-100)
+**Components:**
+- Long voting gaps (0-30 points)
+- Burnout pattern detection (0-50 points)
+- Declining participation trend (0-20 points)
+
+**Interpretation:**
+- 0-30: Healthy engagement
+- 31-60: Moderate fatigue signals
+- 61-100: High risk of disengagement
+
+### Burnout Detection
+Flags when recent inactivity exceeds 2x the delegate's historical average gap.
+
+---
+
+## 🛠️ Advanced Usage
+
+### Analyze Specific DAO Space
+
 ```bash
-pytest tests/ -v --cov=src
+python src/main.py collect --space "ens.eth" --proposals 100
+python src/main.py analyze --space "ens.eth"
+```
+
+### Export to CSV
+
+```bash
+python src/main.py analyze --output data/results.csv
+```
+
+### Custom Analysis Window
+
+Edit `src/analysis.py` to adjust rolling window parameters:
+```python
+participation_60d = self.calculate_participation_rate(voter, window_days=60)
 ```
 
 ---
 
-## 11. Contributing
+## 🧪 Testing
 
-This is a research project. Contributions welcome in:
-- Metric refinement based on SDT literature
-- Additional governance platforms (Tally, Commonwealth)
-- Statistical validation of fatigue indicators
+Run the test suite:
 
-See `CONTRIBUTING.md` for guidelines.
+```bash
+# All tests
+pytest tests/ -v
 
----
-
-## 12. License & Attribution
-
-**License:** MIT (Open Source)
-
-**Citation:**
-```
-@software{participation_architecture_2024,
-  title = {Participation Architecture: SDT-Based Delegate Fatigue Analysis},
-  author = {Your Name},
-  year = {2024},
-  url = {https://github.com/your-org/participation-architecture}
-}
+# With coverage report
+pytest tests/ --cov=src --cov-report=html
 ```
 
 ---
 
-**Last Updated:** 2024-11-19  
-**Version:** 0.1.0-MVP
+## 🗺️ Roadmap
+
+### Phase 1: MVP (Current)
+- [x] Snapshot API integration
+- [x] Basic fatigue metrics
+- [x] CLI interface
+- [ ] Unit test coverage >80%
+
+### Phase 2: Advanced Analytics
+- [ ] Alignment score (voting consistency)
+- [ ] Network analysis (delegate clusters)
+- [ ] Predictive modeling (churn probability)
+
+### Phase 3: Dashboard
+- [ ] Web-based visualization
+- [ ] Real-time monitoring
+- [ ] Delegate profiles with historical trends
+
+### Phase 4: Multi-DAO Support
+- [ ] Tally API integration
+- [ ] Comparative analysis across DAOs
+- [ ] Standardized governance health benchmarks
+
+---
+
+## 🤝 Contributing
+
+This is a research project in active development. Contributions welcome!
+
+### Ways to Contribute:
+- 📝 Improve metric definitions based on governance research
+- 🐛 Report bugs or edge cases in data processing
+- 🔬 Validate findings against real delegate experiences
+- 📚 Expand documentation and examples
+
+### Development Setup
+
+```bash
+# Install dev dependencies
+pip install -r requirements-dev.txt
+
+# Run linter
+flake8 src/ tests/
+
+# Format code
+black src/ tests/
+```
+
+See `CONTRIBUTING.md` for detailed guidelines.
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
+### What This Means:
+✅ Free to use, modify, and distribute  
+✅ Commercial use allowed  
+✅ No warranty provided  
+
+---
+
+## 👤 About
+
+**Built by a Solo Researcher** combining social science (Ostrom's Theory) with code.
+
+### Research Background:
+- Governance participation patterns in digital commons
+- Self-Determination Theory applied to DAO engagement
+- Commons management in decentralized systems
+
+### Contact & Feedback:
+- GitHub Issues: [Report bugs or request features](https://github.com/TwojNick/participation-architecture/issues)
+- Twitter: [@YourHandle](https://twitter.com/YourHandle)
+- Forum: [Arbitrum Governance Forum](https://forum.arbitrum.foundation/)
+
+---
+
+## 📚 Additional Resources
+
+### Documentation
+- [Technical Architecture](architecture.md) - System design & data flow
+- [Metric Definitions](docs/metrics.md) - Detailed formula explanations
+- [SDT Framework](docs/sdt-framework.md) - Theoretical foundation
+
+### Related Research
+- [Self-Determination Theory Overview](https://selfdeterminationtheory.org/)
+- [Ostrom's Governing the Commons](https://wtf.tw/ref/ostrom_1990.pdf)
+- [DAO Governance Patterns](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4620723)
+
+---
+
+## 🙏 Acknowledgments
+
+- **Arbitrum DAO** - Inspiration and data source
+- **Snapshot Labs** - Public API access
+- **Governance Research Community** - Theoretical foundations
+
+---
+
+## 📈 Project Status
+
+**Current Version:** 0.1.0-MVP  
+**Last Updated:** November 2024  
+**Active Development:** Yes ✅
+
+### Known Limitations:
+- Snapshot-only (on-chain voting not yet supported)
+- English-language proposals only
+- Limited to Ethereum-based DAOs
+
+---
+
+## 🔗 Links
+
+- **Repository:** https://github.com/TwojNick/participation-architecture
+- **Documentation:** [architecture.md](architecture.md)
+- **Issue Tracker:** https://github.com/TwojNick/participation-architecture/issues
+- **Discussions:** https://github.com/TwojNick/participation-architecture/discussions
+
+---
+
+<div align="center">
+
+**Made with 🧠 for healthier DAOs**
+
+[Report Bug](https://github.com/TwojNick/participation-architecture/issues) · [Request Feature](https://github.com/TwojNick/participation-architecture/issues) · [Documentation](architecture.md)
+
+</div>
