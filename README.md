@@ -61,7 +61,7 @@ Open Source (MIT), no token, privacy-preserving
 
 ```bash
 # Clone the repository
-git clone https://github.com/TwojNick/participation-architecture.git
+git clone https://github.com/pwyszomirski/participation-architecture.git
 cd participation-architecture
 
 # Create virtual environment (recommended)
@@ -272,19 +272,87 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 ---
 
-## 👤 About
+## 👤 About the Author
 
-**Built by a Solo Researcher** combining social science (Ostrom's Theory) with code.
+### Paweł Wyszomirski
 
-### Research Background:
-- Governance participation patterns in digital commons
-- Self-Determination Theory applied to DAO engagement
-- Commons management in decentralized systems
+**Building AI that changes behavior, not just provides insights.**
 
-### Contact & Feedback:
-- GitHub Issues: [Report bugs or request features](https://github.com/TwojNick/participation-architecture/issues)
-- Twitter: [@YourHandle](https://twitter.com/YourHandle)
-- Forum: [Arbitrum Governance Forum](https://forum.arbitrum.foundation/)
+After years of frustration watching people ignore data and alerts, I discovered: **AI provides knowledge, but doesn't force action**. That's why I combine artificial intelligence with coaching of good habits – helping transform insights into real change. For me, AI without implementation is just an expensive toy. **True value emerges when technology serves human habits.**
+
+---
+
+### Professional Background
+
+#### 🤖 AI & Product Development
+- **Architekt Nawyków AI** - Founder & Creator (600+ clients)
+  - AI-powered habit coaching program transforming insights into behavioral change
+  - Proven methodology for converting data into actionable habits
+  
+- **OpenAir** - Co-founder & CEO (300+ devices sold)
+  - Air quality assistant startup
+  - **#szkolneklimaty** initiative - improving health for thousands of children in 30+ schools across Silesia and Lesser Poland
+
+#### 🏛️ Civic Tech & Governance
+- **Foundation President & Co-founder** (Since 2012)
+  - Promoting citizen participation in city management
+  - Led 15-person team with 800K PLN annual turnover
+  - Coordinated 20+ projects funded by Polish and EU grants
+
+- **Civic Innovation Leadership**
+  - Initiated participatory budgeting in Katowice (70K+ annual participants)
+  - Co-creator: Metropolitan Prototyping School (3 editions) - designing new public services
+  - **TEDxKatowice & TEDxRawaRiver** - Curator (4.3M+ views across events)
+
+#### 🔬 Research & Academia
+- **PhD Candidate** - WSB University
+  - Researching **participation architecture in Decentralized Autonomous Organizations (DAOs)**
+  - Bridging social science with blockchain governance
+
+- **International Collaboration**
+  - Polish coordinator for citizen science project led by University College London (UCL)
+  - Published researcher - [Google Scholar Profile](https://scholar.google.com/citations?user=AryRIgYAAAAJ&hl=pl)
+
+#### 🎓 Training & Education
+- **Workshop Facilitator** - 1000+ participants trained
+- Focus: Civic participation, public innovation, and behavioral change
+
+---
+
+### Philosophy
+
+> "Fascinated by new technologies - especially AI and DAOs - and their use for good and happiness."
+
+This project embodies that philosophy: using AI to understand human behavior patterns in governance, not to replace human judgment, but to support healthier participation in digital commons.
+
+### Why This Research Matters
+
+Having spent years working on civic participation (budgets, urban planning, community initiatives), I've seen firsthand how **burnout destroys communities**. DAOs face the same challenge at scale. This tool applies lessons from:
+- 10+ years in civic tech
+- Air quality monitoring (people ignore alerts without behavioral support)
+- AI habit coaching (technology must serve human psychology)
+
+**The insight:** Governance isn't just about voting numbers - it's about sustainable human engagement. This tool measures what matters.
+
+---
+
+## 📬 Contact & Community
+
+### Connect With Me
+- **Twitter/X:** [@pwyszomirski](https://x.com/pwyszomirski)
+- **Google Scholar:** [Research Publications](https://scholar.google.com/citations?user=AryRIgYAAAAJ&hl=pl)
+- **GitHub:** [@pwyszomirski](https://github.com/pwyszomirski)
+
+### Project Links
+- **Repository:** https://github.com/pwyszomirski/participation-architecture
+- **Issues:** [Report bugs or request features](https://github.com/pwyszomirski/participation-architecture/issues)
+- **Discussions:** [Join the conversation](https://github.com/pwyszomirski/participation-architecture/discussions)
+
+### For DAOs & Researchers
+Interested in applying this methodology to your DAO? Open to collaboration on:
+- Custom fatigue analysis for specific governance structures
+- Academic partnerships for validation studies
+- Integration with governance platforms (Tally, Commonwealth, etc.)
 
 ---
 
@@ -300,13 +368,20 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 - [Ostrom's Governing the Commons](https://wtf.tw/ref/ostrom_1990.pdf)
 - [DAO Governance Patterns](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4620723)
 
+### Inspirations
+This work builds on:
+- **Civic Tech Experience** - 10+ years in participatory governance
+- **Behavioral Science** - Habit formation and decision fatigue research
+- **Commons Management** - Ostrom's principles applied to digital organizations
+
 ---
 
 ## 🙏 Acknowledgments
 
-- **Arbitrum DAO** - Inspiration and data source
-- **Snapshot Labs** - Public API access
+- **Arbitrum DAO** - Inspiration and primary data source
+- **Snapshot Labs** - Public API access enabling this research
 - **Governance Research Community** - Theoretical foundations
+- **OpenAir & Architekt Nawyków AI Communities** - Real-world validation of behavior-change principles
 
 ---
 
@@ -314,28 +389,42 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 **Current Version:** 0.1.0-MVP  
 **Last Updated:** November 2024  
-**Active Development:** Yes ✅
+**Active Development:** Yes ✅  
+**PhD Research Component:** In Progress
 
 ### Known Limitations:
 - Snapshot-only (on-chain voting not yet supported)
 - English-language proposals only
 - Limited to Ethereum-based DAOs
+- Requires validation with real delegate interviews
+
+### Research Transparency:
+This is an academic research project. All findings will be:
+- Published openly (CC-BY license for papers)
+- Validated through mixed-methods (quantitative + qualitative)
+- Shared with studied communities before publication
 
 ---
 
-## 🔗 Links
+## 🔗 Quick Links
 
-- **Repository:** https://github.com/TwojNick/participation-architecture
-- **Documentation:** [architecture.md](architecture.md)
-- **Issue Tracker:** https://github.com/TwojNick/participation-architecture/issues
-- **Discussions:** https://github.com/TwojNick/participation-architecture/discussions
+| Resource | Link |
+|----------|------|
+| 📦 Repository | https://github.com/pwyszomirski/participation-architecture |
+| 📖 Documentation | [architecture.md](architecture.md) |
+| 🐛 Issues | https://github.com/pwyszomirski/participation-architecture/issues |
+| 💬 Discussions | https://github.com/pwyszomirski/participation-architecture/discussions |
+| 🎓 Research Profile | [Google Scholar](https://scholar.google.com/citations?user=AryRIgYAAAAJ&hl=pl) |
+| 🐦 Twitter | [@pwyszomirski](https://x.com/pwyszomirski) |
 
 ---
 
 <div align="center">
 
-**Made with 🧠 for healthier DAOs**
+**Made with 🧠 + ❤️ for healthier DAOs**
 
-[Report Bug](https://github.com/TwojNick/participation-architecture/issues) · [Request Feature](https://github.com/TwojNick/participation-architecture/issues) · [Documentation](architecture.md)
+*Combining social science with code to make governance sustainable*
+
+[Report Bug](https://github.com/pwyszomirski/participation-architecture/issues) · [Request Feature](https://github.com/pwyszomirski/participation-architecture/issues) · [Documentation](architecture.md)
 
 </div>
