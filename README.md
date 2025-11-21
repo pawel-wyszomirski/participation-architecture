@@ -6,7 +6,18 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Status: Experimental](https://img.shields.io/badge/status-experimental-orange.svg)]()
 
+
 ---
+
+### 🚨 Latest Research Results (Nov 2025)
+**Focus:** Arbitrum DAO  
+**Sample:** 50-150 Proposals  
+**Key Finding:** 60%+ of historical delegates are showing declining participation trends.
+
+👉 **[View Full Analysis Report](data/raport.md)** 👉 **[View Raw Data (JSON)](data/arbitrum_results.json)**
+
+---
+
 
 ## 📋 Overview
 
