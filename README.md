@@ -410,10 +410,10 @@ This is an academic research project. All findings will be:
 
 | Resource | Link |
 |----------|------|
-| 📦 Repository | https://github.com/pwyszomirski/participation-architecture |
+| 📦 Repository | https://github.com/pawel-wyszomirski/participation-architecture |
 | 📖 Documentation | [architecture.md](architecture.md) |
-| 🐛 Issues | https://github.com/pwyszomirski/participation-architecture/issues |
-| 💬 Discussions | https://github.com/pwyszomirski/participation-architecture/discussions |
+| 🐛 Issues | https://github.com/pawel-wyszomirski/participation-architecture/issues |
+| 💬 Discussions | https://github.com/pawel-wyszomirski/participation-architecture/discussions |
 | 🎓 Research Profile | [Google Scholar](https://scholar.google.com/citations?user=AryRIgYAAAAJ&hl=pl) |
 | 🐦 Twitter | [@pwyszomirski](https://x.com/pwyszomirski) |
 
