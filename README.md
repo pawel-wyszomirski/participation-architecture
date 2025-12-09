@@ -14,7 +14,7 @@
 **Sample:** 50-150 Proposals  
 **Key Finding:** 60%+ of historical delegates are showing declining participation trends.
 
-👉 **[View Full Analysis Report](data/raport.md)** 👉 **[View Raw Data (JSON)](data/arbitrum_results.json)**
+👉 **[View Full Analysis Report](https://github.com/pawel-wyszomirski/participation-architecture/blob/main/data/raport_arbitrum.md)** 👉 **[View Raw Data (JSON)](data/arbitrum_results.json)**
 
 ---
 
