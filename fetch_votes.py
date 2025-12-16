@@ -1,13 +1,14 @@
 import requests
 import pandas as pd
 import json
+import sys
 from datetime import datetime
 
 # --- CONFIGURATION ---
 SNAPSHOT_GRAPHQL_URL = "https://hub.snapshot.org/graphql"
 SPACE_ID = "arbitrumfoundation.eth"
-# Target: L2BEAT Delegate Address (Example of High Activity)
-TARGET_DELEGATE = "0x1c6e13813B1C5E256C87C135F20875252874E2c4"
+# Default Target: L2BEAT Delegate Address (Example of High Activity)
+DEFAULT_DELEGATE = "0x1c6e13813B1C5E256C87C135F20875252874E2c4"
 
 def fetch_delegate_history(delegate_address, space_id, limit=10):
     """
@@ -45,7 +46,7 @@ def fetch_delegate_history(delegate_address, space_id, limit=10):
     }
 
     try:
-        print(f"📡 Connecting to Snapshot API for: {delegate_address[:8]}...")
+        print(f"📡 Connecting to Snapshot API for: {delegate_address}...")
         response = requests.post(
             SNAPSHOT_GRAPHQL_URL, 
             json={'query': query, 'variables': variables},
@@ -90,21 +91,30 @@ def main():
     print("--- Participation Architecture: Fatigue Engine (MVP Demo) ---")
     print(f"Target Space: {SPACE_ID}")
     
+    # Check for command line argument
+    if len(sys.argv) > 1:
+        target_delegate = sys.argv[1]
+    else:
+        target_delegate = DEFAULT_DELEGATE
+        print(f"ℹ️ No address provided. Using default (L2BEAT): {target_delegate}")
+
     # 1. Fetch Data
-    raw_votes = fetch_delegate_history(TARGET_DELEGATE, SPACE_ID)
+    raw_votes = fetch_delegate_history(target_delegate, SPACE_ID)
     
     # 2. Process Data
     df = process_data(raw_votes)
     
     if not df.empty:
-        print(f"\n✅ Successfully fetched {len(df)} recent votes for L2BEAT.\n")
+        print(f"\n✅ Successfully fetched {len(df)} recent votes.\n")
+        # Format output for better readability
+        pd.set_option('display.max_colwidth', 50)
         print(df[['date', 'proposal_title', 'vote_choice']].to_string(index=False))
         
         last_vote = df.iloc[0]['date']
         print(f"\n🕒 Last Activity: {last_vote}")
         print("--- Status: SYSTEM OPERATIONAL ---")
     else:
-        print("⚠️ No data found or connection failed.")
+        print("⚠️ No data found or connection failed. Check the address or API status.")
 
 if __name__ == "__main__":
     main()
