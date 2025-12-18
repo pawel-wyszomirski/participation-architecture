@@ -4,23 +4,40 @@ import json
 import sys
 from datetime import datetime
 
-# --- CONFIGURATION ---
+# --- KONFIGURACJA ---
 SNAPSHOT_GRAPHQL_URL = "https://hub.snapshot.org/graphql"
-SPACE_ID = "arbitrumfoundation.eth"
-# Default Target: L2BEAT Delegate Address (Example of High Activity)
-DEFAULT_DELEGATE = "0x1c6e13813B1C5E256C87C135F20875252874E2c4"
+# Domyślny delegat: L2BEAT (adres checksummed)
+DEFAULT_DELEGATE = "0x1B686eE8E31c5959D9F5BBd8122a58682788eeaD"
 
-def fetch_delegate_history(delegate_address, space_id, limit=10):
+def get_target_delegate():
     """
-    Fetches recent voting history via Snapshot GraphQL API.
+    Inteligentne pobieranie adresu z argumentów CLI.
+    Ignoruje flagi systemowe (np. -f w Jupyterze).
     """
+    if len(sys.argv) > 1:
+        # Szukamy pierwszego argumentu, który wygląda jak adres ETH (zaczyna się od 0x)
+        for arg in sys.argv[1:]:
+            if arg.startswith("0x") and len(arg) == 42:
+                return arg
+            
+        # Jeśli argument to nie adres (np. jakaś flaga), informujemy użytkownika
+        # ale nie wywalamy błędu - wracamy do domyślnego
+        if not sys.argv[1].startswith("-"): 
+             print(f"⚠️ Argument '{sys.argv[1]}' nie wygląda jak adres ETH. Używam domyślnego.")
+    
+    return DEFAULT_DELEGATE
+
+def fetch_delegate_history(delegate_address, limit=20):
+    """
+    Pobiera historię głosowania (wszystkie przestrzenie).
+    """
+    # Proste zapytanie bez filtrów przestrzeni (najbezpieczniejsze)
     query = """
-    query Votes($voter: String!, $space: String!, $first: Int!) {
+    query Votes($voter: String!, $first: Int!) {
       votes(
         first: $first
         where: {
           voter: $voter
-          space: $space
         }
         orderBy: "created"
         orderDirection: desc
@@ -28,25 +45,24 @@ def fetch_delegate_history(delegate_address, space_id, limit=10):
         id
         created
         choice
+        space {
+          id
+        }
         proposal {
           id
           title
-          choices
-          scores
-          scores_total
         }
       }
     }
     """
-    
+
     variables = {
         "voter": delegate_address,
-        "space": space_id,
         "first": limit
     }
 
     try:
-        print(f"📡 Connecting to Snapshot API for: {delegate_address}...")
+        print(f"📡 Łączę z Snapshot API dla: {delegate_address}...")
         response = requests.post(
             SNAPSHOT_GRAPHQL_URL, 
             json={'query': query, 'variables': variables},
@@ -54,67 +70,68 @@ def fetch_delegate_history(delegate_address, space_id, limit=10):
         )
         
         if response.status_code == 200:
-            return response.json()['data']['votes']
+            data = response.json()
+            if 'errors' in data:
+                print(f"❌ Błąd GraphQL: {data['errors'][0]['message']}")
+                return []
+            return data['data']['votes']
         else:
-            print(f"❌ API Error: {response.status_code}")
+            print(f"❌ Błąd HTTP: {response.status_code}")
             return []
             
     except Exception as e:
-        print(f"❌ Exception: {e}")
+        print(f"❌ Wyjątek połączenia: {e}")
         return []
 
 def process_data(votes_json):
-    """
-    Normalizes raw JSON data into a Pandas DataFrame.
-    """
     if not votes_json:
         return pd.DataFrame()
 
     data_list = []
     for vote in votes_json:
-        # Handling vote choice logic
-        vote_choice = vote['choice']
-        proposal_title = vote['proposal']['title']
-        
-        # Timestamp conversion
-        vote_date = datetime.fromtimestamp(vote['created'])
-        
-        data_list.append({
-            'date': vote_date,
-            'proposal_title': proposal_title,
-            'vote_choice': vote_choice
-        })
+        try:
+            vote_choice = vote['choice']
+            # Zabezpieczenie przed usuniętymi propozycjami
+            if not vote.get('proposal'):
+                proposal_title = "[Usunięta Propozycja]"
+            else:
+                proposal_title = vote['proposal']['title']
+                
+            space_id = vote['space']['id']
+            vote_date = datetime.fromtimestamp(vote['created'])
+            
+            data_list.append({
+                'date': vote_date,
+                'space': space_id,
+                'proposal': proposal_title, # Skrócona nazwa kolumny
+                'choice': vote_choice
+            })
+        except Exception:
+            continue
     
     return pd.DataFrame(data_list)
 
 def main():
     print("--- Participation Architecture: Fatigue Engine (MVP Demo) ---")
-    print(f"Target Space: {SPACE_ID}")
     
-    # Check for command line argument
-    if len(sys.argv) > 1:
-        target_delegate = sys.argv[1]
-    else:
-        target_delegate = DEFAULT_DELEGATE
-        print(f"ℹ️ No address provided. Using default (L2BEAT): {target_delegate}")
+    # 1. Ustal adres (z walidacją)
+    target = get_target_delegate()
+    print(f"🎯 Cel: {target}")
 
-    # 1. Fetch Data
-    raw_votes = fetch_delegate_history(target_delegate, SPACE_ID)
+    # 2. Pobierz dane
+    raw_votes = fetch_delegate_history(target)
     
-    # 2. Process Data
+    # 3. Przetwórz
     df = process_data(raw_votes)
     
     if not df.empty:
-        print(f"\n✅ Successfully fetched {len(df)} recent votes.\n")
-        # Format output for better readability
+        print(f"\n✅ Sukces: Pobrano {len(df)} ostatnich głosów.\n")
         pd.set_option('display.max_colwidth', 50)
-        print(df[['date', 'proposal_title', 'vote_choice']].to_string(index=False))
-        
-        last_vote = df.iloc[0]['date']
-        print(f"\n🕒 Last Activity: {last_vote}")
-        print("--- Status: SYSTEM OPERATIONAL ---")
+        # Wyświetlamy kluczowe kolumny
+        print(df[['date', 'space', 'proposal', 'choice']].to_string(index=False))
+        print("\n--- Status: SYSTEM OPERATIONAL ---")
     else:
-        print("⚠️ No data found or connection failed. Check the address or API status.")
+        print("\n⚠️ Brak danych. Sprawdź czy adres jest poprawny i czy delegat głosuje na Snapshot (off-chain).")
 
 if __name__ == "__main__":
     main()
