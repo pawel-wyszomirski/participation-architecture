@@ -4,158 +4,295 @@
 
 ### Signal-to-Noise Governance Infrastructure for DAOs
 
-**A "Spam Filter for Governance" that separates Signal from Noise**
+**A developer-first REST API to measure delegate fatigue and filter governance noise**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+![Status](https://img.shields.io/badge/Status-MVP%20Scaffold-yellow)
+![Stack](https://img.shields.io/badge/Stack-FastAPI%20%7C%20Docker%20%7C%20PostgreSQL-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
 [![Grant: Arbitrum](https://img.shields.io/badge/Grant-Application%20Submitted-yellow)](https://arbitrum.questbook.app/)
 
-[Quick Start](#-quick-start) • [Methodology](#-theoretical-foundation) • [Roadmap](#️-roadmap) • [Contact](#-contact)
+[Quick Start](#-quick-start) • [API Reference](#-api-usage-mvp) • [Roadmap](#-roadmap-grant-scope) • [Budget](#-budget-allocation)
 
 </div>
 
 ---
 
-## 📊 Active Development Status
-
-> **Research Artifact:** Mandatory component of a PhD dissertation on DAO Governance  
-> **Grant Status:** Application Submitted (Arbitrum Developer Tooling)  
-> **Current Phase:** Milestone 1 - Backend Infrastructure & Data Pipeline  
-> **Status:** 🟡 MVP Development in Progress
-
----
-
 ## 🎯 The Problem: Delegate Fatigue
 
-**DAO Governance is suffering from a "Crisis of Attention".**
+**DAO Governance suffers from a "Crisis of Attention".**
 
-**The Symptom:** "Burst-then-Silence" voting patterns. 52% of active delegates show signs of burnout after 3-6 months.
+- **Symptom:** "Burst-then-Silence" voting patterns. 52% of active delegates show burnout after 3-6 months.
+- **Cause:** High "Governance Noise" - current tools (Tally/Karma) treat admin votes equal to strategic decisions.
+- **Result:** Key contributors (like L2BEAT) disengage to protect cognitive resources.
 
-**The Cause:** High "Governance Noise". Current tools (Tally/Karma) optimize for the *quantity* of votes, treating administrative maintenance equal to strategic decisions.
-
-**The Result:** Key contributors (like L2BEAT) disengage to protect their cognitive resources.
-
----
-
-## 🛠 The Solution: Signal-to-Noise Engine
-
-**Participation Architecture** is a Python-based analytics suite that implements Elinor Ostrom's commons principles and Self-Determination Theory (SDT) to filter governance proposals.
-
-Instead of asking *"Did they vote?"*, we ask *"Did they waste their time?"*.
-
-### What Makes This Different
-
-| Tool | Approach |
-|------|----------|
-| **Karma/Tally** | Display raw data volume (vanity metrics) |
-| **Participation Architecture** | Filters cognitive load and creates actionable habits |
-
-Drawing from experience building OpenAir (IoT air quality monitors), we learned that **data without prompts doesn't drive action**. This tool operationalizes behavioral science into governance infrastructure.
+**The Solution:** **Fatigue-as-a-Service**. A containerized REST API that allows governance tooling (dashboards, wallets) to surface burnout risk metrics in real-time.
 
 ---
 
-## ✨ Core Features (Current MVP)
+## 🏗 Architecture (v5.1)
 
-### 1. 🐍 Fatigue Engine (Backend) ✅ Operational
+**Evolution:** From research scripts (v3.1) → Production microservice (v5.1)
 
-Python-based scraper integrating with Snapshot API
+```
+┌─────────────┐      ┌──────────────┐      ┌─────────────┐
+│   Client    │─────▶│  FastAPI     │─────▶│ PostgreSQL  │
+│ (Dashboard) │◀─────│  Container   │◀─────│  Container  │
+└─────────────┘      └──────────────┘      └─────────────┘
+                            │
+                            ▼
+                     ┌──────────────┐
+                     │  Snapshot    │
+                     │  GraphQL API │
+                     └──────────────┘
+```
 
-- **Quantifies Burnout:** Calculates "Fatigue Index" based on voting gaps and response time
-- **Data Ingestion:** Automatically fetches and normalizes voting history for Arbitrum delegates
-- **Anomaly Detection:** Identifies "Burst-then-Silence" patterns
-- **Historical Analysis:** 7,385 delegates analyzed (see `data/wyniki_arbitrum.csv`)
+**Stack:**
 
-### 2. 🎯 Signal Classifier (NLP Module) 🟡 In Development (Milestone 2)
-
-Machine learning pipeline to categorize proposals by importance
-
-- **Strategic (Signal):** Protocol upgrades, treasury decisions, major policy changes
-- **Operational (Noise):** Routine approvals, administrative updates, procedural votes
-- **Goal:** Filter ~30% of governance noise to reclaim delegate attention
-- **Status:** Planned for Month 2 of grant timeline
-
-### 3. 📊 Metrics & Algorithms ✅ Operational
-
-Based on Self-Determination Theory (SDT)
-
-- **Participation Rate** - Rolling 30/90 day activity windows
-- **Burnout Detection** - Identifies rapid voting → silence patterns
-- **Trend Analysis** - Declining vs. stable engagement over time
-- **Cognitive Load Score** - Measures information overload impact
+- **API Layer:** FastAPI (Async, Pydantic validation, auto-generated OpenAPI docs)
+- **Data Layer:** PostgreSQL 15 + SQLAlchemy ORM (Alembic migrations)
+- **Task Management:** BackgroundTasks for idempotent data ingestion
+- **Deployment:** Docker Compose orchestration (reproducible builds)
 
 ---
 
-## 🚀 Quick Start (Demo)
+## 🚀 Quick Start
 
-### Prerequisites
-
-- Python 3.9 or higher
-- Internet connection (for Snapshot GraphQL API)
-
-### Installation
+**Prerequisites:** Docker & Docker Compose installed.
 
 ```bash
-# Clone the repository
+# 1. Clone repository
 git clone https://github.com/pawel-wyszomirski/participation-architecture.git
 cd participation-architecture
 
-# Install dependencies
-pip install -r requirements.txt
+# 2. Build and run containers
+docker compose up --build
 ```
 
-### Run the Demo Script
+**Verification:**
 
-We have prepared a simple script to fetch live voting data for a target delegate (e.g., L2BEAT):
+- **Swagger UI (Interactive Docs):** `http://localhost:8000/docs`
+- **Health Check:** `curl http://localhost:8000/health`
+- **Expected Output:** ✅ `{"status": "healthy", "database": "connected"}`
 
-```bash
-python fetch_votes.py
+---
+
+## 📡 API Usage (MVP)
+
+**Current Status:** Mock endpoint available to validate API contract. Real data ingestion coming in Milestone 1.2-1.3.
+
+### Get Delegate Fatigue Score
+
+**Request:**
+```http
+GET /v1/delegates/{address}/fatigue
 ```
 
-**Expected Output:**
-
+**Response Spec (JSON Schema):**
+```json
+{
+  "address": "0x1c6e...",
+  "fatigue_score": 73.5,
+  "status": "CRITICAL",
+  "breakdown": {
+    "volume_impact": 0.8,
+    "time_scarcity": 0.7,
+    "dropout_risk": 0.3
+  },
+  "metrics": {
+    "votes_last_30d": 42,
+    "avg_time_gap_hours": 18.5,
+    "participation_rate": 0.85
+  }
+}
 ```
---- Participation Architecture: Fatigue Engine (MVP Demo) ---
-Target Space: arbitrumfoundation.eth
-📡 Connecting to Snapshot API for: 0x1c6e...
-✅ Successfully fetched 10 recent votes.
-📊 Calculating Fatigue Index...
-⚠️  Burnout Pattern Detected: 45-day gap after burst activity
-```
 
-### Advanced Usage
+**Interactive Testing:** Visit `http://localhost:8000/docs` for Swagger UI with live request/response examples.
 
-```bash
-# Collect data from Snapshot
-python src/main.py collect --space arbitrum --proposals 50
+---
 
-# Run the fatigue analysis
-python src/main.py analyze
+## 🛣 Roadmap (Grant Scope)
 
-# Generate a report
-python src/main.py report --output data/report.md
-```
+### 🏗️ Milestone 1: Core Infrastructure & Ingestion
+
+**Budget:** $10,000 | **Timeline:** Weeks 1-6 (January 2025) | **Status:** 🟡 In Progress
+
+**Deliverables:**
+
+- **1.1 Containerized API**
+  - [x] Docker Compose multi-container setup
+  - [x] `/health` and `/v1/delegates/{address}/fatigue` endpoints (mock)
+  - [ ] Production-ready error handling and logging
+
+- **1.2 Database Schema (Alembic Migrations)**
+  - [x] SQLAlchemy models: `Delegates`, `Proposals`, `Votes`
+  - [ ] Alembic migration scripts versioned and tested
+  - [ ] Indexing strategy for query performance optimization
+
+- **1.3 Snapshot Ingestor (Background Service)**
+  - [x] GraphQL client with rate limit handling
+  - [ ] **Idempotency logic** (no duplicate entries on re-runs)
+  - [ ] **Target:** Ingest **1000+ historical proposals** from Arbitrum DAO
+  - [ ] Retry mechanism with exponential backoff
+
+- **1.4 OpenAPI Documentation**
+  - [x] Auto-generated Swagger UI at `/docs`
+  - [ ] Complete endpoint descriptions with examples
+  - [ ] Response schema validation and error codes
+
+- **1.5 Security & Rate Limiting**
+  - [ ] API Key authentication system
+  - [ ] Per-key rate limiting (100 req/hour default tier)
+  - [ ] Request logging and usage analytics
+
+**Acceptance Criteria:**
+- ✅ `docker compose up` starts system without errors
+- ⏳ Database contains **minimum 1000 historical records**
+- ⏳ CI/CD pipeline (GitHub Actions) passes all tests (**Green Build**)
+- ⏳ Unit test coverage >80%
+
+---
+
+### 🧠 Milestone 2: Intelligence Engine & Dashboard
+
+**Budget:** $10,000 | **Timeline:** Weeks 7-12 (February 2025)
+
+**Deliverables:**
+
+- **2.1 Intelligence Modules**
+  - [ ] **FatigueCalculator:** Time-series analysis with weighted scoring
+    - Volume impact (votes/proposal ratio)
+    - Time scarcity (response time patterns)
+    - Dropout risk (silence period detection)
+  - [ ] **SignalClassifier:** OpenAI GPT-4 integration for proposal categorization
+    - Strategic (Signal): Protocol upgrades, treasury decisions
+    - Operational (Noise): Routine approvals, admin updates
+  - [ ] Response caching layer (Redis/in-memory) for **<200ms latency**
+  - [ ] Batch processing for historical data analysis
+
+- **2.2 Dashboard MVP**
+  - [ ] Technology: Streamlit (MVP) or React + TailwindCSS (production)
+  - [ ] Features:
+    - Real-time fatigue score visualization
+    - Delegate search and filtering
+    - Historical trend charts
+    - Proposal signal/noise breakdown
+  - [ ] Responsive design (mobile-friendly)
+
+- **2.3 NLP Validation Report**
+  - [ ] Manually tag **100 proposals** (Signal vs Noise ground truth)
+  - [ ] Calculate **Precision & Recall** metrics
+  - [ ] **Target:** >85% classification accuracy
+  - [ ] Document edge cases and model limitations
+
+**Acceptance Criteria:**
+- ✅ Signal/Noise classification **Precision & Recall >85%**
+- ✅ API response time for cached queries **<200ms**
+- ✅ Dashboard loads successfully and displays live data
+- ✅ Beta testing with **5-10 Arbitrum delegates** (feedback collected)
+
+---
+
+### 🚀 Milestone 3: Production Release & Adoption
+
+**Budget:** $5,000 | **Timeline:** Weeks 13-16 (March 2025)
+
+**Deliverables:**
+
+- **3.1 Production Deployment**
+  - [ ] Public URL with SSL certificate (Let's Encrypt)
+  - [ ] Custom domain: `api.participation-architecture.com`
+  - [ ] Infrastructure: Cloud hosting (Render/Railway/DigitalOcean)
+  - [ ] Monitoring: UptimeRobot + error tracking (Sentry)
+  - [ ] **Target:** **99.9% uptime** guarantee
+
+- **3.2 Partner Integration ("Proof of Warmth")**
+  - [ ] API integration with **L2BEAT** or **Entropy Advisors**
+  - [ ] Embeddable widget for governance dashboards
+  - [ ] Webhook support for real-time fatigue alerts
+  - [ ] **Target:** Minimum **3 active delegate users** or integrations
+
+- **3.3 Final Documentation Package**
+  - [ ] Technical report: *"Measuring Delegate Fatigue in Arbitrum DAO"*
+  - [ ] Video tutorial series (5-10 min each):
+    - Setup & deployment guide
+    - API integration examples
+    - Dashboard walkthrough
+  - [ ] Case study: **"How Signal Filtering Reduced Analysis Time by X%"**
+  - [ ] Open-source handover plan (community maintainers identified)
+
+**Acceptance Criteria:**
+- ✅ Production API uptime **>99.9%** (monitored continuously)
+- ✅ **Minimum 3 delegates/tools** actively using the API
+- ✅ Case study with **quantified impact** (time saved, proposals filtered)
+- ✅ All code documented and ready for community maintenance
+
+---
+
+## 💰 Budget Allocation
+
+**Total Request:** $25,000 (Arbitrum Developer Tooling Grant)
+
+| Category | Allocation | Justification |
+|----------|------------|---------------|
+| **Development** | $20,000 | 400 hours engineering (Fullstack + Data Engineering) @ $50/hour |
+| **OpenAI & Cache** | $3,000 | LLM inference costs (GPT-4o-mini) + scaling buffer for classification |
+| **Infrastructure** | $1,000 | Hosting (Railway/Render), database, monitoring (12 months) |
+| **Community** | $1,000 | Beta-tester incentives, educational content creation |
+
+**Cost Efficiency:** Solo researcher model ensures no overhead costs. All funds directly contribute to shipping code.
+
+---
+
+## 🤝 Validation Strategy (Proof of Warmth)
+
+**We don't guess. We validate with market leaders.**
+
+### Beta Partnership Targets:
+
+- **L2BEAT** - Leading Arbitrum governance participant with documented fatigue concerns
+- **Entropy Advisors** - Governance research firm with established tooling needs
+
+### Success Metrics:
+
+| Metric | Target | Measurement |
+|--------|--------|-------------|
+| **Utility** | >30% time reduction | Time to filter "Signal" from "Noise" in governance workflow |
+| **Retention** | Weekly active usage | API call frequency from pilot delegates |
+| **Accuracy** | >85% precision | Manual validation of Signal/Noise classification |
+
+**Feedback Loop:** Weekly check-ins with beta users during Milestone 2, with rapid iteration based on real-world usage patterns.
 
 ---
 
 ## 📂 Project Structure
+
 ```
-├── data/                   # Raw and processed datasets
-│   ├── arbitrum_results.json
-│   ├── wyniki_arbitrum.csv # Historical analysis of 7,385 delegates
-│   └── raport_arbitrum.md  # Generated report
-├── src/                    # Core Business Logic
-│   ├── collector.py        # Data Ingestion
-│   ├── analysis.py         # Fatigue Index Implementation
-│   ├── targeting.py        # Delegate Segmentation
-│   └── main.py             # Orchestrator
-├── fetch_votes.py          # MVP Demo Script
-├── architecture.md         # Technical Documentation
-├── requirements.txt        # Dependencies
-└── README.md               # This file
-└── LICENSE                 # MIT License
+├── app/                    # FastAPI Application
+│   ├── core/              # Configuration & Settings
+│   ├── db/                # Database Models (SQLAlchemy)
+│   │   ├── models.py      # Delegates, Votes, Proposals
+│   │   └── session.py     # Connection Management
+│   ├── schemas/           # Pydantic Request/Response Models
+│   ├── api/               # Route Handlers
+│   │   └── v1/            # API Version 1
+│   └── main.py            # Application Entry Point
+├── legacy/                # Research Scripts (v3.1 artifacts)
+│   ├── collector.py       # Original Snapshot Scraper
+│   ├── analysis.py        # Fatigue Algorithm Prototypes
+│   └── fetch_votes.py     # CLI Demo Scripts
+├── data/                  # Historical Datasets
+│   └── wyniki_arbitrum.csv # 7,385 delegates analyzed
+├── Dockerfile             # Container Image Definition
+├── docker-compose.yml     # Multi-Container Orchestration
+├── requirements.txt       # Python Dependencies
+├── architecture.md        # Technical Deep Dive
+└── README.md             # This file
 ```
 
-**Note:** Additional components (web dashboard, NLP classifier, REST API) are planned for Milestones 2-3.
+**Migration Notes:**
+- `legacy/` contains original research scripts (preserved for reproducibility)
+- `app/` is the new production-ready microservice architecture
+- All analysis logic will migrate to database-backed operations
 
 ---
 
@@ -171,107 +308,51 @@ This project applies SDT to governance participation:
 
 **Fatigue Hypothesis:** When these needs aren't met, delegates experience burnout, visible through:
 
-1. Extended voting gaps (loss of autonomy/competence)
-2. Burst-then-silence patterns (competence overwhelm)
-3. Declining trend (weakening relatedness)
+1. **Extended voting gaps** (loss of autonomy/competence)
+2. **Burst-then-silence patterns** (competence overwhelm)
+3. **Declining trend** (weakening relatedness)
 
 ### Elinor Ostrom's Common-Pool Resource Framework
 
-DAOs are digital commons requiring active stewardship. Ostrom's principles for sustainable commons management:
+DAOs are digital commons requiring active stewardship. This tool implements Ostrom's monitoring principle: identifying when "resource monitors" (delegates) are overextended, before the commons collapses.
 
-- **Clear boundaries** - Who are the decision-makers? (Delegates)
-- **Monitoring** - Are stewards overextended? (Fatigue Index)
-- **Graduated sanctions** - How do we prevent burnout? (Signal filtering)
-
-This tool helps identify when "resource monitors" (delegates) are overextended, before the commons collapses.
+**Key Insight:** Governance participation isn't a linear metric - it's a commons management problem requiring behavioral economics.
 
 ---
 
 ## 📊 Metrics Explained
 
+### Fatigue Score (0-100)
+
+**Algorithm Components:**
+
+| Component | Weight | Description |
+|-----------|--------|-------------|
+| **Volume Impact** | 30% | Votes cast vs. total proposals (overload detection) |
+| **Time Scarcity** | 50% | Response time patterns (rushed decisions indicator) |
+| **Dropout Risk** | 20% | Extended silence periods (>30 days without activity) |
+
+**Risk Levels:**
+
+- **0-30 (LOW / Healthy):** Sustainable engagement patterns
+- **31-60 (MODERATE / Warning):** Early fatigue signals detected
+- **61-100 (HIGH / Critical):** Immediate burnout risk
+
 ### Participation Rate
 
 **Formula:** `votes_cast / total_proposals_in_window`
 
-Measures baseline activity over 30/90 day periods. Distinguishes between:
-- **All Proposals** - Raw participation
-- **Signal Proposals Only** - Strategic engagement quality (future feature)
+Calculated over rolling 30/90 day windows. Future versions will distinguish:
+- **All Proposals** - Raw participation baseline
+- **Signal Proposals Only** - Strategic engagement quality
 
-### Fatigue Score (0-100)
+### Signal-to-Noise Ratio (Milestone 2)
 
-**Components:**
+**Classification Logic:**
+- **Signal (Strategic):** Protocol upgrades, treasury allocations, constitutional amendments
+- **Noise (Operational):** Routine approvals, admin updates, procedural votes
 
-| Component | Points | Description |
-|-----------|--------|-------------|
-| Long voting gaps | 0-30 | Extended periods without votes |
-| Burnout pattern | 0-50 | Burst-then-silence behavior |
-| Declining trend | 0-20 | Negative slope over 90 days |
-
-**Interpretation:**
-
-- **0-30:** Healthy engagement
-- **31-60:** Moderate fatigue signals (early warning)
-- **61-100:** High risk of disengagement (critical)
-
-### Signal-to-Noise Ratio (Planned for Milestone 2)
-
-**Formula:** `strategic_proposals / total_proposals`
-
-**Classification Logic (NLP):**
-- **Signal (Strategic):** Keywords like "protocol upgrade", "treasury allocation", "constitutional amendment"
-- **Noise (Operational):** Keywords like "grant approval", "working group update", "procedural motion"
-
-**Target:** Reduce noise exposure by 30%, allowing delegates to focus cognitive resources on high-impact decisions.
-
----
-
-## 🛣️ Roadmap (Grant Timeline)
-
-### Milestone 1 (Month 1): Data & Fatigue Engine
-
-- [x] Repository initialized and public
-- [x] Snapshot Scraper (MVP operational)
-- [ ] Fatigue Algorithm Calibration
-- [ ] "Health Check" Report for Top 100 Arbitrum Delegates
-- [ ] Unit test coverage >80%
-
-**Budget:** $10,000 | **Timeline:** January 2026
-
----
-
-### Milestone 2 (Month 2): Signal-to-Noise Dashboard
-
-- [ ] NLP Classifier (Signal vs Noise)
-- [ ] Web Dashboard (React/Streamlit)
-- [ ] REST API endpoints documented and accessible
-- [ ] Beta Testing with 5-10 Arbitrum Delegates
-
-**Budget:** $10,000 | **Timeline:** February 2026
-
----
-
-### Milestone 3 (Month 3): Documentation & Handover
-
-- [ ] Full GitHub documentation (README, API reference, methodology)
-- [ ] Video tutorial demonstrating tool usage
-- [ ] Final "Delegate Fatigue Index" research report for Arbitrum DAO
-- [ ] Open-source handover (MIT License, community maintainers identified)
-
-**Budget:** $5,000 | **Timeline:** March 2026
-
----
-
-### Post-Grant: Sustainability & Growth
-
-**Maintenance Plan:**
-- Codebase supports doctoral research (guaranteed 2-3 years minimum)
-- Community contributions via GitHub issues and PRs
-- Potential for Arbitrum Pluralistic Grants or Retroactive Funding
-
-**Future Enhancements (Beyond Grant Scope):**
-- Multi-DAO support (Optimism, ENS, Uniswap)
-- Predictive modeling (churn probability forecasting)
-- Network analysis (delegate cluster identification)
+**Target:** Reduce cognitive load by **30%** through intelligent proposal filtering.
 
 ---
 
@@ -286,15 +367,20 @@ Measures baseline activity over 30/90 day periods. Distinguishes between:
 
 ### Secondary Users
 
-**Governance Interface Developers**
-- Building on top of Tally, Karma, or custom dashboards
-- Need a "Signal/Noise" API endpoint to enrich their UIs (future)
-- Want behavioral analytics to complement voting metrics
+**Governance Platform Developers**
+- Building on Tally, Karma, or custom dashboards
+- Need fatigue metrics API for their UIs
+- Want behavioral analytics to complement voting data
+
+**DAO Operations Teams**
+- Monitoring delegate health across the ecosystem
+- Identifying at-risk contributors early
+- Optimizing proposal schedules to reduce noise
 
 ### Research Community
 
 **Academics studying DAO governance**
-- Analyzing participation patterns
+- Analyzing participation patterns with rigorous methodology
 - Testing theories about digital commons management
 - Validating Self-Determination Theory in web3 contexts
 
@@ -306,25 +392,30 @@ This is a research project in active development. Contributions welcome!
 
 ### Ways to Contribute
 
-- 📝 Improve metric definitions based on governance research
+- 🔬 Validate fatigue algorithm against real delegate experiences
 - 🐛 Report bugs or edge cases in data processing
-- 🔬 Validate findings against real delegate experiences
-- 📚 Expand documentation and examples
+- 📖 Improve documentation and examples
+- 🎨 Design better dashboard UIs (Milestone 2)
+- 📊 Propose new metrics based on governance research
 
 ### Development Setup
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Fork and clone the repository
+git clone https://github.com/YOUR_USERNAME/participation-architecture.git
+cd participation-architecture
 
-# Run the demo
-python fetch_votes.py
+# Start development environment
+docker compose up --build
 
-# Run analysis (if you have local data)
-python src/main.py analyze
+# Run tests (when implemented)
+pytest tests/
+
+# Format code
+black app/ && isort app/
 ```
 
-For detailed guidelines, see the `architecture.md` file.
+For detailed guidelines, see `CONTRIBUTING.md` (coming in Milestone 1).
 
 ---
 
@@ -343,14 +434,14 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 ---
 
-## 👤 About the Author
+## 💤 About the Author
 
 ### Paweł Wyszomirski
 
 **PhD Candidate & Solo Researcher**
 
 **Focus:** DAO Coordination, Public Goods, Behavioral Economics  
-**Goal:** Turning academic theory into shipping code
+**Mission:** Turning academic theory into shipping code
 
 #### Why I Built This
 
@@ -379,14 +470,14 @@ After building OpenAir (IoT air quality startup, 300+ devices sold), I learned t
 
 - **Repository:** https://github.com/pawel-wyszomirski/participation-architecture
 - **Issues:** [Report bugs or request features](https://github.com/pawel-wyszomirski/participation-architecture/issues)
-- **Grant Proposal:** [Arbitrum Questbook](https://arbitrum.questbook.app/dashboard/?proposalId=69418dd196f32ac6ce53121f&grantId=67d802bd46da2f90cc3267b0&chainId=10)
+- **Grant Proposal:** [Arbitrum Questbook Application](https://arbitrum.questbook.app/dashboard/?proposalId=69418dd196f32ac6ce53121f&grantId=67d802bd46da2f90cc3267b0&chainId=10)
 
 ### For DAOs & Researchers
 
 Interested in applying this methodology to your DAO? Open to collaboration on:
 - Custom fatigue analysis for specific governance structures
 - Academic partnerships for validation studies
-- Integration with governance platforms (planned for Milestone 2)
+- Integration with governance platforms (API-first approach)
 
 ---
 
@@ -394,17 +485,18 @@ Interested in applying this methodology to your DAO? Open to collaboration on:
 
 ### Documentation
 
-- [Technical Architecture](architecture.md) - System design & data flow
-- [Methodology](docs/methodology.md) - Fatigue Index calculation details
+- [Technical Architecture](architecture.md) - System design & API specifications
+- [Methodology](docs/methodology.md) - Fatigue Index calculation details (to be added)
+- [API Reference](http://localhost:8000/docs) - Interactive Swagger documentation
 - [SDT Framework Research](https://selfdeterminationtheory.org/)
 - [Ostrom's Governing the Commons](https://wtf.tw/ref/ostrom_1990.pdf)
 
 ### Research Context
 
-This project is a core component of a PhD dissertation researching participation architecture in DAOs, combining:
-- Quantitative analysis (behavioral metrics)
-- Qualitative validation (delegate interviews)
-- Theoretical frameworks (SDT, Ostrom)
+This project is a **mandatory component** of a PhD dissertation researching participation architecture in DAOs, combining:
+- **Quantitative analysis** (behavioral metrics via time-series data)
+- **Qualitative validation** (delegate interviews and case studies)
+- **Theoretical frameworks** (Self-Determination Theory + Ostrom's principles)
 
 All findings will be:
 - Published openly (CC-BY license)
@@ -416,39 +508,51 @@ All findings will be:
 ## 🙏 Acknowledgments
 
 - **Arbitrum DAO** - Grant application support and primary data source
-- **Arbitrum Delegates** - Real-world feedback (L2BEAT, others)
-- **Snapshot Labs** - Public API access enabling this research
+- **Arbitrum Delegates** - Real-world feedback and beta testing willingness
+- **Snapshot Labs** - Public GraphQL API enabling this research
+- **OpenAI & Anthropic** - AI assistance in development workflow
 - **OpenAir & Architekt Nawyków AI Communities** - Behavioral science validation
 
 ---
 
 ## 📈 Project Status
 
-**Current Version:** 0.1.0-MVP  
+**Current Version:** 0.5.1-MVP  
 **Last Updated:** December 2025  
-**Active Development:** Yes 🟡 (Grant application submitted)  
-**PhD Research Component:** In Progress
+**Active Development:** Yes 🟡 (Grant application pending)  
+**PhD Research Component:** In Progress (2023-2026)
 
 ### Current Capabilities
 
-✅ Snapshot API integration  
-✅ Fatigue Index calculation  
-✅ Historical data analysis (7,385 delegates)  
-✅ Burnout pattern detection  
+✅ FastAPI REST API with auto-generated Swagger docs  
+✅ Docker containerization (reproducible deployment)  
+✅ PostgreSQL database with relational schema  
+✅ Mock endpoints to validate API contract  
+✅ Snapshot GraphQL integration (prototype in `legacy/`)  
+✅ Fatigue algorithm (research validated, migration in progress)  
 
-### In Development (Pending Grant Approval)
+### In Development (Current Milestone 1)
 
-🟡 NLP Signal/Noise classifier  
-🟡 Web dashboard interface  
-🟡 REST API endpoints  
-🟡 Real-time monitoring  
+🟡 Alembic database migrations  
+🟡 Idempotent Snapshot ingestor (1000+ proposals)  
+🟡 API Key authentication & rate limiting  
+🟡 CI/CD pipeline (GitHub Actions)  
+🟡 Unit test coverage >80%  
+
+### Planned (Milestones 2-3)
+
+⏳ NLP Signal/Noise classifier (OpenAI integration)  
+⏳ Web dashboard (Streamlit MVP → React production)  
+⏳ Production deployment (public URL, SSL, 99.9% uptime)  
+⏳ Partner integrations (L2BEAT/Entropy)  
 
 ### Known Limitations
 
-- Snapshot/Tally only (on-chain voting analysis planned)
+- Mock data only (real ingestion coming in M1.3)
+- Snapshot/Tally only (on-chain voting planned for post-grant)
 - English-language proposals only
 - Limited to Ethereum-based DAOs (Arbitrum One focus)
-- Requires validation with delegate interviews (Milestone 2)
+- No authentication layer yet (coming in M1.5)
 
 ---
 
@@ -463,5 +567,7 @@ All findings will be:
 ---
 
 [Report Bug](https://github.com/pawel-wyszomirski/participation-architecture/issues) · [Request Feature](https://github.com/pawel-wyszomirski/participation-architecture/issues) · [Documentation](architecture.md) · [Grant Proposal](https://arbitrum.questbook.app/dashboard/?proposalId=69418dd196f32ac6ce53121f&grantId=67d802bd46da2f90cc3267b0&chainId=10)
+
+**⭐ Star this repo if you believe in sustainable DAO governance!**
 
 </div>
