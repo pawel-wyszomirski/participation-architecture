@@ -2,7 +2,7 @@ import os
 import sys
 from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -14,12 +14,12 @@ sys.path.append(os.getcwd())
 from app.db.session import SessionLocal, engine, Base
 from app.db.models import Proposal
 
-# Inicjalizacja bazy (upewnienie się, że tabele istnieją)
+# Inicjalizacja bazy
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Participation Architecture API",
-    version="0.5.2",  # Podbijamy wersję po integracji z bazą
+    version="0.5.3",  # Podbijamy wersję (Logic Fix)
     description="Signal-to-Noise Governance Infrastructure for Arbitrum DAO (Live Data)"
 )
 
@@ -31,12 +31,12 @@ def get_db():
     finally:
         db.close()
 
-# --- MODELS (Twoje oryginalne modele z Planu v5.1 - BEZ ZMIAN) ---
+# --- MODELS ---
 
 class FatigueBreakdown(BaseModel):
-    volume_impact: float      # Wpływ ilości głosowań (0.0 - 1.0)
-    time_scarcity: float      # Brak czasu między głosowaniami (0.0 - 1.0)
-    dropout_risk: float       # Ryzyko porzucenia (0.0 - 1.0)
+    volume_impact: float
+    time_scarcity: float
+    dropout_risk: float
 
 class FatigueMetrics(BaseModel):
     votes_last_30d: int
@@ -46,7 +46,7 @@ class FatigueMetrics(BaseModel):
 class FatigueResponse(BaseModel):
     address: str
     fatigue_score: float
-    status: str                # LOW / MODERATE / CRITICAL
+    status: str
     breakdown: FatigueBreakdown
     metrics: FatigueMetrics
     last_updated: datetime
@@ -55,31 +55,26 @@ class HealthCheck(BaseModel):
     status: str
     version: str
     database: str
-    proposals_count: int       # Dodane: Licznik propozycji w bazie
+    proposals_count: int
 
 # --- ENDPOINTS ---
 
 @app.get("/", tags=["System"])
 async def root():
-    return {"message": "Participation Architecture API v0.5.2 (Live Data) is running."}
+    return {"message": "Participation Architecture API v0.5.3 (Date Logic Fixed) is running."}
 
 @app.get("/health", response_model=HealthCheck, tags=["System"])
 async def health_check(db: Session = Depends(get_db)):
-    """
-    Sprawdza stan systemu i połączenie z bazą danych.
-    """
     try:
-        # Próba odpytania bazy o liczbę propozycji
         count = db.query(Proposal).count()
         db_status = "connected"
     except Exception as e:
-        print(f"Health Check DB Error: {e}")
         count = 0
         db_status = "disconnected"
         
     return HealthCheck(
         status="ok", 
-        version="0.5.2", 
+        version="0.5.3", 
         database=db_status,
         proposals_count=count
     )
@@ -87,53 +82,52 @@ async def health_check(db: Session = Depends(get_db)):
 @app.get("/v1/delegates/{address}/fatigue", response_model=FatigueResponse, tags=["Delegates"])
 async def get_delegate_fatigue(address: str, db: Session = Depends(get_db)):
     """
-    Returns calculated Fatigue Score based on REAL DATA from local DB.
-    Reflects the 'Hard Specs' from Engineering Plan v5.1.
+    Zwraca Fatigue Score na podstawie PRAWDZIWYCH danych z ostatnich 30 dni.
     """
-    # 1. Pobieramy dane z bazy (Integration Logic)
-    # W MVP (Faza 1) liczymy globalne obciążenie ekosystemu (ile jest propozycji do głosowania).
-    # W Fazie 2 dojdzie tabela 'Votes' per delegat.
+    # 1. Ustalenie okna czasowego (30 dni wstecz)
+    days_back = 30
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
+    cutoff_timestamp = int(cutoff_date.timestamp())
+
+    # 2. Pobranie danych Z FILTREM CZASOWYM
+    # Liczymy tylko propozycje, które wystartowały po dacie granicznej
+    proposals_in_window = db.query(Proposal).filter(Proposal.start >= cutoff_timestamp).count()
     
-    total_proposals_30d = db.query(Proposal).count() # Uproszczenie na potrzeby demo
-    
-    # 2. Logika Biznesowa (Fatigue Engine v1)
-    # Jeśli baza jest pusta, zwracamy 0.0 (zamiast mocka), co jest prawdą.
-    if total_proposals_30d == 0:
+    # Debug: Ile mamy wszystkich w bazie?
+    total_in_db = db.query(Proposal).count()
+
+    # 3. Logika Biznesowa (Fatigue Engine v1 - Date Aware)
+    if proposals_in_window == 0:
         score = 0.0
         status = "LOW"
     else:
-        # Prosty algorytm: 1 propozycja dziennie to już dużo. 
-        # 30 propozycji w 30 dni = 100% fatigue (teoretycznie).
-        # Skalujemy to do 0-100.
-        raw_score = (total_proposals_30d / 30.0) * 100 
-        score = min(raw_score, 100.0) # Cap at 100
+        # Algorytm: Jeśli w ciągu 30 dni jest więcej niż 30 głosowań (1 dziennie), to jest tłok.
+        # Skalowanie: 15 głosowań/mc = 50 pkt (Moderate). 30 głosowań/mc = 100 pkt (Critical).
+        raw_score = (proposals_in_window / 30.0) * 100 
+        score = min(raw_score, 100.0)
 
         if score < 30: status = "LOW"
         elif score < 70: status = "MODERATE"
         else: status = "CRITICAL"
 
-    # 3. Konstrukcja odpowiedzi zgodnej z Twoim modelem
     return FatigueResponse(
         address=address,
         fatigue_score=round(score, 1),
         status=status,
         breakdown=FatigueBreakdown(
-            volume_impact=round(score/100, 2), # Korelacja z liczbą głosowań
-            time_scarcity=0.5,                 # Stała dla MVP
-            dropout_risk=0.2                   # Stała dla MVP
+            volume_impact=round(score/100, 2),
+            time_scarcity=0.5,
+            dropout_risk=0.2
         ),
         metrics=FatigueMetrics(
-            votes_last_30d=total_proposals_30d, # TO JEST PRAWDZIWA LICZBA Z BAZY!
+            votes_last_30d=proposals_in_window,  # Prawdziwa liczba z 30 dni
             avg_time_gap_hours=24.0,
-            participation_rate=0.0              # Brak danych o userze w MVP
+            participation_rate=0.0
         ),
         last_updated=datetime.now(timezone.utc)
     )
 
-# Endpoint pomocniczy do Demo (surowe dane)
 @app.get("/debug/proposals", tags=["Debug"])
 def get_raw_proposals(limit: int = 5, db: Session = Depends(get_db)):
-    """
-    Pomocniczy endpoint do pokazania na Callu, że mamy prawdziwe tytuły w bazie.
-    """
+    # Sortujemy od najnowszych dat startu
     return db.query(Proposal).order_by(Proposal.start.desc()).limit(limit).all()
