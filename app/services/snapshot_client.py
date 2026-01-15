@@ -5,21 +5,21 @@ import sys
 from typing import List, Dict, Any
 from datetime import datetime, timedelta, timezone
 
-# Dodajemy ścieżkę projektu do sys.path
+# Add project root to sys.path
 sys.path.append(os.getcwd())
 
 from app.db.session import SessionLocal, engine, Base
 from app.db.models import Proposal
 from sqlalchemy import func
 
-# Upewnij się, że tabele istnieją
+# Ensure tables exist
 Base.metadata.create_all(bind=engine)
 
 SNAPSHOT_GRAPHQL_URL = "https://hub.snapshot.org/graphql"
 ARBITRUM_SPACE = "arbitrumfoundation.eth" 
 
 class SnapshotClient:
-    """Klient do pobierania danych z Snapshot.org"""
+    """Client for fetching data from Snapshot.org GraphQL API"""
     def __init__(self):
         self.url = SNAPSHOT_GRAPHQL_URL
         self.headers = {
@@ -27,10 +27,10 @@ class SnapshotClient:
             "Content-Type": "application/json"
         }
 
-    async def fetch_proposals(self, limit: int = 200) -> List[Dict[str, Any]]: # Zwiększono limit do 200
+    async def fetch_proposals(self, limit: int = 1500) -> List[Dict[str, Any]]:
         """
-        Pobiera propozycje z API Snapshot.
-        Zwiększono domyślny limit do 200, aby pobrać dłuższą historię (ominięcie okresu świątecznego).
+        Fetches proposals from Snapshot API.
+        Limit set to 1500 to capture ~3 years of history for long-term analysis.
         """
         query = """
         query Proposals($space: String!, $limit: Int!) {
@@ -65,7 +65,7 @@ class SnapshotClient:
                     self.url,
                     json={"query": query, "variables": variables},
                     headers=self.headers,
-                    timeout=30.0
+                    timeout=60.0 # Increased timeout for large dataset
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -75,6 +75,7 @@ class SnapshotClient:
                 return []
 
     def save_to_db(self, proposals_data: List[Dict[str, Any]]):
+        """Persists proposals to the local database (Upsert logic)"""
         session = SessionLocal()
         new_count = 0
         updated_count = 0
@@ -104,7 +105,7 @@ class SnapshotClient:
                     new_count += 1
             
             session.commit()
-            print(f"💾 Baza zaktualizowana: +{new_count} nowych, ^{updated_count} odświeżonych.")
+            print(f"💾 Database Updated: +{new_count} new, ^{updated_count} updated.")
         except Exception as e:
             print(f"❌ Database Error: {e}")
             session.rollback()
@@ -112,65 +113,62 @@ class SnapshotClient:
             session.close()
 
 class FatigueEngine:
-    """Silnik obliczający zmęczenie delegatów (Fatigue Index)"""
+    """Core logic for calculating Delegate Fatigue Index"""
     
     def __init__(self, db_session):
         self.db = db_session
 
     def calculate_global_fatigue(self, days_back: int = 30) -> float:
-        """
-        Oblicza ogólny poziom zmęczenia ekosystemu.
-        Wzór v1: Liczba propozycji w ostatnich X dniach / X.
-        Wynik > 1.0 oznacza "Wysokie Zmęczenie" (więcej niż 1 głos dziennie).
-        """
-        # Używamy timezone-aware UTC
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
         cutoff_timestamp = int(cutoff_date.timestamp())
 
         count = self.db.query(Proposal).filter(Proposal.start >= cutoff_timestamp).count()
         
-        # Jeśli days_back jest małe (np. 7) a count 0, wynik będzie 0.
+        if days_back == 0: return 0.0
+        
         fatigue_index = count / days_back
         
-        print(f"📊 Analiza ostatnich {days_back} dni: {count} głosowań.")
+        # Optional debug print (can be removed for production)
+        # print(f"📊 Analysis ({days_back}d): {count} proposals.")
         return round(fatigue_index, 2)
 
     def get_fatigue_status(self, score: float) -> str:
-        if score > 0.5: return "🔴 CRITICAL (Burnout Risk)"
-        if score > 0.2: return "🟡 HIGH (Busy)"
-        return "🟢 LOW (Healthy)"
+        # Threshold: > 0.5 proposals/day is considered high load
+        if score > 0.5: return "🔴 CRITICAL"
+        if score > 0.2: return "🟡 MODERATE"
+        return "🟢 LOW"
 
 
 if __name__ == "__main__":
     async def main():
-        print(f"🔄 [KROK 1] Ingestor: Pobieranie danych ({ARBITRUM_SPACE})...")
+        print(f"🔄 [STEP 1] Ingestor: Fetching historical data ({ARBITRUM_SPACE})...")
         client = SnapshotClient()
-        # Zwiększamy limit pobierania przy uruchomieniu testowym
-        proposals = await client.fetch_proposals(limit=200) 
+        proposals = await client.fetch_proposals(limit=1500) 
         if proposals:
             client.save_to_db(proposals)
         
-        print(f"\n🧠 [KROK 2] Fatigue Engine: Analiza danych...")
+        print(f"\n🧠 [STEP 2] Fatigue Engine: Multi-dimensional Analysis...")
         db = SessionLocal()
         engine_logic = FatigueEngine(db)
         
-        # Analizujemy też dłuższy okres (90 dni), żeby złapać aktywność przedświąteczną
-        score_7d = engine_logic.calculate_global_fatigue(days_back=7)
-        status_7d = engine_logic.get_fatigue_status(score_7d)
+        # Time-window analysis
+        windows = [7, 30, 90, 360, 1095]
+        results = {}
         
-        score_30d = engine_logic.calculate_global_fatigue(days_back=30)
-        status_30d = engine_logic.get_fatigue_status(score_30d)
+        for w in windows:
+            score = engine_logic.calculate_global_fatigue(days_back=w)
+            status = engine_logic.get_fatigue_status(score)
+            results[w] = (score, status)
 
-        score_90d = engine_logic.calculate_global_fatigue(days_back=90)
-        status_90d = engine_logic.get_fatigue_status(score_90d)
-
-        print("-" * 40)
-        print(f"📉 FATIGUE INDEX REPORT (Arbitrum DAO)")
-        print("-" * 40)
-        print(f"📅 Ostatnie 7 dni:  Index {score_7d} | {status_7d}")
-        print(f"📅 Ostatnie 30 dni: Index {score_30d} | {status_30d}")
-        print(f"📅 Ostatnie 90 dni: Index {score_90d} | {status_90d}")
-        print("-" * 40)
+        print("-" * 65)
+        print(f"📉 FATIGUE INDEX REPORT (Arbitrum DAO - Historical Context)")
+        print("-" * 65)
+        print(f"📅 7 days    (Current):   Index {results[7][0]}  | {results[7][1]}")
+        print(f"📅 30 days   (Month):     Index {results[30][0]}  | {results[30][1]}")
+        print(f"📅 90 days   (Quarter):   Index {results[90][0]} | {results[90][1]}")
+        print(f"📅 360 days  (Year):      Index {results[360][0]} | {results[360][1]}")
+        print(f"📅 1095 days (3 Years):   Index {results[1095][0]} | {results[1095][1]}")
+        print("-" * 65)
         
         db.close()
 
