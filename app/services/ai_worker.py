@@ -3,9 +3,11 @@ import os
 import json
 # import openai  # Requires: pip install openai
 
-# This is a DRAFT implementation for Milestone 2.
-# It demonstrates the logic for processing proposal text using an LLM 
-# with the specific "Dense Writing" prompt engineering strategy.
+# CORE LOGIC BLUEPRINT (PROTOTYPE)
+# TODO [Grant Milestone]:
+# 1. Integrate langchain/openai for production execution.
+# 2. Implement token-limit handling for large proposals.
+# 3. Add 'Guardrails' to validate JSON output integrity.
 
 class AIClassificationEngine:
     def __init__(self):
