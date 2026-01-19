@@ -1,42 +1,41 @@
-# System Architecture & Data Flow (v5.2)
+# System Architecture & Data Flow
 
 ## 1. High-Level Overview
 
-**Participation Architecture** is a containerized microservice designed to measure "Delegate Fatigue" in Arbitrum DAO. It evolved from ad-hoc research scripts into a robust Developer Tooling API, allowing other platforms (dashboards, wallets) to consume behavioral metrics securely.
+**Participation Architecture** is a containerized microservice that provides **governance data normalization + deterministic triage rules** as a REST API. It enables governance tool builders to consume standardized proposal feeds with transparent priority scoring - without building custom infrastructure.
 
-**Current Status (v0.5.2):** Live Data Integration. The system successfully ingests Arbitrum DAO proposals from Snapshot and serves calculated fatigue metrics via REST API.
+**Current Status:** Engineering Beta. The system successfully ingests Arbitrum DAO proposals from Snapshot and provides API endpoints for normalized data access.
 
 ### Design Philosophy
 
+- **Developer-First:** Stable schemas, versioned rulebook, comprehensive docs
+- **Transparent Logic:** No black boxes - every score includes rule IDs that fired
 - **Infrastructure-as-Code:** Fully containerized (Docker) for reproducible deployment
-- **Hard Specs:** Strictly typed data contracts (Pydantic/OpenAPI)
-- **Scalable:** Async/Await architecture ready for high-throughput governance data
-- **Hybrid Storage:** PostgreSQL for production, SQLite for lightweight local dev
+- **Modular:** Swap ingestion sources, extend rulebook without breaking API contracts
 
 ---
 
-## 2. Architecture Diagram (Component View)
-
-The system operates as an orchestrated set of containers with an ingestion worker.
+## 2. Architecture Diagram
 
 ```mermaid
 graph TD
-    User[Client / Frontend] -->|HTTP GET /fatigue| API[FastAPI Container]
+    Client[Governance Tool] -->|HTTP GET| API[FastAPI + Rule Engine]
     
     subgraph "Participation Architecture (Docker Network)"
         API -->|Read| DB[(PostgreSQL / SQLite)]
+        API -->|Apply Rules| Rulebook[rulebook.yaml]
         Ingestor[Snapshot Client] -->|Write| DB
         Ingestor -->|GraphQL Query| Snapshot[Snapshot GraphQL API]
     end
     
-    DB -->|Persist| Storage[Docker Volume/Local File]
+    DB -->|Persist| Storage[Docker Volume]
 ```
 
 **Data Flow:**
 1. **Ingestion:** `snapshot_client.py` pulls governance data from Snapshot GraphQL API
-2. **Storage:** Proposals stored in PostgreSQL/SQLite with computed metrics
-3. **Query:** FastAPI reads from database and calculates fatigue scores
-4. **Response:** JSON payloads returned to clients via REST endpoints
+2. **Normalization:** Store in consistent schema (proposals table)
+3. **Rule Application:** FastAPI reads DB + applies rulebook logic
+4. **Response:** JSON with `priority_score`, `labels`, `reasons`, `recommended_handling`
 
 ---
 
@@ -44,150 +43,191 @@ graph TD
 
 ### A. API Layer (`app/main.py`)
 
-**Role:** The brain of the operation
+**Technology:** FastAPI (Python 3.11+)
 
-- **Technology:** FastAPI (Python 3.12+)
-- **Function:** Exposes REST endpoints for querying delegate metrics
-- **Key Endpoints:**
-  - `/health`: System status & data count (Proof of Life)
-  - `/v1/delegates/{address}/fatigue`: Real-time fatigue scoring based on DB data
-  - `/debug/proposals`: Raw data inspection
-- **Documentation:** Automatically generates Swagger UI at `/docs`
+**Key Endpoints (Grant Deliverables):**
+- `/proposals/feed` - Normalized proposals with triage scores
+- `/proposals/{id}` - Single proposal with full rule audit trail
+- `/delegates/{address}/fatigue` - Delegate Fatigue Index
+- `/health` - System status
 
 **Features:**
-- Async request handling for high concurrency
-- Pydantic validation for type-safe requests/responses
-- Auto-generated OpenAPI schema
-- CORS support for web integrations
+- Auto-generated OpenAPI/Swagger docs at `/docs`
+- Async request handling
+- Pydantic validation for type safety
+- CORS support
 
 ---
 
-### B. Data Layer (`app/db/` & `app/services/`)
+### B. Data Layer (`app/db/`)
 
-**Role:** The memory & ingestion
+**Technology:** PostgreSQL / SQLite + SQLAlchemy 2.0
 
-- **Technology:** PostgreSQL 15 / SQLite + SQLAlchemy 2.0
-- **Ingestion:** `snapshot_client.py` connects to Snapshot GraphQL API (`arbitrumfoundation.eth`) to fetch historical voting data
-- **Schema:**
-  - `proposals`: Full proposal metadata + computed metrics (`fatigue_score`, `is_signal`)
-  - Future: `delegates`, `votes` tables for granular analysis
-- **Migration:** Managed by Alembic (planned for Milestone 1.2)
-
-**Data Model (Current):**
+**Schema (Current):**
 
 ```python
-# Proposals Table
 class Proposal(Base):
     id: str              # Snapshot proposal ID
     title: str           # Proposal title
     created: int         # Unix timestamp
-    start: int           # Voting start time
-    end: int             # Voting end time
-    snapshot: str        # Block number
+    start: int           # Voting start
+    end: int             # Voting end
     state: str           # active/closed/pending
     author: str          # Creator address
-    space_id: str        # DAO space (arbitrumfoundation.eth)
+    space_id: str        # DAO space
     choices: list        # Voting options
-    scores_total: float  # Total voting power
-    votes: int           # Number of votes cast
+    votes: int           # Number of votes
+    # Computed fields (populated by rule engine)
+    priority_score: int  # 0-100
+    labels: list         # [treasury, elections, etc.]
 ```
 
-**Ingestion Logic:**
-
+**Ingestion:**
 ```bash
-# Run data ingestion
 python app/services/snapshot_client.py
-
-# Output
-💾 Database updated: +200 new proposals
-✅ Successfully ingested Arbitrum DAO governance data
+# Output: 💾 Database updated: +200 new proposals
 ```
 
 ---
 
-### C. Intelligence Engine (`app/schemas/fatigue.py`)
+### C. Rule Engine (`app/services/rule_engine.py` - Planned M1)
 
-**Role:** The logic
+**Rulebook Format (`rulebook.yaml`):**
 
-**Current Implementation (v1 - Ecosystem Load):**
+```yaml
+version: "1.0"
+rules:
+  - id: rule_treasury_large
+    category: treasury
+    condition: "amount > 100000"
+    priority_boost: 30
+    labels: [treasury, high_value]
+    recommended_handling: deep_review
+    
+  - id: rule_routine_ops
+    category: operations
+    condition: "routine_approval == true"
+    priority_boost: -20
+    labels: [routine_ops]
+    recommended_handling: fast_track
+    
+  - id: rule_elections
+    category: governance
+    condition: "'election' in title.lower()"
+    priority_boost: 25
+    labels: [elections, strategic]
+    recommended_handling: deep_review
+```
 
-| Metric | Weight | Status | Description |
-|--------|--------|--------|-------------|
-| **Proposal Volume** | 40% | ✅ Implemented | Total proposals vs. historical baseline |
-| **Temporal Density** | 30% | ✅ Implemented | Proposals per time window (clustering) |
-| **Ecosystem Complexity** | 30% | ✅ Implemented | Unique voters and participation patterns |
-
-**Planned (v2 - Individual Delegate Analysis - Milestone 2):**
-
-| Metric | Weight | Status | Description |
-|--------|--------|--------|-------------|
-| **Volume Impact** | 30% | 🔵 Planned | Penalizes "spray and pray" voting behavior |
-| **Time Scarcity** | 50% | 🔵 Planned | Detects dangerously short gaps between votes |
-| **Dropout Risk** | 20% | 🔵 Planned | Inverse of participation rate weighted by trends |
-
-**Algorithm Example (Current v1):**
+**Application Logic:**
 
 ```python
-def calculate_ecosystem_fatigue(proposals: List[Proposal]) -> float:
+def apply_rules(proposal: Proposal, rulebook: Rulebook) -> TriageResult:
     """
-    Calculate ecosystem-wide fatigue based on proposal patterns
+    Apply deterministic rules to proposal.
+    Returns: priority_score, labels, reasons, recommended_handling
     """
+    matched_rules = []
+    priority_score = 50  # baseline
+    
+    for rule in rulebook.rules:
+        if evaluate_condition(proposal, rule.condition):
+            matched_rules.append(rule.id)
+            priority_score += rule.priority_boost
+            labels.extend(rule.labels)
+    
+    return TriageResult(
+        priority_score=clamp(priority_score, 0, 100),
+        labels=list(set(labels)),
+        reasons=matched_rules,
+        recommended_handling=determine_handling(priority_score)
+    )
+```
+
+**Transparency:** Every API response includes `reasons` field listing rule IDs that fired.
+
+---
+
+### D. Fatigue Index Module (`app/services/fatigue_calculator.py` - Planned M2)
+
+**Formula (Transparent, No ML):**
+
+```python
+def calculate_fatigue_index(address: str, window_days: int = 30) -> FatigueResult:
+    """
+    Compute delegate fatigue using deterministic proxies.
+    
+    Components:
+    - volume (40%): proposals per time window
+    - concurrency (25%): simultaneous active votes
+    - burstiness (20%): cadence spike detection
+    - reading_time_proxy (10%): word count / baseline speed
+    - novelty_proxy (5%): new domain tags vs routine
+    """
+    proposals = get_proposals_in_window(window_days)
+    
     volume_score = len(proposals) / BASELINE_MONTHLY_PROPOSALS
-    density_score = calculate_temporal_clustering(proposals)
-    complexity_score = len(unique_voters) / len(proposals)
+    concurrency_score = count_simultaneous_votes(address, proposals)
+    burstiness_score = detect_voting_spikes(address, proposals)
+    reading_time = sum(p.word_count for p in proposals) / READING_SPEED
+    novelty_score = count_new_domains(proposals) / len(proposals)
     
     fatigue = (
-        volume_score * 0.4 +
-        density_score * 0.3 +
-        complexity_score * 0.3
+        volume_score * 0.40 +
+        concurrency_score * 0.25 +
+        burstiness_score * 0.20 +
+        (reading_time / SUSTAINABLE_HOURS) * 0.10 +
+        novelty_score * 0.05
     ) * 100
     
-    return min(fatigue, 100)  # Cap at 100
+    return FatigueResult(
+        fatigue_index=min(fatigue, 100),
+        components={
+            "volume_7d": count_proposals(7),
+            "volume_30d": count_proposals(30),
+            "concurrency": concurrency_score,
+            "burstiness_score": burstiness_score,
+            "reading_time_proxy": reading_time
+        }
+    )
 ```
 
 ---
 
 ## 4. Project Structure
 
-The project follows a modern microservice layout.
-
 ```
 participation-architecture/
 ├── app/
-│   ├── core/              # Configuration (Env vars)
-│   │   └── config.py      # Settings management
-│   ├── db/                # Database Models & Session Management
-│   │   ├── models.py      # SQLAlchemy models
-│   │   └── session.py     # Database connection
-│   ├── schemas/           # Pydantic Data Contracts
-│   │   ├── fatigue.py     # Fatigue score responses
-│   │   └── proposals.py   # Proposal schemas
-│   ├── services/          # External Integrations
-│   │   ├── snapshot_client.py  # ✅ GraphQL data ingestion
-│   │   └── fatigue_calculator.py  # Scoring algorithms
-│   ├── api/               # Route Handlers
-│   │   └── v1/            # API version 1 endpoints
-│   └── main.py            # App Entry Point
-├── alembic/               # Database Migrations (Planned M1.2)
-│   └── versions/          # Migration scripts
-├── tests/                 # Unit & Integration Tests (Planned M1)
-├── legacy/                # Original research scripts (v3.1)
-│   ├── collector.py       # Historical artifact
-│   └── analysis.py        # Algorithm prototypes
-├── data/                  # Historical datasets
-│   └── wyniki_arbitrum.csv  # 7,385 delegates baseline
-├── docker-compose.yml     # Orchestration
-├── Dockerfile             # Container definition
-├── requirements.txt       # Python dependencies
-├── architecture.md        # This file
-└── README.md              # User documentation
+│   ├── core/
+│   │   └── config.py           # Settings management
+│   ├── db/
+│   │   ├── models.py           # SQLAlchemy models
+│   │   └── session.py          # DB connection
+│   ├── schemas/
+│   │   ├── proposals.py        # Pydantic models
+│   │   └── fatigue.py          # Fatigue response schemas
+│   ├── services/
+│   │   ├── snapshot_client.py  # ✅ Data ingestion (working)
+│   │   ├── rule_engine.py      # 🟡 Triage rules (M1)
+│   │   └── fatigue_calculator.py # 🟡 Fatigue index (M2)
+│   ├── api/v1/
+│   │   ├── proposals.py        # Proposal endpoints
+│   │   └── delegates.py        # Delegate endpoints
+│   └── main.py                 # FastAPI app
+├── rulebook.yaml               # 🟡 Rule definitions (M1)
+├── rulebook.md                 # 🟡 Rule documentation (M1)
+├── tests/                      # 🟡 Test suite (M1)
+├── alembic/                    # 🟡 Migrations (M1)
+├── docker-compose.yml
+├── Dockerfile
+├── requirements.txt
+└── README.md
 ```
 
-**Key Files:**
-
-- `app/services/snapshot_client.py`: **Production data ingestion** (run this first!)
-- `app/services/fatigue_calculator.py`: Fatigue scoring implementation
-- `app/main.py`: API server entry point with all endpoints
+**Legend:**
+- ✅ Working
+- 🟡 In Development (Grant Scope)
 
 ---
 
@@ -195,176 +235,152 @@ participation-architecture/
 
 | Component | Technology | Rationale |
 |-----------|-----------|-----------|
-| **Core** | Python 3.12 | Performance improvements & Type hinting |
-| **API** | FastAPI | Fastest Python framework, native OpenAPI |
-| **DB** | PostgreSQL / SQLite | Flexibility (Production vs Dev) |
-| **ORM** | SQLAlchemy 2.0 | Type-safe database interactions |
-| **Validation** | Pydantic v2 | Runtime type checking & data validation |
-| **Infra** | Docker Compose | One-command deployment |
-| **GraphQL** | GQL library | Type-safe Snapshot API queries |
-| **HTTP** | HTTPX | Async HTTP client for external APIs |
+| **API** | FastAPI | Native async, auto-generated OpenAPI |
+| **DB** | PostgreSQL/SQLite | Production flexibility |
+| **ORM** | SQLAlchemy 2.0 | Type-safe queries |
+| **Validation** | Pydantic v2 | Runtime type checking |
+| **Migrations** | Alembic | Versioned schema changes |
+| **GraphQL** | GQL library | Type-safe Snapshot queries |
+| **Testing** | Pytest | Standard Python testing |
+| **Containers** | Docker Compose | One-command deployment |
 
-**Dependencies Breakdown:**
+**Dependencies:**
 
 ```txt
-# Core Framework
+# Core
 fastapi==0.109.0
 uvicorn[standard]==0.25.0
 
 # Database
 sqlalchemy==2.0.23
-alembic==1.13.1           # Migrations (Planned M1.2)
+alembic==1.13.1
 
-# Data Validation
+# Validation
 pydantic==2.5.3
 pydantic-settings==2.1.0
 
 # External APIs
-gql[all]==3.5.0           # Snapshot GraphQL
-httpx==0.26.0             # Async HTTP
+gql[all]==3.5.0
+httpx==0.26.0
 
 # Development
-pytest==7.4.3             # Testing (Planned M1)
-black==23.12.1            # Code formatting
-ruff==0.1.9               # Linting
+pytest==7.4.3
+black==23.12.1
+ruff==0.1.9
 ```
 
 ---
 
-## 6. Data Privacy & Ethics
+## 6. API Response Examples
 
-### Data Sources
-- **Public Data Only:** We only process on-chain/Snapshot data. No PII.
-- **Transparent Collection:** All queries to Snapshot are logged and auditable.
-- **No User Tracking:** The API does not track callers (clients) or collect analytics.
+### Get Proposals Feed
+
+**Request:**
+```http
+GET /proposals/feed?limit=10&offset=0
+```
+
+**Response:**
+```json
+{
+  "proposals": [
+    {
+      "id": "0xabc123",
+      "title": "Treasury Allocation Q1 2026",
+      "created": 1704067200,
+      "priority_score": 85,
+      "labels": ["treasury", "high_value", "strategic"],
+      "reasons": ["rule_treasury_large", "rule_strategic"],
+      "recommended_handling": "deep_review",
+      "metadata": {
+        "author": "0x1c6e...",
+        "state": "active",
+        "votes": 234
+      }
+    }
+  ],
+  "total": 234,
+  "page": 1
+}
+```
+
+### Get Delegate Fatigue
+
+**Request:**
+```http
+GET /delegates/0x1c6e.../fatigue
+```
+
+**Response:**
+```json
+{
+  "address": "0x1c6e...",
+  "fatigue_index": 73,
+  "risk_level": "warning",
+  "components": {
+    "volume_7d": 12,
+    "volume_30d": 45,
+    "concurrency": 3,
+    "burstiness_score": 0.82,
+    "reading_time_proxy": 180
+  },
+  "computed_at": "2026-01-19T10:30:00Z"
+}
+```
+
+---
+
+## 7. Performance Targets
+
+| Metric | Target | Implementation |
+|--------|--------|----------------|
+| **API Latency (cached)** | <400ms | Response caching (M2) |
+| **API Latency (uncached)** | <2s | Optimized queries + indexing |
+| **Ingestion Speed** | <30s for 200 proposals | Batch GraphQL queries |
+| **Database Size** | <100MB for 1yr data | ~500 bytes per proposal |
+| **Test Coverage** | >80% | Pytest suite (M1) |
+| **Documentation UX** | 70% complete Quickstart in <30min | Structured tutorials (M2) |
+
+**Database Indexes (Planned M1):**
+
+```sql
+CREATE INDEX idx_proposals_created ON proposals(created);
+CREATE INDEX idx_proposals_space ON proposals(space_id);
+CREATE INDEX idx_proposals_author ON proposals(author);
+```
+
+---
+
+## 8. Security & Data Privacy
+
+### Current Implementation
+
+- ✅ **Input Validation:** Pydantic schemas prevent injection
+- ✅ **CORS Policy:** Configurable origins
+- ✅ **Public Data Only:** On-chain/Snapshot data (no PII)
+- ✅ **Read-Only API:** No write endpoints
+
+### Planned (Post-Grant)
+
+- API key authentication
+- Rate limiting (100 req/hour per key)
+- Request logging
 
 ### Ethical Considerations
-- **Open Source:** Algorithms are transparent and auditable in the GitHub repository.
-- **Academic Use:** All findings will be published with CC-BY license.
-- **Community Consent:** Delegates will be informed before being included in case studies.
-- **No Manipulation:** Fatigue scores are descriptive, not prescriptive (we don't tell delegates how to vote).
 
-### GDPR Compliance
-- **No Personal Data:** Ethereum addresses are pseudonymous identifiers, not personal data under GDPR.
-- **Right to Erasure:** Since data is public and on-chain, deletion requests cannot be honored.
-- **Data Minimization:** We store only proposal metadata necessary for fatigue calculation.
+- **Transparent Algorithms:** All rulebook logic is open-source
+- **No Manipulation:** Scores are descriptive, not prescriptive
+- **Academic Use:** Findings published with CC-BY license
+- **Community Consent:** Delegates informed before case studies
 
 ---
 
-## 7. Performance Targets (Milestone 1)
-
-| Metric | Target | Current Status | Implementation |
-|--------|--------|----------------|----------------|
-| **API Latency** | <200ms | ✅ ~3ms (Tested) | Local DB caching + query optimization |
-| **Uptime** | 99.9% | 🔵 Planned | Docker Restart Policy + monitoring |
-| **Ingestion Speed** | <30s for 200 proposals | ✅ Achieved | Batch GraphQL queries |
-| **Database Size** | <100MB for 1yr data | ✅ On track | ~1KB per proposal average |
-| **Concurrent Users** | 100 req/min | 🔵 M1.5 | Rate limiting + caching layer |
-
-**Optimization Strategies:**
-
-1. **Database Indexing:** (Planned M1.2)
-   ```sql
-   CREATE INDEX idx_proposals_created ON proposals(created);
-   CREATE INDEX idx_proposals_space ON proposals(space_id);
-   ```
-
-2. **Response Caching:** (Planned M2.1)
-   - Redis for frequently accessed delegate scores
-   - TTL: 1 hour for fatigue scores
-   - Invalidation on new proposal ingestion
-
-3. **Batch Processing:** (Current)
-   - Fetch 100 proposals per GraphQL query
-   - Bulk insert to database
-   - Transaction rollback on errors
-
----
-
-## 8. Roadmap Alignment
-
-This architecture implements **Milestone 1** of the Grant Proposal (Developer Tooling).
-
-### Milestone 1: Core Infrastructure (Current)
-
-- [x] **Containerization** (Docker Compose setup)
-- [x] **API Scaffold** (FastAPI with Swagger UI)
-- [x] **Data Ingestion** (Snapshot GraphQL client)
-- [x] **Live Data Integration** (200+ proposals ingested)
-- [x] **Basic Fatigue Algorithm** (v1 - ecosystem load)
-- [ ] **Database Migrations** (Alembic setup - M1.2)
-- [ ] **API Authentication** (Key-based access - M1.5)
-- [ ] **CI/CD Pipeline** (GitHub Actions - M1.4)
-- [ ] **Unit Tests** (>80% coverage - M1.4)
-
-### Milestone 2: Intelligence & Dashboard (Planned)
-
-- [ ] **Enhanced Fatigue Algorithm** (v2 - individual delegate analysis)
-- [ ] **NLP Noise Filtering** (OpenAI GPT-4 integration)
-- [ ] **Response Caching** (Redis layer for <200ms latency)
-- [ ] **Web Dashboard** (Streamlit MVP or React)
-- [ ] **Validation Report** (>85% classification accuracy)
-
-### Milestone 3: Production Release (Planned)
-
-- [ ] **Public Deployment** (Custom domain + SSL)
-- [ ] **Partner Integration** (L2BEAT or Entropy Advisors)
-- [ ] **Monitoring** (UptimeRobot + Sentry error tracking)
-- [ ] **Documentation** (Technical report + video tutorials)
-- [ ] **99.9% Uptime** (Production SLA)
-
----
-
-## 9. Security Considerations
-
-### Current Implementation (v0.5.2)
-
-- ✅ **Input Validation:** Pydantic schemas prevent injection attacks
-- ✅ **CORS Policy:** Configurable allowed origins
-- ⏳ **Rate Limiting:** Planned for M1.5 (100 req/hour per key)
-- ⏳ **API Keys:** Planned for M1.5 (authentication layer)
-
-### Planned Security Features (Milestone 1.5)
-
-```python
-# API Key Authentication
-@app.middleware("http")
-async def validate_api_key(request: Request, call_next):
-    api_key = request.headers.get("X-API-Key")
-    if not is_valid_key(api_key):
-        return JSONResponse(
-            status_code=401,
-            content={"error": "Invalid API key"}
-        )
-    return await call_next(request)
-
-# Rate Limiting
-from slowapi import Limiter
-limiter = Limiter(key_func=get_api_key)
-
-@app.get("/v1/delegates/{address}/fatigue")
-@limiter.limit("100/hour")
-async def get_fatigue(address: str):
-    ...
-```
-
-### Threat Model
-
-| Threat | Mitigation | Priority |
-|--------|------------|----------|
-| **DDoS** | Rate limiting + Cloudflare | High (M1.5) |
-| **SQL Injection** | Parameterized queries (SQLAlchemy) | ✅ Done |
-| **API Key Leakage** | Rotation policy + environment vars | High (M1.5) |
-| **Data Tampering** | Read-only API (no write endpoints) | ✅ Done |
-
----
-
-## 10. Deployment Architecture
+## 9. Deployment
 
 ### Local Development
 
 ```bash
-# 1. Install dependencies
+# 1. Install
 pip install -r requirements.txt
 
 # 2. Ingest data
@@ -373,185 +389,126 @@ python app/services/snapshot_client.py
 # 3. Run server
 uvicorn app.main:app --reload
 
-# 4. Access API
-open http://localhost:8000/docs
+# 4. Test
+curl http://localhost:8000/health
 ```
 
-### Production Deployment (Planned M3.1)
-
-**Infrastructure Stack:**
-
-```mermaid
-graph LR
-    User -->|HTTPS| Cloudflare[Cloudflare CDN]
-    Cloudflare -->|SSL| LB[Load Balancer]
-    LB --> API1[FastAPI Instance 1]
-    LB --> API2[FastAPI Instance 2]
-    API1 --> DB[(PostgreSQL RDS)]
-    API2 --> DB
-    DB --> Backup[Daily Backups]
-    
-    Monitor[UptimeRobot] -.->|Health Check| LB
-    Errors[Sentry] -.->|Error Tracking| API1
-```
-
-**Hosting Options (Evaluation in Progress):**
-
-| Provider | Cost/mo | Pros | Cons |
-|----------|---------|------|------|
-| **Render** | $7 | Easy deploy, free DB | Limited scaling |
-| **Railway** | $5 | Git-based CD | New platform risk |
-| **DigitalOcean** | $12 | Full control | Manual setup |
-
-**Selected:** Railway (pilot) → DigitalOcean (production scale)
-
----
-
-## 11. Monitoring & Observability
-
-### Health Check Endpoint
+### Docker Deployment
 
 ```bash
-curl http://localhost:8000/health
-
-# Response
-{
-  "status": "healthy",
-  "database": "connected",
-  "proposals_count": 234,
-  "last_proposal_date": "2025-01-10T15:30:00Z",
-  "version": "0.5.2"
-}
+docker compose up --build
 ```
 
-### Planned Monitoring (Milestone 3.1)
+### Production (Planned - Post Grant)
 
-1. **Uptime Monitoring:** UptimeRobot (1-minute checks)
-2. **Error Tracking:** Sentry (automatic exception reporting)
-3. **Performance Metrics:** Custom `/metrics` endpoint (Prometheus format)
-4. **Log Aggregation:** Structured JSON logs → Datadog/Loki
-
-**Key Metrics to Track:**
-
-- API response time (p50, p95, p99)
-- Database query duration
-- Ingestion job success rate
-- Active API keys count
-- Cache hit ratio
+- **Hosting:** Railway/DigitalOcean
+- **Monitoring:** Basic health checks
+- **Logs:** Structured JSON output
+- **Backups:** Daily database snapshots
 
 ---
 
-## 12. Testing Strategy (Planned M1.4)
+## 10. Roadmap Alignment
+
+### Milestone 1: Pipeline + Rulebook ($3,500)
+
+- [x] FastAPI scaffold
+- [x] Database schema
+- [x] Snapshot ingestion (working)
+- [ ] Rule engine implementation
+- [ ] Rulebook v1 (YAML + docs)
+- [ ] Test suite (≥20 rule cases)
+- [ ] OpenAPI docs + Quickstart
+
+### Milestone 2: Fatigue Index + Docs ($3,000)
+
+- [ ] Fatigue calculator (deterministic formula)
+- [ ] Performance optimization (caching, indexing)
+- [ ] Full documentation
+- [ ] 2-3 video tutorials
+- [ ] Tagged release (v0.1)
+
+---
+
+## 11. Testing Strategy
 
 ### Test Pyramid
 
 ```
       ┌──────────┐
-      │   E2E    │  (10% - Full workflow tests)
+      │   E2E    │  (10% - API workflows)
       ├──────────┤
-      │Integration│  (30% - API + DB tests)
+      │Integration│  (30% - API + DB)
       ├──────────┤
-      │   Unit   │  (60% - Pure logic tests)
+      │   Unit   │  (60% - Rule logic)
       └──────────┘
 ```
-
-**Coverage Targets:**
-
-- **Unit Tests:** >80% (fatigue calculation, data models)
-- **Integration Tests:** >60% (API endpoints + DB)
-- **E2E Tests:** Critical user journeys (ingestion → query)
 
 **Example Unit Test:**
 
 ```python
-def test_fatigue_calculation():
-    proposals = [
-        Proposal(created=1609459200, votes=100),
-        Proposal(created=1609545600, votes=150),
-    ]
-    score = calculate_ecosystem_fatigue(proposals)
-    assert 0 <= score <= 100
-    assert isinstance(score, float)
+def test_rule_treasury_large():
+    proposal = Proposal(
+        title="Treasury Allocation",
+        metadata={"amount": 150000}
+    )
+    result = apply_rules(proposal, rulebook)
+    assert "rule_treasury_large" in result.reasons
+    assert result.priority_score >= 80
 ```
 
 ---
 
-## 13. Future Enhancements (Post-Grant)
+## 12. Known Limitations
 
-### Phase 1: Multi-Chain Support
-- Expand to Optimism, Base, and other L2s
-- Unified delegate scoring across ecosystems
+### Current (v0.6.0)
 
-### Phase 2: Predictive Analytics
-- Machine learning models for burnout prediction
-- Early warning system (7-day forecast)
-
-### Phase 3: Governance Recommendations
-- AI-powered proposal filtering
-- Personalized digest emails ("Signal only")
-
-### Phase 4: DAO Operating System Integration
-- Native integration with Safe, Tally, Karma
-- Embeddable widgets for governance dashboards
-
----
-
-## 14. Known Limitations & Constraints
-
-### Current (v0.5.2)
-
-- ✅ ~~Mock data~~ → **Real Snapshot data integrated**
-- ⚠️ **Snapshot/Tally only** (on-chain voting planned post-grant)
-- ⚠️ **English-language proposals only** (NLP limitation)
-- ⚠️ **Limited to Ethereum-based DAOs** (Arbitrum One focus)
-- ⚠️ **No authentication** (open API, coming M1.5)
-- ⚠️ **Basic fatigue algorithm** (v1 ecosystem load, v2 planned M2)
+- ⚠️ **Snapshot/Tally only** (on-chain voting not in scope)
+- ⚠️ **English-language proposals** (rulebook conditions are English-based)
+- ⚠️ **Arbitrum focus** (multi-chain support requires connector extensions)
+- ⚠️ **No authentication** (open API during beta)
+- ⚠️ **Manual ingestion** (scheduled background tasks planned post-grant)
 
 ### Design Trade-offs
 
-1. **SQLite vs PostgreSQL:** Flexibility for local dev, but requires migration path
-2. **Synchronous Ingestion:** Simple but slow (async batch processing planned M2)
-3. **No Real-time Updates:** Polling-based (webhooks planned M3)
-4. **Single Tenant:** Multi-DAO support requires architectural changes
+1. **YAML Rulebook vs Code:** Easier for non-developers to customize, but limited expression power
+2. **Deterministic vs ML:** Transparent and testable, but less adaptive
+3. **SQLite Support:** Great for dev, but requires PostgreSQL migration path for production
+4. **No Real-time Updates:** Polling-based ingestion (webhooks planned post-grant)
 
 ---
 
-## 15. Contributing to Architecture
+## 13. Contributing
 
-### Proposal Process
-
+**Architecture Proposals:**
 1. Open GitHub Issue with `[ARCHITECTURE]` tag
-2. Describe problem + proposed solution
-3. Discuss with maintainer
-4. Submit PR with tests + documentation
+2. Describe problem + solution
+3. Submit PR with tests + docs
 
-### Architecture Decision Records (ADRs)
-
-We use lightweight ADRs for major decisions:
+**Architecture Decision Records (ADRs):**
 
 ```markdown
-# ADR-001: Choice of FastAPI over Flask
+# ADR-001: YAML Rulebook Format
 
 **Status:** Accepted  
-**Date:** 2024-12-15  
+**Date:** 2026-01-19  
 
-**Context:** Need high-performance async API framework
+**Context:** Need configurable triage rules without code changes
 
-**Decision:** Use FastAPI for native async support and auto-docs
+**Decision:** Use YAML for rulebook with versioning
 
-**Consequences:** Faster development, better scalability, steeper learning curve
+**Consequences:** Easy customization, limited to simple conditions
 ```
 
 ---
 
-## Contact & Support
+## Contact
 
-**Architecture Questions:** Open a [GitHub Issue](https://github.com/pawel-wyszomirski/participation-architecture/issues)  
-**Security Concerns:** Email security@wyszomirski.online  
-**Integration Support:** DM @pwyszomirski on Twitter/X
+- **Architecture Questions:** [GitHub Issues](https://github.com/pawel-wyszomirski/participation-architecture/issues)
+- **Integration Support:** @pwyszomirski on Twitter/X
 
 ---
 
-**Last Updated:** 12 January 2025  
-**Version:** 0.5.2 (Live Integration)  
-**Status:** 🟢 Production-Ready Core | 🟡 Milestone 1 in Progress
+**Last Updated:** 19 January 2026  
+**Version:** 0.6.0 (Grant Resubmission)  
+**Status:** 🟡 Engineering Beta | Grant Scope Defined
