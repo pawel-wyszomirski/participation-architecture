@@ -196,12 +196,12 @@ class RuleEngine:
         rules = sorted(rules, key=lambda r: r.get("priority", 0), reverse=True)
         
         for rule in rules:
-            if self._evaluate_condition(rule["when"], state.proposal):
+            if self._evaluate_condition(rule["when"], state.proposal, state):
                 state = self._apply_actions(rule, state)
         
         return state
     
-    def _evaluate_condition(self, condition: Dict, proposal: ProposalInput) -> bool:
+    def _evaluate_condition(self, condition: Dict, proposal: ProposalInput, state: 'EvaluationState' = None) -> bool:
         """
         Evaluate a condition against a proposal.
         
@@ -222,10 +222,10 @@ class RuleEngine:
         """
         # Handle composite conditions
         if "any" in condition:
-            return any(self._evaluate_condition(c, proposal) for c in condition["any"])
+            return any(self._evaluate_condition(c, proposal, state) for c in condition["any"])
         
         if "all" in condition:
-            return all(self._evaluate_condition(c, proposal) for c in condition["all"])
+            return all(self._evaluate_condition(c, proposal, state) for c in condition["all"])
         
         # Handle atomic conditions
         if "keyword_group_hits" in condition:
@@ -254,6 +254,12 @@ class RuleEngine:
         
         if "time_remaining" in condition:
             return self._check_time_remaining(condition["time_remaining"], proposal)
+        
+        if "has_label" in condition:
+            return self._check_has_label(condition["has_label"], state)
+        
+        if "not_labeled" in condition:
+            return self._check_not_labeled(condition["not_labeled"], state)
         
         logger.warning(f"Unknown condition type: {list(condition.keys())}")
         return False
@@ -338,6 +344,18 @@ class RuleEngine:
         
         return True
     
+    def _check_has_label(self, label: str, state: 'EvaluationState') -> bool:
+        """Check if a label is already applied"""
+        if state is None:
+            return False
+        return label in state.labels
+    
+    def _check_not_labeled(self, labels: List[str], state: 'EvaluationState') -> bool:
+        """Check that none of the labels are applied"""
+        if state is None:
+            return True
+        return not any(label in state.labels for label in labels)
+    
     def _apply_actions(self, rule: Dict, state: EvaluationState) -> EvaluationState:
         """
         Apply rule actions to state.
@@ -414,12 +432,24 @@ class RuleEngine:
         return state
     
     def _clamp_score(self, score: int, min_p: int, max_p: int) -> int:
-        """Clamp score to valid range with conflict resolution"""
-        # Ensure min <= max (conflict resolution: min wins if conflict)
-        if min_p > max_p:
-            logger.warning(f"Min priority {min_p} > max priority {max_p}, using min")
-            return min_p
+        """
+        Clamp score to valid range with conflict resolution.
         
+        Per rulebook Section 4.2: "If a rule adds points and another caps 
+        the score, the cap wins."
+        
+        This means if min > max (conflict), the cap (max) takes precedence.
+        """
+        # Conflict resolution: cap wins
+        if min_p > max_p:
+            logger.info(
+                f"Conflict: min_priority ({min_p}) > max_priority ({max_p}). "
+                f"Cap wins per rulebook spec. Using max_priority={max_p}."
+            )
+            # Cap wins - ignore the minimum
+            return min(max_p, max(0, score))
+        
+        # Normal case: min <= max
         return max(min_p, min(max_p, score))
     
     def _map_score_to_handling(self, score: int) -> str:

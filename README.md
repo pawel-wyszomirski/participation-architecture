@@ -6,11 +6,15 @@
 
 **A developer-first REST API to normalize governance data and apply transparent priority rules**
 
-![Status](https://img.shields.io/badge/Status-Engineering%20Beta-yellow)
+![Status](https://img.shields.io/badge/Status-Milestone%201%20Complete-green)
 ![Stack](https://img.shields.io/badge/Stack-FastAPI%20%7C%20Docker%20%7C%20PostgreSQL-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
+![Tests](https://img.shields.io/badge/Tests-45%2F45%20Passing-brightgreen)
+![Grant](https://img.shields.io/badge/Supported%20by-Arbitrum%20Grants-blue)
 
-[Quick Start](#-quick-start) • [API Endpoints](#-api-endpoints) • [Roadmap](#-roadmap) • [Budget](#-budget-allocation)
+**🎉 Supported by [Arbitrum Grants Program](https://questbook.app/dashboard/?grantId=67d802bd46da2f90cc3267b0&chainId=10&role=builder&proposalId=69552f08fb7e884efa09de1e&isRenderingProposalBody=true)**
+
+[Quick Start](#-quick-start) • [API Endpoints](#-api-endpoints) • [Tests](#-tests) • [Grant Proposal](#-grant-information)
 
 </div>
 
@@ -30,22 +34,30 @@
 
 ## 🚀 Project Status
 
-**Current Stage:** ✅ **Engineering Beta / Pre-Production**
+**Current Stage:** ✅ **Milestone 1 Complete** | 🟡 **Milestone 2 In Progress**
 
-### What's Working Now
+### ✅ Milestone 1: Complete (Weeks 1-5)
 
 - ✅ **Core Architecture:** FastAPI microservice + PostgreSQL/SQLite database
 - ✅ **Data Ingestion:** Live GraphQL connection to Snapshot.org (Arbitrum DAO)
 - ✅ **Database Schema:** 200+ proposals ingested and queryable
-- ✅ **API Foundation:** Working endpoints with Swagger UI
+- ✅ **Rule Engine:** 21 deterministic rules implemented (`app/services/rule_engine.py`)
+- ✅ **Rulebook v1:** Machine-readable YAML + human-readable documentation
+- ✅ **API Endpoints:** `/proposals/feed`, `/proposals/{id}`, `/health`
+- ✅ **Tests:** 45/45 passing (225% of target, 100% rule coverage)
+- ✅ **OpenAPI/Swagger:** Auto-generated interactive documentation
 
-### In Development (Grant Scope)
+**KPIs Achieved:**
+- ✅ Tests: 45/20 cases (225% of target)
+- ✅ Docker: Reproducible setup (`docker compose up`)
+- ✅ Quickstart: Clone → first API call in ~5 minutes
 
-🟡 Deterministic rule engine + versioned rulebook  
-🟡 Delegate Fatigue Index (transparent math, no ML)  
-🟡 Production-grade error handling & logging  
+### 🟡 Milestone 2: In Development (Weeks 6-10)
+
+🟡 Delegate Fatigue Index (full implementation)  
+🟡 Performance optimization (caching, indexing)  
 🟡 Developer documentation + video tutorials  
-🟡 Performance optimization (caching, indexing)
+🟡 Tagged release (v0.1)
 
 ---
 
@@ -163,43 +175,88 @@ GET /delegates/{address}/fatigue
 
 ---
 
-## 🛣 Roadmap
+## 🧪 Tests
 
-### Milestone 1: Pipeline Hardening + Rulebook v1 + API v1
+**Status:** ✅ **45/45 Tests Passing** (100% rule coverage)
 
-**Budget:** $3,500 | **Timeline:** Weeks 1-5
+### Run Tests
 
-**Deliverables:**
+```bash
+# Install pytest
+pip install pytest pytest-cov
 
-- Ingestion + normalization into documented schema
-- Deterministic rule engine implementation
-- **Rulebook v1** (`rulebook.yaml` + `rulebook.md`) with versioning
-- API endpoints: `/proposals/feed`, `/proposals/{id}`, `/health`
-- OpenAPI/Swagger + Quickstart draft
+# Run all tests
+pytest
 
-**KPIs:**
-- Reproducible Docker setup (`docker compose up`)
-- ≥20 rule cases covered by automated tests
-- Quickstart: clone → first API call in ≤10 minutes
+# Run with coverage
+pytest --cov=app/services --cov-report=html
+```
+
+### Test Coverage
+
+- **Rule Engine:** 45 test cases
+  - All 21 rules tested (positive + negative cases)
+  - Edge cases (empty body, null fields, long titles)
+  - Conflict resolution verified
+  - Determinism confirmed
+  - Score mapping validated
+
+**Test Categories:**
+- Security rules (SEC-*): 4 tests
+- Technical rules (TECH-*): 4 tests  
+- Treasury rules (TRE-*): 5 tests
+- Governance rules (GOV-*): 3 tests
+- Elections rules (ELE-*): 2 tests
+- Operations rules (OPS-*, REP-*, META-*): 6 tests
+- Time modifiers (TIME-*): 5 tests
+- Workload modifiers (LEN-*): 3 tests
+- System + edge cases: 13 tests
+
+**KPI:** ≥20 rule cases → **Achieved: 45 cases (225%)** ✅
+
+See [tests/README.md](tests/README.md) for detailed documentation.
 
 ---
 
-### Milestone 2: Fatigue Index + Docs/Tutorials + Public Release
+## 🛣 Roadmap
 
-**Budget:** $3,000 | **Timeline:** Weeks 6-10
+### ✅ Milestone 1: Pipeline Hardening + Rulebook v1 + API v1 (COMPLETE)
+
+**Budget:** $3,500 | **Timeline:** Weeks 1-5 | **Status:** ✅ **COMPLETE**
 
 **Deliverables:**
 
-- Delegate Fatigue Index: `GET /delegates/{address}/fatigue`
-- Performance improvements (indexing/caching)
-- Full documentation (OpenAPI + guides + examples)
-- **2-3 video tutorials:**
+- ✅ Ingestion + normalization into documented schema
+- ✅ Deterministic rule engine implementation
+- ✅ **Rulebook v1** (`rulebook.yaml` + `rulebook.md`) with versioning
+- ✅ API endpoints: `/proposals/feed`, `/proposals/{id}`, `/health`
+- ✅ OpenAPI/Swagger + Quickstart working
+
+**KPIs Achieved:**
+- ✅ Reproducible Docker setup (`docker compose up`)
+- ✅ 45 rule cases covered by automated tests (target: ≥20) - **225%**
+- ✅ Quickstart: clone → first API call in ~5 minutes (target: ≤10 min) - **200%**
+
+**Test Results:** 45/45 passing, 100% rule coverage
+
+---
+
+### 🟡 Milestone 2: Fatigue Index + Docs/Tutorials + Public Release (IN PROGRESS)
+
+**Budget:** $3,000 | **Timeline:** Weeks 6-10 | **Status:** 🟡 **IN PROGRESS**
+
+**Deliverables:**
+
+- 🟡 Delegate Fatigue Index: `GET /delegates/{address}/fatigue` (full implementation)
+- 🟡 Performance improvements (indexing/caching)
+- 🟡 Full documentation (OpenAPI + guides + examples)
+- 🟡 **2-3 video tutorials:**
   1. Quickstart (run locally + first API call)
   2. Integrate into a bot/notification workflow
   3. Customize the rulebook (add/edit rules + run tests)
-- Tagged release (v0.1) + maintenance notes
+- 🟡 Tagged release (v0.1) + maintenance notes
 
-**KPIs:**
+**Target KPIs:**
 - Fatigue index reproducible (documented formula)
 - ≥70% of test users complete Quickstart in ≤30 minutes
 - p95 response time <400ms for cached queries
@@ -335,6 +392,29 @@ python -m uvicorn app.main:app --reload
 
 ---
 
+## 🎁 Grant Information
+
+**This project is supported by the Arbitrum Grants Program.**
+
+- **Program:** Arbitrum DAO - Saving Our Season (SOS)
+- **Grant Amount:** $6,500 USD
+- **Duration:** 10 weeks (2 milestones)
+- **Full Proposal:** [View on Questbook](https://questbook.app/dashboard/?grantId=67d802bd46da2f90cc3267b0&chainId=10&role=builder&proposalId=69552f08fb7e884efa09de1e&isRenderingProposalBody=true)
+
+### Alignment with Arbitrum SOS
+
+This project directly supports:
+- **KR 7.3:** Research on how to increase participation in DAO voting
+- **KR 7.4:** Increase average voting participation
+- **Objective 6:** DAO operates with efficiency
+- **Objective 3:** Home of builders and innovation
+
+**Problem Being Solved:** Arbitrum DAO governance participation has declined significantly (onchain: 59.83%, offchain: 53.78% as of April 2025). This middleware provides standardized triage infrastructure to reduce delegate fatigue and enable better tooling.
+
+**Public Good Commitment:** This tool will remain open-source forever. No token, no paywall, no data monetization.
+
+---
+
 ## 💤 About the Author
 
 **Paweł Wyszomirski** - PhD Candidate & Solo Developer
@@ -376,13 +456,22 @@ This project is a component of a PhD dissertation on participation architecture 
 
 ## 📈 Recent Updates
 
-**v0.6.0 (January 2026) - Grant Resubmission**
+**v0.6.0 (February 2026) - Milestone 1 Complete ✅**
+- ✅ Rule engine with 21 deterministic rules
+- ✅ Rulebook v1.0.0 (YAML + documentation)
+- ✅ API endpoints: `/proposals/feed`, `/proposals/{id}`, `/health`
+- ✅ Comprehensive test suite (45/45 passing, 100% rule coverage)
+- ✅ OpenAPI/Swagger auto-generated documentation
+- ✅ Docker setup with reproducible environment
+- ✅ All Milestone 1 KPIs exceeded (225% on tests)
+
+**v0.5.2 (January 2026) - Grant Resubmission**
 - Simplified scope: API-only (no dashboard)
 - Focus on deterministic rules (no AI/ML)
 - 2 milestones, 10 weeks, $6,500 budget
 - Clear KPIs and developer-first deliverables
 
-**v0.5.2 (January 2025)**
+**v0.5.1 (January 2025)**
 - Live Snapshot GraphQL integration
 - 200+ Arbitrum DAO proposals ingested
 - Working API endpoints with Swagger UI
