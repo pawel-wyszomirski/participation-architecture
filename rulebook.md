@@ -387,324 +387,60 @@ Matching is **case-insensitive** on `title + body`.
 
 ---
 
-## 9) Machine-readable rulebook (YAML)
+## 9) Flow diagram
 
-```yaml
-version: 2.5.0
-metadata:
-  owner: "Participation Architecture"
-  created_at: "2026-02-04"
-  updated_at: "2026-02-04"
-  notes: "Context-aware with intelligent closed-state handling."
-  description: "Complete deterministic rule engine with false-positive prevention."
+```mermaid
+graph TD
+    %% -- INPUT --
+    Input(Raw Proposal Data) --> S1
 
-keyword_groups:
-  ACTIVE_INCIDENT_CUES: ["active exploit", "under active attack", "funds are being drained", "funds stolen", "emergency pause", "bridge compromised", "critical breach", "post-mortem of incident", "security incident", "active hack"]
-  UPGRADE_CUES: ["arbos upgrade", "arbos version", "contract upgrade", "hard fork", "precompile update", "sequencer upgrade", "implement improvements", "pricing algorithm", "voting system", "governance contracts", "adopt", "new policy", "protocol change", "system upgrade"]
-  PARAMETER_CUES: ["parameter change", "fee adjustment", "gas target", "base fee", "threshold change", "config update", "technical parameter", "quorum threshold", "min l2 base fee"]
-  NEW_PROGRAM_CUES: ["incentive program", "pilot program", "launching a new", "program design", "new initiative", "program establishment", "dip 2.0", "new program", "program creation"]
-  TREASURY_CUES: ["budget request", "funding request", "grant request", "allocation request", "payment request", "compensation", "treasury spend", "top-up", "bonus", "stipend", "salary"]
-  GOV_FRAMEWORK_CUES: ["constitution", "constitutional", "governance framework", "aip", "bylaws", "dao constitution", "governance structure"]
-  ELECTION_CUES: ["election", "nomination", "candidate", "vote for", "reconfirmation", "council seat", "appoint", "voting for"]
-  META_GOV_CUES: ["temperature check", "discussion", "rfc", "community feedback", "meta-governance", "request for comments"]
-  REPORTING_STRICT_CUES: ["monthly report", "quarterly report", "transparency report", "financial report", "progress update", "milestone report", "status update", "research report"]
-  OPS_CUES: ["housekeeping", "administrative", "operational", "renewal", "calendar", "routine", "maintenance"]
-  SPONSORSHIP_CUES: ["sponsor", "sponsorship", "partnership", "event support", "hackathon support", "hackathon", "attackathon", "conference", "event sponsor"]
+    %% -- PHASE 1: CONTEXT & SECURITY --
+    subgraph "Phase 1: Context & Security"
+        S1[Stage 1: Context Firewall] -->|Set Flags: Closed, Election, HR| S2[Stage 2: Critical Assessment]
+        S2 -->|Active Exploit / Upgrade?| Crit["Label: INCIDENT / PROTOCOL<br/><b>Set Min: 80-95 pts</b>"]
+        S2 -->|Standard Flow| S3
+        Crit -.->|High Priority Injection| S3
+    end
 
-score_mapping:
-  urgent_deep_review: {min: 90, max: 100}
-  deep_review: {min: 70, max: 89}
-  standard_review: {min: 40, max: 69}
-  fast_track_ok: {min: 25, max: 39}
-  informational_only: {min: 0, max: 24}
+    %% -- PHASE 2: CLASSIFICATION --
+    subgraph "Phase 2: Taxonomy Classification"
+        S3[Stage 3: Multi-Rule Matching]
+        S3 --> R1("Treasury Rules<br/><b>+5-25 pts | Base: 30-85</b>")
+        S3 --> R2("Strategy & Gov Rules<br/><b>+5 pts | Base: 70-75</b>")
+        S3 --> R3("Ops & Reporting Rules<br/><b>Max Cap: 35-50 pts</b>")
+    end
 
-treasury_tiers_usd:
-  - {min_usd: 10000000, add_priority: 25, set_min_priority: 85, label: "TREASURY_TIER_1"}
-  - {min_usd: 1000000, add_priority: 20, set_min_priority: 75, label: "TREASURY_TIER_2"}
-  - {min_usd: 100000, add_priority: 15, set_min_priority: 60, label: "TREASURY_TIER_3"}
-  - {min_usd: 10000, add_priority: 10, set_min_priority: 45, label: "TREASURY_TIER_4"}
-  - {min_usd: 1000, add_priority: 5, set_min_priority: 30, label: "TREASURY_TIER_5"}
+    %% -- PHASE 3: MODIFIERS --
+    subgraph "Phase 3: Quantitative Modifiers"
+        R1 & R2 & R3 --> S4["Stage 4: Time & Workload Calc<br/><b>Add: +2 to +27 pts</b>"]
+    end
 
-time_sensitivity_tiers:
-  - {max_hours_remaining: 24, add_priority: 15}
-  - {max_hours_remaining: 48, add_priority: 10}
-  - {max_hours_remaining: 72, add_priority: 5}
+    %% -- PHASE 4: STATE RECONCILIATION --
+    subgraph "Phase 4: State Reconciliation"
+        S4 --> G1{State == CLOSED?}
+        
+        %% Active Items Path
+        G1 -- No --> S6
+        
+        %% Closed Items Path (Exceptions Logic)
+        G1 -- Yes --> G2{Is High Value / Constitutional?}
+        G2 -- Yes --> S5A["Override: Historical Preserve<br/><b>Range: 60-85 pts</b>"]
+        G2 -- No --> S5B["Override: Kill Switch<br/><b>Max Cap: 50 pts</b>"]
+        
+        S5A --> S6
+        S5B --> S6
+    end
 
-workload_tiers:
-  - {min_word_count: 5000, add_priority: 12, label: "VERY_LONG_FORM"}
-  - {min_word_count: 3000, add_priority: 8, label: "LONG_FORM"}
-  - {min_word_count: 1500, add_priority: 5, label: "MEDIUM_FORM"}
-  - {min_word_count: 800, add_priority: 2, label: "STANDARD_FORM"}
+    %% -- OUTPUT --
+    S6["Stage 6: Final Scoring & Mapping<br/><b>Final Score: 0-100</b>"] --> Output(Classified Metadata)
 
-conflict_resolution:
-  max_priority: "min"
-  min_priority: "max"
-  labels: "additive"
-  flags: "additive"
+    %% Styling
+    classDef termination fill:#f96,stroke:#333,stroke-width:2px;
+    classDef logic fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef decision fill:#fff9c4,stroke:#fbc02d,stroke-width:2px;
+    
+    class Input,Output termination;
+    class S1,S2,S3,S4,S5A,S5B,S6,Crit,R1,R2,R3 logic;
+    class G1,G2 decision;
 
-rules:
-  # Phase 0: Context Firewall
-  - id: "CTX-001"
-    name: "Detect Closed State"
-    category: "CONTEXT"
-    priority: 10000
-    when: {field_in: {field: "state", values: ["closed", "executed", "defeated", "expired"]}}
-    then: {set_flag: "STATE_CLOSED"}
-
-  - id: "CTX-002"
-    name: "Detect Election Context"
-    category: "CONTEXT"
-    priority: 9999
-    when:
-      any:
-        - title_contains: {keywords: ["election", "nomination", "reconfirmation", "candidate", "appoint"], min_hits: 1}
-        - field_equals: {field: "proposal_kind", value: "election"}
-    then: {set_flag: "CONTEXT_ELECTION", add_labels: ["ELECTIONS"]}
-
-  - id: "CTX-003"
-    name: "Detect Operational/HR Context"
-    category: "CONTEXT"
-    priority: 9998
-    when: {title_contains: {keywords: ["compensation", "salary", "bonus", "stipend", "pay", "remuneration"], min_hits: 1}}
-    then: {set_flag: "CONTEXT_HR", add_labels: ["OPERATIONS", "BUDGET"]}
-
-  - id: "CTX-004"
-    name: "Detect Sponsorship Context"
-    category: "CONTEXT"
-    priority: 9997
-    when: {title_contains: {keywords: ["sponsorship", "sponsor", "hackathon", "attackathon", "event"], min_hits: 1}}
-    then: {set_flag: "CONTEXT_SPONSORSHIP"}
-
-  # Phase 1: Critical
-  - id: "SEC-001-STRICT"
-    name: "Active Security Incident"
-    category: "SECURITY"
-    priority: 1000
-    when:
-      all:
-        - not_flag: "CONTEXT_ELECTION"
-        - not_flag: "STATE_CLOSED"
-        - not_flag: "CONTEXT_SPONSORSHIP"
-        - keyword_group_hits: {group: "ACTIVE_INCIDENT_CUES", gte: 1}
-    then: {add_labels: ["INCIDENT", "EMERGENCY"], set_min_priority: 95, set_recommended_handling: "urgent_deep_review"}
-
-  - id: "TECH-001-STRICT"
-    name: "Protocol Upgrade"
-    category: "TECHNICAL"
-    priority: 900
-    when:
-      all:
-        - not_flag: "CONTEXT_HR"
-        - not_flag: "CONTEXT_ELECTION"
-        - not_flag: "CONTEXT_SPONSORSHIP"
-        - keyword_group_hits: {group: "UPGRADE_CUES", gte: 1}
-    then: {add_labels: ["PROTOCOL_UPGRADE"], set_min_priority: 80}
-
-  # Phase 2: Standard Classification
-  - id: "PROG-001"
-    name: "New Program Creation"
-    category: "STRATEGY"
-    priority: 860
-    when:
-      all:
-        - not_flag: "CONTEXT_HR"
-        - any:
-            - title_contains: {keywords: ["program", "incentive", "dip"], min_hits: 1}
-            - keyword_group_hits: {group: "NEW_PROGRAM_CUES", gte: 1}
-    then: {add_labels: ["NEW_PROGRAM", "STRATEGY"], set_min_priority: 70, add_priority: 5}
-
-  - id: "TECH-002"
-    name: "Parameter Change"
-    category: "TECHNICAL"
-    priority: 850
-    when:
-      all:
-        - not_labeled: ["PROTOCOL_UPGRADE"]
-        - not_labeled: ["NEW_PROGRAM"]
-        - keyword_group_hits: {group: "PARAMETER_CUES", gte: 1}
-    then: {add_labels: ["PARAMETER_CHANGE"], set_min_priority: 70, add_priority: 5}
-
-  - id: "TRE-010"
-    name: "Treasury Spend"
-    category: "TREASURY"
-    priority: 800
-    when: {field_exists: {field: "requested_amount_usd"}}
-    then: {add_labels: ["TREASURY"], apply_treasury_tiers_usd: true}
-
-  - id: "TRE-021"
-    name: "Treasury Cues"
-    category: "TREASURY"
-    priority: 780
-    when:
-      all:
-        - not_labeled: ["TREASURY"]
-        - keyword_group_hits: {group: "TREASURY_CUES", gte: 2}
-    then: {add_labels: ["TREASURY", "BUDGET_UNCLEAR"], set_min_priority: 45, add_priority: 3}
-
-  - id: "GOV-030"
-    name: "Constitutional Change"
-    category: "GOVERNANCE"
-    priority: 700
-    when:
-      any:
-        - title_contains: {keywords: ["constitutional", "constitution"], min_hits: 1}
-        - keyword_group_hits: {group: "GOV_FRAMEWORK_CUES", gte: 2}
-    then: {add_labels: ["GOVERNANCE_FRAMEWORK"], set_min_priority: 75, add_priority: 5}
-
-  - id: "META-001"
-    name: "Meta Governance"
-    category: "META_GOV"
-    priority: 600
-    when: {keyword_group_hits: {group: "META_GOV_CUES", gte: 1}}
-    then: {add_labels: ["META_GOV"], set_max_priority: 50}
-
-  - id: "SPON-001"
-    name: "Sponsorship"
-    category: "SPONSORSHIP"
-    priority: 500
-    when:
-      any:
-        - flag_set: "CONTEXT_SPONSORSHIP"
-        - keyword_group_hits: {group: "SPONSORSHIP_CUES", gte: 1}
-    then: {add_labels: ["SPONSORSHIP"], set_max_priority: 60}
-
-  - id: "OPS-050"
-    name: "Operational"
-    category: "OPERATIONS"
-    priority: 400
-    when:
-      all:
-        - not_flag: "CONTEXT_HR"
-        - keyword_group_hits: {group: "OPS_CUES", gte: 2}
-    then: {add_labels: ["OPERATIONS"], set_max_priority: 45}
-
-  - id: "REP-001-STRICT"
-    name: "Reporting"
-    category: "REPORTING"
-    priority: 300
-    when:
-      all:
-        - title_contains: {keywords: ["report", "update", "summary"], min_hits: 1}
-        - keyword_group_hits: {group: "REPORTING_STRICT_CUES", gte: 1}
-        - not_flag: "CONTEXT_ELECTION"
-    then: {add_labels: ["REPORTING"], set_max_priority: 35}
-
-  - id: "RES-001"
-    name: "Research"
-    category: "RESEARCH"
-    priority: 350
-    when:
-      all:
-        - title_contains: {keywords: ["research", "study", "analysis"], min_hits: 1}
-        - not_labeled: ["GOVERNANCE_FRAMEWORK"]
-        - not_labeled: ["PROTOCOL_UPGRADE"]
-    then: {add_labels: ["RESEARCH"], set_min_priority: 25, set_max_priority: 40}
-
-  # Phase 3: Modifiers
-  - id: "TIME-MODIFIERS"
-    name: "Time Sensitivity"
-    category: "TIME_MODIFIER"
-    priority: 200
-    when: {not_flag: "STATE_CLOSED"}
-    then: {apply_time_sensitivity_tiers: true}
-
-  - id: "WORKLOAD-MODIFIERS"
-    name: "Content Length"
-    category: "WORKLOAD_MODIFIER"
-    priority: 150
-    when: {always: true}
-    then: {apply_workload_tiers: true}
-
-  # Phase 4: State-Based Kill Switch & Exceptions
-  - id: "OVERRIDE-CLOSED-CRITICAL"
-    name: "Critical Closed Items"
-    category: "OVERRIDE"
-    priority: 110
-    when:
-      all:
-        - flag_set: "STATE_CLOSED"
-        - any:
-            - has_label: "TREASURY_TIER_1"
-            - has_label: "TREASURY_TIER_2"
-        - any:
-            - has_label: "PROTOCOL_UPGRADE"
-            - has_label: "GOVERNANCE_FRAMEWORK"
-    then: {set_max_priority: 85, set_min_priority: 75, set_recommended_handling: "deep_review"}
-
-  - id: "OVERRIDE-CLOSED-HIGH-VALUE"
-    name: "High Value Closed"
-    category: "OVERRIDE"
-    priority: 105
-    when:
-      all:
-        - flag_set: "STATE_CLOSED"
-        - any:
-            - has_label: "TREASURY_TIER_1"
-            - has_label: "TREASURY_TIER_2"
-    then: {set_max_priority: 75, set_recommended_handling: "deep_review"}
-
-  - id: "OVERRIDE-CLOSED-CONSTITUTIONAL"
-    name: "Constitutional Protocol Closed"
-    category: "OVERRIDE"
-    priority: 104
-    when:
-      all:
-        - flag_set: "STATE_CLOSED"
-        - has_label: "GOVERNANCE_FRAMEWORK"
-        - any:
-            - has_label: "PROTOCOL_UPGRADE"
-            - has_label: "PARAMETER_CHANGE"
-            - has_label: "NEW_PROGRAM"
-    then: {set_max_priority: 80, set_min_priority: 70, set_recommended_handling: "deep_review"}
-
-  - id: "OVERRIDE-CLOSED-PROTOCOL"
-    name: "Protocol Closed"
-    category: "OVERRIDE"
-    priority: 103
-    when:
-      all:
-        - flag_set: "STATE_CLOSED"
-        - has_label: "PROTOCOL_UPGRADE"
-    then: {set_max_priority: 75, set_min_priority: 65, set_recommended_handling: "deep_review"}
-
-  - id: "OVERRIDE-CLOSED-NEW-PROGRAM"
-    name: "New Program Closed"
-    category: "OVERRIDE"
-    priority: 102
-    when:
-      all:
-        - flag_set: "STATE_CLOSED"
-        - has_label: "NEW_PROGRAM"
-    then: {set_max_priority: 70, set_min_priority: 60, set_recommended_handling: "standard_review"}
-
-  - id: "OVERRIDE-CLOSED-01"
-    name: "General Closed"
-    category: "OVERRIDE"
-    priority: 100
-    when:
-      all:
-        - flag_set: "STATE_CLOSED"
-        - not_labeled: ["TREASURY_TIER_1"]
-        - not_labeled: ["TREASURY_TIER_2"]
-        - not_labeled: ["PROTOCOL_UPGRADE"]
-        - not_labeled: ["GOVERNANCE_FRAMEWORK"]
-        - not_labeled: ["NEW_PROGRAM"]
-    then: {set_max_priority: 50, set_recommended_handling: "standard_review"}
-
-  - id: "OVERRIDE-CLOSED-02"
-    name: "Closed Elections"
-    category: "OVERRIDE"
-    priority: 99
-    when:
-      all:
-        - flag_set: "STATE_CLOSED"
-        - has_label: "ELECTIONS"
-    then: {set_max_priority: 30, set_min_priority: 20, set_recommended_handling: "informational_only"}
-
-  # Phase 5: Default
-  - id: "DEFAULT-001"
-    name: "Unclassified"
-    category: "DEFAULT"
-    priority: 1
-    when: {label_count: {lt: 2}}
-    then: {add_labels: ["UNCATEGORIZED"], set_min_priority: 30, set_max_priority: 50, set_recommended_handling: "standard_review"}
+```
