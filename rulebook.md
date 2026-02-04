@@ -434,13 +434,4 @@ graph TD
     %% -- OUTPUT --
     S6["Stage 6: Final Scoring & Mapping<br/><b>Final Score: 0-100</b>"] --> Output(Classified Metadata)
 
-    %% Styling
-    classDef termination fill:#f96,stroke:#333,stroke-width:2px;
-    classDef logic fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
-    classDef decision fill:#fff9c4,stroke:#fbc02d,stroke-width:2px;
-    
-    class Input,Output termination;
-    class S1,S2,S3,S4,S5A,S5B,S6,Crit,R1,R2,R3 logic;
-    class G1,G2 decision;
-
 ```
