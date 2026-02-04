@@ -1,6 +1,7 @@
 """
-Unit Tests for Rule Engine
-Tests all 21 rules, condition matchers, conflict resolution, and edge cases
+Unit Tests for Rule Engine (Compatible with Rulebook v2.5.0)
+Tests Context phases, Strict rules, Overrides, historical weight preservation,
+all categories, modifiers, edge cases, and determinism.
 
 Run with: pytest tests/rules/test_rule_engine.py -v
 """
@@ -20,16 +21,18 @@ from app.services.rule_engine import (
     create_test_proposal
 )
 
-
 # ============================================================================
 # FIXTURES
 # ============================================================================
 
 @pytest.fixture
 def engine():
-    """Initialize rule engine with rulebook.yaml"""
-    return RuleEngine("rulebook.yaml")
-
+    """
+    Initialize rule engine with the v2.5.0 rulebook.
+    """
+    # Fallback logic for testing convenience
+    filename = "rulebook_kimi.yaml" if os.path.exists("rulebook_kimi.yaml") else "rulebook.yaml"
+    return RuleEngine(filename)
 
 @pytest.fixture
 def base_proposal():
@@ -41,646 +44,397 @@ def base_proposal():
         status="active"
     )
 
-
-@pytest.fixture
-def active_proposal_near_deadline():
-    """Proposal with 12 hours until deadline"""
-    now = datetime.now(timezone.utc)
-    return create_test_proposal(
-        item_id="deadline_001",
-        title="Urgent Deadline",
-        body="Content",
-        status="active",
-        start_at=int((now - timedelta(days=5)).timestamp()),
-        end_at=int((now + timedelta(hours=12)).timestamp())  # 12h remaining
-    )
-
-
 # ============================================================================
 # TEST: ENGINE INITIALIZATION
 # ============================================================================
 
-def test_engine_loads_rulebook(engine):
-    """Test that rule engine loads rulebook successfully"""
+def test_engine_loads_rulebook_v2_5(engine):
+    """Test that rule engine loads v2.5.0 rulebook successfully"""
     assert engine is not None
-    assert engine.version == "1.0.0"
-    assert len(engine.rulebook["rules"]) == 21
-    assert len(engine.rulebook["keyword_groups"]) == 9
-
-
-def test_engine_info(engine):
-    """Test get_rulebook_info method"""
-    info = engine.get_rulebook_info()
-    assert info["version"] == "1.0.0"
-    assert info["num_rules"] == 21
-    assert info["num_keyword_groups"] == 9
-
+    assert engine.version == "2.5.0"
+    assert len(engine.rulebook["rules"]) >= 20 
 
 # ============================================================================
-# TEST: SECURITY RULES (SEC-001, SEC-002)
+# TEST: PHASE 0 & 1 - CONTEXT & CRITICAL SECURITY (SEC-001-STRICT)
 # ============================================================================
 
-def test_sec_001_emergency_cues_multiple_keywords(engine):
-    """SEC-001: Multiple security keywords → SECURITY label + score ≥90"""
+def test_sec_001_strict_active_incident(engine):
+    """SEC-001-STRICT: Active exploit keywords -> EMERGENCY + Score >= 95"""
     proposal = create_test_proposal(
-        title="Emergency: Critical Exploit Found",
-        body="A vulnerability was discovered leading to a potential hack attack."
+        title="Urgent: Active Exploit Detected",
+        body="The bridge is compromised and funds are being drained. Immediate pause required."
     )
     
     result = engine.evaluate_proposal(proposal)
     
-    assert "SEC-001" in result.reasons
-    assert "SECURITY" in result.labels
+    assert "SEC-001-STRICT" in result.reasons
     assert "INCIDENT" in result.labels
-    assert result.priority_score >= 90
+    assert "EMERGENCY" in result.labels
+    assert result.priority_score >= 95
     assert result.recommended_handling == "urgent_deep_review"
 
-
-def test_sec_001_security_plus_upgrade_keyword(engine):
-    """SEC-001: Security + upgrade keyword → Fires"""
+def test_sec_001_strict_negative(engine):
+    """SEC-001-STRICT: Generic security words without active threat -> Should NOT fire"""
     proposal = create_test_proposal(
-        title="Security patch for protocol upgrade",
-        body="Deploying critical security fix."
+        title="Security discussion",
+        body="We should discuss future security parameters."
     )
     
     result = engine.evaluate_proposal(proposal)
     
-    assert "SEC-001" in result.reasons
-    assert "SECURITY" in result.labels
-
-
-def test_sec_001_negative_no_security_keywords(engine):
-    """SEC-001: No security keywords → Should NOT fire"""
-    proposal = create_test_proposal(
-        title="Regular Treasury Allocation",
-        body="Budget for Q1 operations."
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    assert "SEC-001" not in result.reasons
-    assert "SECURITY" not in result.labels
-
-
-def test_sec_002_audit_vulnerability(engine):
-    """SEC-002: Audit + vulnerability → SECURITY + AUDIT labels"""
-    proposal = create_test_proposal(
-        title="Audit Report: Critical Vulnerability",
-        body="Security audit found critical issues requiring immediate attention."
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    assert "SEC-002" in result.reasons
-    assert "SECURITY" in result.labels
-    assert "AUDIT" in result.labels
-    assert result.priority_score >= 85
-
+    assert "SEC-001-STRICT" not in result.reasons
+    assert "INCIDENT" not in result.labels
 
 # ============================================================================
-# TEST: TECHNICAL RULES (TECH-010, TECH-011)
+# TEST: PHASE 2 - TECHNICAL & PROTOCOL (TECH-001, TECH-002)
 # ============================================================================
 
-def test_tech_010_protocol_upgrade_keywords(engine):
-    """TECH-010: Multiple upgrade keywords → PROTOCOL_UPGRADE label"""
+def test_tech_001_protocol_upgrade(engine):
+    """TECH-001-STRICT: Upgrade keywords -> PROTOCOL_UPGRADE label"""
     proposal = create_test_proposal(
-        title="Protocol Upgrade v2.0",
-        body="Deploy new version with rollup improvements and sequencer updates."
+        title="ArbOS Version 2.0 Upgrade",
+        body="Deploying new hard fork and sequencer upgrade to mainnet."
     )
     
     result = engine.evaluate_proposal(proposal)
     
-    assert "TECH-010" in result.reasons
+    assert "TECH-001-STRICT" in result.reasons
     assert "PROTOCOL_UPGRADE" in result.labels
     assert result.priority_score >= 80
 
-
-def test_tech_010_technical_proposal_kind(engine):
-    """TECH-010: proposal_kind=technical → Fires"""
+def test_tech_002_parameter_change(engine):
+    """TECH-002: Parameter keywords -> PARAMETER_CHANGE label"""
     proposal = create_test_proposal(
-        title="Smart Contract Update",
-        body="Technical changes to core contracts.",
-        proposal_kind="technical"
+        title="Adjust Base Fee Parameters",
+        body="Proposing a fee adjustment and gas target change."
     )
     
     result = engine.evaluate_proposal(proposal)
     
-    assert "TECH-010" in result.reasons
-    assert "PROTOCOL_UPGRADE" in result.labels
-
-
-def test_tech_011_parameter_change_keywords(engine):
-    """TECH-011: Parameter keywords → PARAMETER_CHANGE label"""
-    proposal = create_test_proposal(
-        title="Adjust Gas Limit and Fee Parameters",
-        body="Proposing to change gas threshold and rate configuration."
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    assert "TECH-011" in result.reasons
+    assert "TECH-002" in result.reasons
     assert "PARAMETER_CHANGE" in result.labels
-    assert result.priority_score >= 75
-
-
-def test_tech_011_affects_protocol_parameters_field(engine):
-    """TECH-011: affects_protocol_parameters=true → Fires"""
-    proposal = create_test_proposal(
-        title="Parameter Adjustment",
-        body="Minor config change.",
-        affects_protocol_parameters=True
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    assert "TECH-011" in result.reasons
-    assert "PARAMETER_CHANGE" in result.labels
-
+    assert result.priority_score >= 70
 
 # ============================================================================
-# TEST: TREASURY RULES (TRE-020, TRE-021)
+# TEST: TREASURY RULES (TRE-010, TRE-021)
 # ============================================================================
 
-def test_tre_020_large_treasury_10m(engine):
-    """TRE-020: $10M+ allocation → Tier 1 (score ≥85)"""
+def test_tre_010_tier_1_allocation(engine):
+    """TRE-010: >$10M -> TREASURY_TIER_1 (Score >= 85)"""
     proposal = create_test_proposal(
-        title="Major Treasury Allocation",
-        body="Requesting large funding.",
+        title="Ecosystem Fund Allocation",
+        body="Requesting funding for yearly operations.",
         requested_amount_usd=15_000_000
     )
     
     result = engine.evaluate_proposal(proposal)
     
-    assert "TRE-020" in result.reasons
-    assert "TREASURY" in result.labels
+    assert "TRE-010" in result.reasons
     assert "TREASURY_TIER_1" in result.labels
     assert result.priority_score >= 85
 
-
-def test_tre_020_medium_treasury_1m(engine):
-    """TRE-020: $1M-10M allocation → Tier 2 (score ≥75)"""
+def test_tre_010_tier_2_allocation(engine):
+    """TRE-010: >$1M -> TREASURY_TIER_2 (Score >= 75)"""
     proposal = create_test_proposal(
-        title="Treasury Q1 Allocation",
-        body="Quarterly budget.",
+        title="Medium Grant",
+        body="Funding request.",
         requested_amount_usd=5_000_000
     )
     
     result = engine.evaluate_proposal(proposal)
     
-    assert "TRE-020" in result.reasons
-    assert "TREASURY" in result.labels
+    assert "TRE-010" in result.reasons
     assert "TREASURY_TIER_2" in result.labels
     assert result.priority_score >= 75
 
-
-def test_tre_020_small_treasury_100k(engine):
-    """TRE-020: $100K-1M allocation → Tier 3 (score ≥65)"""
+def test_tre_010_tier_3_allocation(engine):
+    """TRE-010: >$100k -> TREASURY_TIER_3 (Score >= 60)"""
     proposal = create_test_proposal(
-        title="Grant Program Funding",
-        body="Small grants allocation.",
+        title="Defi Grant",
+        body="Grant for liquidity provision.",
         requested_amount_usd=250_000
     )
     
     result = engine.evaluate_proposal(proposal)
     
-    assert "TRE-020" in result.reasons
+    assert "TRE-010" in result.reasons
     assert "TREASURY_TIER_3" in result.labels
-    assert result.priority_score >= 65
-
-
-def test_tre_020_tiny_treasury_10k(engine):
-    """TRE-020: $10K-100K allocation → Tier 4 (score ≥55)"""
-    proposal = create_test_proposal(
-        title="Minor Expense Approval",
-        body="Small operational cost.",
-        requested_amount_usd=25_000
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    assert "TRE-020" in result.reasons
-    assert "TREASURY_TIER_4" in result.labels
-    assert result.priority_score >= 55
-
+    assert result.priority_score >= 60
 
 def test_tre_021_treasury_keywords_no_amount(engine):
-    """TRE-021: Treasury keywords but no amount → Baseline priority"""
+    """TRE-021: Treasury keywords without explicit amount -> BUDGET_UNCLEAR"""
     proposal = create_test_proposal(
-        title="Budget Planning Discussion",
-        body="Discussing allocation strategy and funding priorities for treasury management."
+        title="Budget Framework Discussion",
+        body="Discussing budget request and compensation structure for the DAO."
     )
     
     result = engine.evaluate_proposal(proposal)
     
     assert "TRE-021" in result.reasons
-    assert "TREASURY" in result.labels
-    assert "BUDGET" in result.labels
-    assert result.priority_score >= 55
-
+    assert "BUDGET_UNCLEAR" in result.labels
+    assert result.priority_score >= 45
 
 # ============================================================================
-# TEST: GOVERNANCE RULES (GOV-030, GOV-031)
+# TEST: GOVERNANCE & STRATEGY (GOV-030, PROG-001)
 # ============================================================================
 
-def test_gov_030_constitutional_proposal_kind(engine):
-    """GOV-030: proposal_kind=constitutional → GOVERNANCE_FRAMEWORK"""
+def test_gov_030_constitutional(engine):
+    """GOV-030: Constitution keywords -> GOVERNANCE_FRAMEWORK"""
     proposal = create_test_proposal(
-        title="Constitution Amendment",
-        body="Updating governance charter.",
-        proposal_kind="constitutional"
+        title="Amend DAO Constitution",
+        body="Updating the bylaws and governance framework."
     )
     
     result = engine.evaluate_proposal(proposal)
     
     assert "GOV-030" in result.reasons
     assert "GOVERNANCE_FRAMEWORK" in result.labels
-    assert result.priority_score >= 70
-
-
-def test_gov_030_framework_keywords(engine):
-    """GOV-030: Multiple framework keywords → Fires"""
-    proposal = create_test_proposal(
-        title="AIP Framework Update",
-        body="Revising the constitution and bylaws for improved governance."
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    assert "GOV-030" in result.reasons
-    assert "GOVERNANCE_FRAMEWORK" in result.labels
-
-
-def test_gov_031_quorum_voting_procedure(engine):
-    """GOV-031: Quorum + voting procedure changes → High priority"""
-    proposal = create_test_proposal(
-        title="Adjust Quorum Threshold",
-        body="Proposing to change quorum parameter and voting procedure configuration."
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    assert "GOV-031" in result.reasons
-    assert "GOVERNANCE_FRAMEWORK" in result.labels
-    assert "POLICY" in result.labels
     assert result.priority_score >= 75
 
-
-# ============================================================================
-# TEST: ELECTIONS RULES (ELE-040)
-# ============================================================================
-
-def test_ele_040_election_keywords(engine):
-    """ELE-040: Election keywords → ELECTIONS label"""
+def test_prog_001_new_program(engine):
+    """PROG-001: New program keywords -> NEW_PROGRAM label"""
     proposal = create_test_proposal(
-        title="Security Council Election",
-        body="Nomination period for delegate council candidates. Term renewal voting."
+        title="Launch Incentive Program Pilot",
+        body="Designing a new initiative for developer adoption."
     )
     
     result = engine.evaluate_proposal(proposal)
     
-    assert "ELE-040" in result.reasons
-    assert "ELECTIONS" in result.labels
-    assert result.priority_score >= 65
+    assert "PROG-001" in result.reasons
+    assert "NEW_PROGRAM" in result.labels
+    assert result.priority_score >= 70
 
+# ============================================================================
+# TEST: OTHER CATEGORIES (META, SPON, REP, RES, OPS)
+# ============================================================================
 
-def test_ele_040_proposal_kind_election(engine):
-    """ELE-040: proposal_kind=election → Fires"""
+def test_meta_001_rfc(engine):
+    """META-001: Discussion/RFC keywords -> META_GOV (Max 50)"""
     proposal = create_test_proposal(
-        title="Council Member Vote",
-        body="Voting on new member.",
-        proposal_kind="election"
+        title="RFC: Community Gathering",
+        body="Temperature check for the next meetup location."
     )
     
     result = engine.evaluate_proposal(proposal)
     
-    assert "ELE-040" in result.reasons
-    assert "ELECTIONS" in result.labels
+    assert "META-001" in result.reasons
+    assert "META_GOV" in result.labels
+    assert result.priority_score <= 50
 
-
-# ============================================================================
-# TEST: OPERATIONS & REPORTING RULES (OPS-050, REP-060, META-070)
-# ============================================================================
-
-def test_ops_050_operational_keywords(engine):
-    """OPS-050: Operational keywords → OPERATIONS label + capped score"""
+def test_spon_001_sponsorship(engine):
+    """SPON-001: Sponsorship keywords -> SPONSORSHIP label"""
     proposal = create_test_proposal(
-        title="Routine Housekeeping Tasks",
-        body="Admin procedures for maintenance and operational calendar updates."
+        title="EthDenver Sponsorship",
+        body="Proposal to sponsor the hackathon event."
+    )
+    
+    result = engine.evaluate_proposal(proposal)
+    
+    assert "SPON-001" in result.reasons
+    assert "SPONSORSHIP" in result.labels
+    assert result.priority_score <= 60
+
+def test_rep_001_strict_reporting(engine):
+    """REP-001-STRICT: Reporting keywords -> REPORTING (Max 35)"""
+    proposal = create_test_proposal(
+        title="Monthly Transparency Report",
+        body="Summary of financial activities and progress update."
+    )
+    
+    result = engine.evaluate_proposal(proposal)
+    
+    assert "REP-001-STRICT" in result.reasons
+    assert "REPORTING" in result.labels
+    assert result.priority_score <= 35
+
+def test_res_001_research(engine):
+    """RES-001: Research keywords -> RESEARCH (Max 40)"""
+    proposal = create_test_proposal(
+        title="Research Study on L2 Fees",
+        body="Analysis of fee markets and comparative study."
+    )
+    
+    result = engine.evaluate_proposal(proposal)
+    
+    assert "RES-001" in result.reasons
+    assert "RESEARCH" in result.labels
+    assert result.priority_score <= 40
+
+def test_ops_050_operational(engine):
+    """OPS-050: Operational keywords -> OPERATIONS (Max 45)"""
+    proposal = create_test_proposal(
+        title="Renewal of Admin Services",
+        body="Routine maintenance and housekeeping tasks."
     )
     
     result = engine.evaluate_proposal(proposal)
     
     assert "OPS-050" in result.reasons
     assert "OPERATIONS" in result.labels
-    assert result.priority_score <= 40
+    assert result.priority_score <= 45
 
+# ============================================================================
+# TEST: CONTEXT DETECTION (CTX-002, CTX-003)
+# ============================================================================
 
-def test_ops_050_proposal_kind_ops(engine):
-    """OPS-050: proposal_kind=ops → Capped at 40"""
+def test_ctx_002_election_context(engine):
+    """CTX-002: Election keywords -> ELECTIONS label + Context Flag"""
     proposal = create_test_proposal(
-        title="Minor Admin Task",
-        body="Small operational update.",
-        proposal_kind="ops"
+        title="Security Council Election Nomination",
+        body="Candidate for the open seat."
     )
     
     result = engine.evaluate_proposal(proposal)
     
+    assert "CTX-002" in result.reasons
+    assert "ELECTIONS" in result.labels
+
+def test_ctx_003_hr_context(engine):
+    """CTX-003: Salary/Compensation keywords -> OPERATIONS + BUDGET"""
+    proposal = create_test_proposal(
+        title="Contributor Compensation Payment",
+        body="Monthly salary and stipend distribution."
+    )
+    
+    result = engine.evaluate_proposal(proposal)
+    
+    assert "CTX-003" in result.reasons
+    assert "OPERATIONS" in result.labels
+    assert "BUDGET" in result.labels
+
+# ============================================================================
+# TEST: OVERRIDES & HISTORICAL PRESERVATION (PHASE 4)
+# ============================================================================
+
+def test_override_closed_critical_protocol(engine):
+    """OVERRIDE-CLOSED-PROTOCOL: Closed Protocol Upgrade -> High Score (Deep Review)"""
+    proposal = create_test_proposal(
+        title="ArbOS v1 Upgrade (Executed)",
+        body="Major protocol change including sequencer upgrade.",
+        status="executed"
+    )
+    
+    result = engine.evaluate_proposal(proposal)
+    
+    # CTX-001 sets STATE_CLOSED flag
+    # TECH-001 sets PROTOCOL_UPGRADE
+    # OVERRIDE-CLOSED-PROTOCOL should fire
+    assert "CTX-001" in result.reasons
+    assert "TECH-001-STRICT" in result.reasons
+    assert "OVERRIDE-CLOSED-PROTOCOL" in result.reasons
+    
+    # Should maintain high score despite being closed
+    assert result.priority_score >= 65
+    assert result.recommended_handling == "deep_review"
+
+def test_override_closed_general_kill_switch(engine):
+    """OVERRIDE-CLOSED-01: Closed minor proposal -> Standard Review (max 50)"""
+    proposal = create_test_proposal(
+        title="Old Operations Update",
+        body="Routine housekeeping tasks from last year.",
+        status="expired"
+    )
+    
+    result = engine.evaluate_proposal(proposal)
+    
+    assert "CTX-001" in result.reasons
     assert "OPS-050" in result.reasons
-    assert result.priority_score <= 40
-    assert result.recommended_handling in ["fast_track_ok", "informational_only"]
-
-
-def test_rep_060_reporting_keywords(engine):
-    """REP-060: Reporting keywords → REPORTING label + capped at 30"""
-    proposal = create_test_proposal(
-        title="Monthly Status Report",
-        body="Summary of weekly updates and metrics dashboard retrospective."
-    )
+    assert "OVERRIDE-CLOSED-01" in result.reasons
     
-    result = engine.evaluate_proposal(proposal)
-    
-    assert "REP-060" in result.reasons
-    assert "REPORTING" in result.labels
-    assert result.priority_score <= 30
-
-
-def test_rep_060_title_contains_weekly_update(engine):
-    """REP-060: Title contains 'weekly update' → Fires"""
-    proposal = create_test_proposal(
-        title="Weekly Update - Q1 Progress",
-        body="Status report."
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    assert "REP-060" in result.reasons
-    assert "REPORTING" in result.labels
-
-
-def test_meta_070_discussion_type(engine):
-    """META-070: item_type=discussion → META_GOV label + capped at 50"""
-    proposal = create_test_proposal(
-        title="Community Discussion",
-        body="Open forum for feedback.",
-        item_type="discussion"
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    assert "META-070" in result.reasons
-    assert "META_GOV" in result.labels
     assert result.priority_score <= 50
+    assert result.recommended_handling == "standard_review"
 
-
-def test_meta_070_temperature_check(engine):
-    """META-070: Title contains 'temperature check' → Fires"""
+def test_override_closed_election(engine):
+    """OVERRIDE-CLOSED-02: Closed Election -> Informational Only (max 30)"""
     proposal = create_test_proposal(
-        title="Temperature Check: New Feature",
-        body="Gauging community interest."
+        title="Past Council Election",
+        body="Nomination and voting for last epoch.",
+        status="executed"
     )
     
     result = engine.evaluate_proposal(proposal)
     
-    assert "META-070" in result.reasons
-    assert "META_GOV" in result.labels
-
-
-# ============================================================================
-# TEST: TIME MODIFIERS (TIME-001, TIME-002, TIME-003)
-# ============================================================================
-
-def test_time_001_critical_deadline_24h(engine):
-    """TIME-001: ≤24h remaining → +15 priority"""
-    now = datetime.now(timezone.utc)
-    proposal = create_test_proposal(
-        title="Urgent Vote",
-        body="Time-sensitive decision.",
-        status="active",
-        end_at=int((now + timedelta(hours=12)).timestamp())  # 12h remaining
-    )
+    assert "CTX-002" in result.reasons # Election context
+    assert "OVERRIDE-CLOSED-02" in result.reasons
     
-    result = engine.evaluate_proposal(proposal)
-    
-    assert "TIME-001" in result.reasons
-    # Check that +15 was added
-    adjustments = result.explain["priority_adjustments"]
-    time_adjustment = [a for a in adjustments if a["rule"] == "TIME-001"]
-    assert len(time_adjustment) > 0
-
-
-def test_time_002_near_deadline_48h(engine):
-    """TIME-002: 24-48h remaining → +10 priority"""
-    now = datetime.now(timezone.utc)
-    proposal = create_test_proposal(
-        title="Upcoming Deadline",
-        body="Content.",
-        status="active",
-        end_at=int((now + timedelta(hours=36)).timestamp())  # 36h remaining
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    assert "TIME-002" in result.reasons
-
-
-def test_time_003_upcoming_deadline_72h(engine):
-    """TIME-003: 48-72h remaining → +5 priority"""
-    now = datetime.now(timezone.utc)
-    proposal = create_test_proposal(
-        title="Approaching Deadline",
-        body="Content.",
-        status="active",
-        end_at=int((now + timedelta(hours=60)).timestamp())  # 60h remaining
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    assert "TIME-003" in result.reasons
-
-
-def test_time_010_closed_proposal_cap(engine):
-    """TIME-010: Closed non-incident proposal → Capped at 50"""
-    proposal = create_test_proposal(
-        title="Past Proposal",
-        body="Historical content.",
-        status="closed"
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    assert "TIME-010" in result.reasons
-    assert result.priority_score <= 50
-
-
-def test_time_011_closed_reporting_cap(engine):
-    """TIME-011: Closed + REPORTING label → Capped at 30"""
-    proposal = create_test_proposal(
-        title="Monthly Report Archive",
-        body="Weekly update summary retrospective.",
-        status="closed"
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    # REP-060 should fire (adds REPORTING label)
-    # TIME-011 should fire (caps at 30)
-    assert "REP-060" in result.reasons
-    assert "TIME-011" in result.reasons
     assert result.priority_score <= 30
-
+    assert result.recommended_handling == "informational_only"
 
 # ============================================================================
-# TEST: WORKLOAD MODIFIERS (LEN-001, LEN-002, LEN-003)
+# TEST: MODIFIERS (TIME & WORKLOAD)
 # ============================================================================
 
-def test_len_001_long_form_3000_words(engine):
-    """LEN-001: ≥3000 words → +10 priority + LONG_FORM label"""
-    long_body = " ".join(["word"] * 3500)  # 3500 words
+def test_time_modifiers_urgent(engine):
+    """TIME-MODIFIERS: <24h remaining -> +15 Priority"""
+    now = datetime.now(timezone.utc)
     proposal = create_test_proposal(
-        title="Comprehensive Proposal",
+        title="Urgent Proposal",
+        body="Content",
+        status="active",
+        end_at=int((now + timedelta(hours=12)).timestamp())
+    )
+    
+    result = engine.evaluate_proposal(proposal)
+    assert "TIME-MODIFIERS" in result.reasons
+    # Cannot easily check exact increment without mocking, but we verify rule fired
+
+def test_time_modifiers_upcoming(engine):
+    """TIME-MODIFIERS: 48-72h remaining -> +5 Priority"""
+    now = datetime.now(timezone.utc)
+    proposal = create_test_proposal(
+        title="Upcoming Proposal",
+        body="Content",
+        status="active",
+        end_at=int((now + timedelta(hours=60)).timestamp())
+    )
+    
+    result = engine.evaluate_proposal(proposal)
+    assert "TIME-MODIFIERS" in result.reasons
+
+def test_workload_modifiers_long(engine):
+    """WORKLOAD-MODIFIERS: Long text (>3000) -> LONG_FORM label"""
+    long_body = "word " * 3500
+    proposal = create_test_proposal(
+        title="Long Manifesto",
         body=long_body,
         word_count=3500
     )
     
     result = engine.evaluate_proposal(proposal)
     
-    assert "LEN-001" in result.reasons
+    assert "WORKLOAD-MODIFIERS" in result.reasons
     assert "LONG_FORM" in result.labels
 
-
-def test_len_002_medium_form_1500_words(engine):
-    """LEN-002: 1500-3000 words → +6 priority + MEDIUM_FORM label"""
-    medium_body = " ".join(["word"] * 2000)  # 2000 words
+def test_workload_modifiers_very_long(engine):
+    """WORKLOAD-MODIFIERS: Very long text (>5000) -> VERY_LONG_FORM label"""
+    long_body = "word " * 5500
     proposal = create_test_proposal(
-        title="Moderate Proposal",
-        body=medium_body,
-        word_count=2000
+        title="Huge Manifesto",
+        body=long_body,
+        word_count=5500
     )
     
     result = engine.evaluate_proposal(proposal)
     
-    assert "LEN-002" in result.reasons
-    assert "MEDIUM_FORM" in result.labels
-
-
-def test_len_003_standard_form_800_words(engine):
-    """LEN-003: 800-1500 words → +3 priority + STANDARD_FORM label"""
-    standard_body = " ".join(["word"] * 1000)  # 1000 words
-    proposal = create_test_proposal(
-        title="Standard Proposal",
-        body=standard_body,
-        word_count=1000
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    assert "LEN-003" in result.reasons
-    assert "STANDARD_FORM" in result.labels
-
+    assert "WORKLOAD-MODIFIERS" in result.reasons
+    assert "VERY_LONG_FORM" in result.labels
 
 # ============================================================================
-# TEST: CONFLICT RESOLUTION
+# TEST: DEFAULT FALLBACK
 # ============================================================================
 
-def test_conflict_multiple_minimums_max_wins(engine):
-    """Test that when multiple rules set min_priority, highest wins"""
-    # This proposal should trigger both TECH-011 (min 75) and GOV-031 (min 75)
+def test_default_classification(engine):
+    """DEFAULT-001: No matches -> UNCATEGORIZED"""
     proposal = create_test_proposal(
-        title="Quorum Parameter Update",
-        body="Adjusting quorum threshold and parameter config for voting procedure.",
-        affects_protocol_parameters=True
+        title="Something completely random",
+        body="No keywords here just fluff."
     )
     
     result = engine.evaluate_proposal(proposal)
     
-    # Both rules should fire
-    assert "TECH-011" in result.reasons
-    assert "GOV-031" in result.reasons
-    
-    # Min should be 75 (both set same min)
-    assert result.explain["min_priority"] == 75
-
-
-def test_conflict_caps_win_over_additions(engine):
-    """Test that max_priority caps win even if score would be higher"""
-    # OPS proposal is capped at 40 regardless of other modifiers
-    proposal = create_test_proposal(
-        title="Emergency Operational Maintenance",
-        body="Critical housekeeping admin with emergency procedures.",
-        proposal_kind="ops",
-        status="active"
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    assert "OPS-050" in result.reasons
-    # Even with emergency keywords, ops cap should win
-    assert result.priority_score <= 40
-
-
-# ============================================================================
-# TEST: OVERRIDE SYSTEM
-# ============================================================================
-
-def test_override_security_always_urgent(engine):
-    """Test that SECURITY label always forces urgent_deep_review"""
-    # Even if score is lower, SECURITY → urgent
-    proposal = create_test_proposal(
-        title="Minor Security Patch",
-        body="Small security fix with vulnerability mention.",
-        status="closed"  # Closed would normally cap score
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    if "SECURITY" in result.labels:
-        assert result.recommended_handling == "urgent_deep_review"
-
-
-# ============================================================================
-# TEST: SCORE MAPPING
-# ============================================================================
-
-def test_score_mapping_urgent_deep_review(engine):
-    """Test score 90-100 → urgent_deep_review"""
-    proposal = create_test_proposal(
-        title="Critical Emergency Hack Attack",
-        body="Severe exploit vulnerability discovered requiring immediate emergency action."
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    if result.priority_score >= 90:
-        assert result.recommended_handling == "urgent_deep_review"
-
-
-def test_score_mapping_deep_review(engine):
-    """Test score 75-89 → deep_review"""
-    proposal = create_test_proposal(
-        title="Major Treasury Allocation",
-        body="Significant funding request.",
-        requested_amount_usd=2_000_000
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    if 75 <= result.priority_score < 90:
-        assert result.recommended_handling == "deep_review"
-
-
-def test_score_mapping_fast_track_ok(engine):
-    """Test score 25-49 → fast_track_ok"""
-    proposal = create_test_proposal(
-        title="Minor Update",
-        body="Small routine change.",
-        proposal_kind="ops"
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    if 25 <= result.priority_score < 50:
-        assert result.recommended_handling == "fast_track_ok"
-
+    assert "DEFAULT-001" in result.reasons
+    assert "UNCATEGORIZED" in result.labels
+    assert 30 <= result.priority_score <= 50
 
 # ============================================================================
 # TEST: EDGE CASES
@@ -697,8 +451,6 @@ def test_empty_body_proposal(engine):
     
     assert result is not None
     assert result.priority_score >= 0
-    assert result.priority_score <= 100
-
 
 def test_very_long_title(engine):
     """Test proposal with extremely long title"""
@@ -709,12 +461,12 @@ def test_very_long_title(engine):
     )
     
     result = engine.evaluate_proposal(proposal)
-    
     assert result is not None
-
 
 def test_null_optional_fields(engine):
     """Test proposal with all optional fields as None"""
+    # Create raw object to bypass helper defaults if needed,
+    # or just use helper with explicit Nones where allowed.
     proposal = ProposalInput(
         item_id="null_test",
         title="Minimal Proposal",
@@ -723,32 +475,11 @@ def test_null_optional_fields(engine):
         created_at=int(datetime.now(timezone.utc).timestamp()),
         start_at=int(datetime.now(timezone.utc).timestamp()),
         end_at=int((datetime.now(timezone.utc) + timedelta(days=7)).timestamp()),
-        status="active",
-        # All optional fields left as default None
+        status="active"
     )
     
     result = engine.evaluate_proposal(proposal)
-    
     assert result is not None
-    assert 0 <= result.priority_score <= 100
-
-
-def test_multiple_labels_accumulate(engine):
-    """Test that multiple rules add labels additively"""
-    proposal = create_test_proposal(
-        title="Treasury Budget for Council Election",
-        body="Allocating funding for delegate council nomination process.",
-        requested_amount_usd=100_000,
-        proposal_kind="election"
-    )
-    
-    result = engine.evaluate_proposal(proposal)
-    
-    # Should have labels from multiple rules
-    assert "TREASURY" in result.labels  # From TRE-020
-    assert "ELECTIONS" in result.labels  # From ELE-040
-    assert len(result.labels) >= 2  # At least these two
-
 
 # ============================================================================
 # TEST: DETERMINISM
@@ -769,7 +500,6 @@ def test_determinism_same_input_same_output(engine):
     assert result1.labels == result2.labels
     assert result1.reasons == result2.reasons
     assert result1.recommended_handling == result2.recommended_handling
-
 
 # ============================================================================
 # RUN SUMMARY

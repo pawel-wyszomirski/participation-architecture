@@ -1,290 +1,331 @@
-version: 1.0.0
+version: 2.5.0
 
 metadata:
   owner: "Participation Architecture"
-  created_at: "2026-02-02"
+  created_at: "2026-02-04"
+  updated_at: "2026-02-04"
   default_locale: "en"
-  notes: "Deterministic triage rules. No ML/LLM inference."
-  description: "Rule engine for governance proposal prioritization and delegate fatigue mitigation"
+  notes: "Production-ready version. Fixes constitutional protocol preservation, adds missing keywords, completes rule coverage."
+  description: "Complete rule engine with strict context awareness, full category coverage, and intelligent historical weight preservation."
 
-# Keyword groups for deterministic text matching (case-insensitive)
+# =============================================================================
+# KEYWORD GROUPS
+# =============================================================================
+
 keyword_groups:
-  SECURITY_CUES:
-    - "exploit"
-    - "vulnerability"
-    - "attack"
-    - "incident"
-    - "hack"
-    - "emergency"
-    - "critical"
-    - "cve"
-    - "post-mortem"
-    - "drain"
-    - "compromise"
-    - "security patch"
+  # --- CRITICAL (STRICT) ---
+  ACTIVE_INCIDENT_CUES:
+    - "active exploit"
+    - "under active attack"
+    - "funds are being drained"
+    - "funds stolen"
+    - "emergency pause"
+    - "bridge compromised"
+    - "critical breach"
+    - "post-mortem of incident"
+    - "security incident"
+    - "active hack"
   
+  # --- PROTOCOL & TECH ---
   UPGRADE_CUES:
-    - "upgrade"
-    - "deploy"
-    - "migration"
+    - "arbos upgrade"
+    - "arbos version"
+    - "contract upgrade"
     - "hard fork"
-    - "soft fork"
-    - "release"
-    - "version"
-    - "audit"
-    - "timelock"
-    - "rollup"
-    - "sequencer"
+    - "precompile update"
+    - "sequencer upgrade"
+    - "implement improvements"
+    - "pricing algorithm"
+    - "voting system"
+    - "governance contracts"
+    - "adopt"
+    - "new policy"
+    - "protocol change"
+    - "system upgrade"
   
   PARAMETER_CUES:
-    - "parameter"
-    - "config"
-    - "fee"
-    - "gas"
-    - "limit"
-    - "threshold"
-    - "quorum"
-    - "timelock"
-    - "delay"
-    - "rate"
-    - "slippage"
-    - "oracle"
+    - "parameter change"
+    - "fee adjustment"
+    - "gas target"
+    - "base fee"
+    - "threshold change"
+    - "config update"
+    - "technical parameter"
+    - "quorum threshold"
+    - "min l2 base fee"
+
+  # --- NEW PROGRAMS ---
+  NEW_PROGRAM_CUES:
+    - "incentive program"
+    - "pilot program"
+    - "launching a new"
+    - "program design"
+    - "new initiative"
+    - "program establishment"
+    - "dip 2.0"
+    - "new program"
+    - "program creation"
+
+  # --- REPORTING (STRICT) ---
+  REPORTING_STRICT_CUES:
+    - "monthly report"
+    - "quarterly report"
+    - "transparency report"
+    - "financial report"
+    - "progress update"
+    - "milestone report"
+    - "status update"
+    - "research report"
   
+  # --- STANDARD GOVERNANCE ---
   TREASURY_CUES:
-    - "budget"
-    - "funding"
-    - "grant"
-    - "allocate"
-    - "allocation"
-    - "usd"
-    - "$"
-    - "arb"
-    - "treasury"
-    - "payment"
-    - "stream"
-    - "invoice"
-    - "retro"
+    - "budget request"
+    - "funding request"
+    - "grant request"
+    - "allocation request"
+    - "payment request"
+    - "compensation"
+    - "treasury spend"
+    - "top-up"
+    - "bonus"
+    - "stipend"
+    - "salary"
   
+  GOV_FRAMEWORK_CUES:
+    - "constitution"
+    - "constitutional"
+    - "governance framework"
+    - "aip"
+    - "bylaws"
+    - "dao constitution"
+    - "governance structure"
+  
+  META_GOV_CUES:
+    - "temperature check"
+    - "discussion"
+    - "rfc"
+    - "community feedback"
+    - "meta-governance"
+    - "request for comments"
+
   ELECTION_CUES:
     - "election"
     - "nomination"
     - "candidate"
-    - "term"
-    - "delegate council"
-    - "committee"
+    - "vote for"
+    - "reconfirmation"
+    - "council seat"
     - "appoint"
-    - "remove"
-    - "renew"
-  
-  REPORTING_CUES:
-    - "weekly"
-    - "monthly"
-    - "report"
-    - "update"
-    - "retrospective"
-    - "summary"
-    - "status"
-    - "metrics"
-    - "dashboard"
+    - "voting for"
   
   OPS_CUES:
     - "housekeeping"
-    - "admin"
+    - "administrative"
     - "operational"
-    - "maintenance"
-    - "process"
-    - "procedure"
     - "renewal"
-    - "extension"
     - "calendar"
+    - "routine"
+    - "maintenance"
   
-  GOV_FRAMEWORK_CUES:
-    - "constitution"
-    - "charter"
-    - "framework"
-    - "aip"
-    - "sos"
-    - "bylaws"
-  
-  VOTING_PROCEDURE_CUES:
-    - "quorum"
-    - "voting procedure"
-    - "threshold"
+  SPONSORSHIP_CUES:
+    - "sponsor"
+    - "sponsorship"
+    - "partnership"
+    - "event support"
+    - "hackathon support"
+    - "hackathon"
+    - "attackathon"
+    - "conference"
+    - "event sponsor"
 
-# Score bands mapping to recommended handling
-score_mapping:
-  urgent_deep_review:
-    min: 90
-    max: 100
-    description: "Immediate attention; notify delegates/builders; highlight deadlines"
-  
-  deep_review:
-    min: 75
-    max: 89
-    description: "Allocate focused reading time; seek subject-matter input"
-  
-  standard_review:
-    min: 50
-    max: 74
-    description: "Normal workflow; may be grouped in weekly digest"
-  
-  fast_track_ok:
-    min: 25
-    max: 49
-    description: "Safe to batch; quick vote/checklist"
-  
-  informational_only:
-    min: 0
-    max: 24
-    description: "Archive/record; optional reading"
+# =============================================================================
+# DEFINITIONS (TIERS)
+# =============================================================================
 
-# Treasury magnitude tiers (Section 6.2)
 treasury_tiers_usd:
   - min_usd: 10000000
-    add_priority: 20
+    add_priority: 25
     set_min_priority: 85
     label: "TREASURY_TIER_1"
-    description: "≥$10M allocation"
-  
   - min_usd: 1000000
-    add_priority: 15
+    add_priority: 20
     set_min_priority: 75
     label: "TREASURY_TIER_2"
-    description: "≥$1M allocation"
-  
   - min_usd: 100000
-    add_priority: 10
-    set_min_priority: 65
+    add_priority: 15
+    set_min_priority: 60
     label: "TREASURY_TIER_3"
-    description: "≥$100K allocation"
-  
   - min_usd: 10000
-    add_priority: 5
-    set_min_priority: 55
+    add_priority: 10
+    set_min_priority: 45
     label: "TREASURY_TIER_4"
-    description: "≥$10K allocation"
+  - min_usd: 1000
+    add_priority: 5
+    set_min_priority: 30
+    label: "TREASURY_TIER_5"
 
-# Time sensitivity tiers (Section 6.3)
 time_sensitivity_tiers:
   - max_hours_remaining: 24
     add_priority: 15
-    description: "≤24h until deadline"
-  
+    description: "Urgent Deadline"
   - max_hours_remaining: 48
     add_priority: 10
-    description: "≤48h until deadline"
-  
+    description: "Near Deadline"
   - max_hours_remaining: 72
     add_priority: 5
-    description: "≤72h until deadline"
+    description: "Upcoming Deadline"
 
-# Workload/length tiers (Section 6.4)
 workload_tiers:
+  - min_word_count: 5000
+    add_priority: 12
+    label: "VERY_LONG_FORM"
   - min_word_count: 3000
-    add_priority: 10
-    description: "Long form (≥3000 words)"
-  
+    add_priority: 8
+    label: "LONG_FORM"
   - min_word_count: 1500
-    add_priority: 6
-    description: "Medium form (≥1500 words)"
-  
+    add_priority: 5
+    label: "MEDIUM_FORM"
   - min_word_count: 800
-    add_priority: 3
-    description: "Standard form (≥800 words)"
+    add_priority: 2
+    label: "STANDARD_FORM"
 
-# Core triage rules (Section 8)
+# =============================================================================
+# RULES
+# =============================================================================
+
 rules:
-  # ========================================
-  # SECURITY RULES (SEC-*)
-  # ========================================
+  # ---------------------------------------------------------------------------
+  # PHASE 0: CONTEXT FIREWALL
+  # ---------------------------------------------------------------------------
   
-  - id: "SEC-001"
-    name: "Emergency / incident / exploit cues"
+  - id: "CTX-001"
+    name: "Detect Closed State"
+    category: "CONTEXT"
+    priority: 10000
+    when:
+      field_in:
+        field: "state"
+        values: ["closed", "executed", "defeated", "expired"]
+    then:
+      set_flag: "STATE_CLOSED"
+
+  - id: "CTX-002"
+    name: "Detect Election Context"
+    category: "CONTEXT"
+    priority: 9999
+    when:
+      any:
+        - title_contains:
+            keywords: ["election", "nomination", "reconfirmation", "candidate", "appoint"]
+            min_hits: 1
+        - field_equals:
+            field: "proposal_kind"
+            value: "election"
+    then:
+      set_flag: "CONTEXT_ELECTION"
+      add_labels: ["ELECTIONS"]
+
+  - id: "CTX-003"
+    name: "Detect Operational/HR Context"
+    category: "CONTEXT"
+    priority: 9998
+    when:
+      title_contains:
+        keywords: ["compensation", "salary", "bonus", "stipend", "pay", "remuneration"]
+        min_hits: 1
+    then:
+      set_flag: "CONTEXT_HR"
+      add_labels: ["OPERATIONS", "BUDGET"]
+
+  - id: "CTX-004"
+    name: "Detect Sponsorship Context"
+    category: "CONTEXT"
+    priority: 9997
+    when:
+      title_contains:
+        keywords: ["sponsorship", "sponsor", "hackathon", "attackathon", "event"]
+        min_hits: 1
+    then:
+      set_flag: "CONTEXT_SPONSORSHIP"
+
+  # ---------------------------------------------------------------------------
+  # PHASE 1: CRITICAL
+  # ---------------------------------------------------------------------------
+
+  - id: "SEC-001-STRICT"
+    name: "Active Security Incident (Strict)"
     category: "SECURITY"
     priority: 1000
     when:
-      any:
-        - keyword_group_hits:
-            group: "SECURITY_CUES"
-            gte: 2
-        - all:
-            - keyword_group_hits:
-                group: "SECURITY_CUES"
-                gte: 1
-            - keyword_group_hits:
-                group: "UPGRADE_CUES"
-                gte: 1
-    then:
-      add_labels: ["SECURITY", "INCIDENT", "EMERGENCY"]
-      set_min_priority: 90
-      add_priority: 10
-      set_recommended_handling: "urgent_deep_review"
-    rationale: "Any credible security cue should be escalated immediately"
-  
-  - id: "SEC-002"
-    name: "Audit / vulnerability disclosure"
-    category: "SECURITY"
-    priority: 999
-    when:
       all:
-        - keyword_contains:
-            keywords: ["audit"]
-            min_hits: 1
-        - keyword_contains:
-            keywords: ["vulnerability", "critical"]
-            min_hits: 1
+        - not_flag: "CONTEXT_ELECTION"
+        - not_flag: "STATE_CLOSED"
+        - not_flag: "CONTEXT_SPONSORSHIP"
+        - keyword_group_hits:
+            group: "ACTIVE_INCIDENT_CUES"
+            gte: 1
     then:
-      add_labels: ["SECURITY", "AUDIT"]
-      set_min_priority: 85
-      add_priority: 5
-    rationale: "Security posture changes require focused review"
-  
-  # ========================================
-  # PROTOCOL/PARAMETER RULES (TECH-*)
-  # ========================================
-  
-  - id: "TECH-010"
-    name: "Protocol upgrade"
+      add_labels: ["INCIDENT", "EMERGENCY"]
+      set_recommended_handling: "urgent_deep_review"
+      set_min_priority: 95
+
+  - id: "TECH-001-STRICT"
+    name: "Protocol Upgrade (Code/Contract)"
     category: "TECHNICAL"
     priority: 900
     when:
-      any:
+      all:
+        - not_flag: "CONTEXT_HR"
+        - not_flag: "CONTEXT_ELECTION"
+        - not_flag: "CONTEXT_SPONSORSHIP"
         - keyword_group_hits:
             group: "UPGRADE_CUES"
-            gte: 2
-        - field_equals:
-            field: "proposal_kind"
-            value: "technical"
+            gte: 1
     then:
       add_labels: ["PROTOCOL_UPGRADE"]
       set_min_priority: 80
-      add_priority: 5
-    rationale: "Upgrades can affect system safety and operations"
-  
-  - id: "TECH-011"
-    name: "Parameter change"
-    category: "TECHNICAL"
-    priority: 890
+
+  # ---------------------------------------------------------------------------
+  # PHASE 2: STANDARD CLASSIFICATION
+  # ---------------------------------------------------------------------------
+
+  - id: "PROG-001"
+    name: "New Program Creation"
+    category: "STRATEGY"
+    priority: 860
     when:
-      any:
+      all:
+        - not_flag: "CONTEXT_HR"
+        - any:
+            - title_contains:
+                keywords: ["program", "incentive", "dip"]
+                min_hits: 1
+            - keyword_group_hits:
+                group: "NEW_PROGRAM_CUES"
+                gte: 1
+    then:
+      add_labels: ["NEW_PROGRAM", "STRATEGY"]
+      set_min_priority: 70
+      add_priority: 5
+
+  - id: "TECH-002"
+    name: "Parameter Change"
+    category: "TECHNICAL"
+    priority: 850
+    when:
+      all:
+        - not_labeled: ["PROTOCOL_UPGRADE"]
+        - not_labeled: ["NEW_PROGRAM"]
         - keyword_group_hits:
             group: "PARAMETER_CUES"
-            gte: 2
-        - field_equals:
-            field: "affects_protocol_parameters"
-            value: true
+            gte: 1
     then:
       add_labels: ["PARAMETER_CHANGE"]
-      set_min_priority: 75
+      set_min_priority: 70
       add_priority: 5
-    rationale: "Parameter shifts can change incentives/risk"
-  
-  # ========================================
-  # TREASURY RULES (TRE-*)
-  # ========================================
-  
-  - id: "TRE-020"
-    name: "Treasury spend (amount known)"
+
+  - id: "TRE-010"
+    name: "Treasury Spend"
     category: "TREASURY"
     priority: 800
     when:
@@ -293,300 +334,294 @@ rules:
     then:
       add_labels: ["TREASURY"]
       apply_treasury_tiers_usd: true
-    rationale: "Larger allocations require more scrutiny"
-  
+
   - id: "TRE-021"
-    name: "Treasury cues (amount unknown)"
+    name: "Treasury Cues (Unknown Amount)"
     category: "TREASURY"
-    priority: 790
+    priority: 780
     when:
       all:
+        - not_labeled: ["TREASURY"]
         - keyword_group_hits:
             group: "TREASURY_CUES"
             gte: 2
-        - field_not_exists:
-            field: "requested_amount_usd"
     then:
-      add_labels: ["TREASURY", "BUDGET"]
-      set_min_priority: 55
-      add_priority: 5
-    rationale: "Budget-like proposals deserve baseline attention even without parsed amounts"
-  
-  # ========================================
-  # GOVERNANCE FRAMEWORK RULES (GOV-*)
-  # ========================================
-  
+      add_labels: ["TREASURY", "BUDGET_UNCLEAR"]
+      set_min_priority: 45
+      add_priority: 3
+
   - id: "GOV-030"
-    name: "Constitutional / framework change"
+    name: "Constitutional Change"
     category: "GOVERNANCE"
     priority: 700
     when:
       any:
-        - field_equals:
-            field: "proposal_kind"
-            value: "constitutional"
+        - title_contains:
+            keywords: ["constitutional", "constitution"]
+            min_hits: 1
         - keyword_group_hits:
             group: "GOV_FRAMEWORK_CUES"
             gte: 2
     then:
       add_labels: ["GOVERNANCE_FRAMEWORK"]
-      set_min_priority: 70
-      add_priority: 5
-    rationale: "Process/constitution changes have long-term impact"
-  
-  - id: "GOV-031"
-    name: "Quorum / voting procedure changes"
-    category: "GOVERNANCE"
-    priority: 690
-    when:
-      all:
-        - keyword_group_hits:
-            group: "PARAMETER_CUES"
-            gte: 2
-        - keyword_group_hits:
-            group: "VOTING_PROCEDURE_CUES"
-            gte: 1
-    then:
-      add_labels: ["GOVERNANCE_FRAMEWORK", "POLICY"]
       set_min_priority: 75
       add_priority: 5
-    rationale: "Decision mechanics are core governance"
-  
-  # ========================================
-  # ELECTIONS RULES (ELE-*)
-  # ========================================
-  
-  - id: "ELE-040"
-    name: "Elections / nominations"
-    category: "ELECTIONS"
-    priority: 650
+
+  - id: "META-001"
+    name: "Meta Governance / RFC"
+    category: "META_GOV"
+    priority: 600
     when:
-      any:
-        - keyword_group_hits:
-            group: "ELECTION_CUES"
-            gte: 2
-        - field_equals:
-            field: "proposal_kind"
-            value: "election"
-    then:
-      add_labels: ["ELECTIONS"]
-      set_min_priority: 65
-      add_priority: 5
-    rationale: "Leadership/roles affect execution capacity"
-  
-  # ========================================
-  # OPERATIONS & REPORTING RULES (OPS-*, REP-*)
-  # ========================================
-  
-  - id: "OPS-050"
-    name: "Operational / administrative"
-    category: "OPERATIONS"
-    priority: 400
-    when:
-      any:
-        - keyword_group_hits:
-            group: "OPS_CUES"
-            gte: 2
-        - field_equals:
-            field: "proposal_kind"
-            value: "ops"
-    then:
-      add_labels: ["OPERATIONS"]
-      set_max_priority: 40
-      add_priority: 0
-    rationale: "Many ops items can be fast-tracked"
-  
-  - id: "REP-060"
-    name: "Reporting / status update"
-    category: "REPORTING"
-    priority: 300
-    when:
-      any:
-        - keyword_group_hits:
-            group: "REPORTING_CUES"
-            gte: 2
-        - title_contains:
-            keywords: ["weekly update", "monthly report"]
-            min_hits: 1
-    then:
-      add_labels: ["REPORTING"]
-      set_max_priority: 30
-    rationale: "Informational items should not crowd high-impact work"
-  
-  - id: "META-070"
-    name: "Meta discussion / temperature check"
-    category: "META_GOVERNANCE"
-    priority: 500
-    when:
-      any:
-        - field_equals:
-            field: "item_type"
-            value: "discussion"
-        - title_contains:
-            keywords: ["temperature check"]
-            min_hits: 1
+      keyword_group_hits:
+        group: "META_GOV_CUES"
+        gte: 1
     then:
       add_labels: ["META_GOV"]
       set_max_priority: 50
-    rationale: "Useful context, typically not urgent execution"
-  
-  # ========================================
-  # TIME SENSITIVITY MODIFIERS (TIME-*)
-  # ========================================
-  
-  - id: "TIME-001"
-    name: "Critical deadline (≤24h)"
+
+  - id: "SPON-001"
+    name: "Sponsorship Request"
+    category: "SPONSORSHIP"
+    priority: 500
+    when:
+      any:
+        - flag_set: "CONTEXT_SPONSORSHIP"
+        - keyword_group_hits:
+            group: "SPONSORSHIP_CUES"
+            gte: 1
+    then:
+      add_labels: ["SPONSORSHIP"]
+      set_max_priority: 60
+
+  - id: "OPS-050"
+    name: "Operational / Administrative"
+    category: "OPERATIONS"
+    priority: 400
+    when:
+      all:
+        - not_flag: "CONTEXT_HR"
+        - keyword_group_hits:
+            group: "OPS_CUES"
+            gte: 2
+    then:
+      add_labels: ["OPERATIONS"]
+      set_max_priority: 45
+
+  - id: "REP-001-STRICT"
+    name: "Reporting"
+    category: "REPORTING"
+    priority: 300
+    when:
+      all:
+        - title_contains: 
+            keywords: ["report", "update", "summary"]
+            min_hits: 1
+        - keyword_group_hits:
+            group: "REPORTING_STRICT_CUES"
+            gte: 1
+        - not_flag: "CONTEXT_ELECTION"
+    then:
+      add_labels: ["REPORTING"]
+      set_max_priority: 35
+
+  - id: "RES-001"
+    name: "Research"
+    category: "RESEARCH"
+    priority: 350
+    when:
+      all:
+        - title_contains:
+            keywords: ["research", "study", "analysis"]
+            min_hits: 1
+        - not_labeled: ["GOVERNANCE_FRAMEWORK"]
+        - not_labeled: ["PROTOCOL_UPGRADE"]
+    then:
+      add_labels: ["RESEARCH"]
+      set_max_priority: 40
+      set_min_priority: 25
+
+  # ---------------------------------------------------------------------------
+  # PHASE 3: MODIFIERS
+  # ---------------------------------------------------------------------------
+
+  - id: "TIME-MODIFIERS"
+    name: "Time Sensitivity"
     category: "TIME_MODIFIER"
+    priority: 200
+    when:
+      not_flag: "STATE_CLOSED"
+    then:
+      apply_time_sensitivity_tiers: true
+
+  - id: "WORKLOAD-MODIFIERS"
+    name: "Content Length"
+    category: "WORKLOAD_MODIFIER"
+    priority: 150
+    when:
+      always: true
+    then:
+      apply_workload_tiers: true
+
+  # ---------------------------------------------------------------------------
+  # PHASE 4: STATE-BASED KILL SWITCH & EXCEPTIONS
+  # ---------------------------------------------------------------------------
+
+  - id: "OVERRIDE-CLOSED-CRITICAL"
+    name: "Exception: Critical Closed Items"
+    category: "OVERRIDE"
+    priority: 110
+    when:
+      all:
+        - flag_set: "STATE_CLOSED"
+        - any:
+            - has_label: "TREASURY_TIER_1"
+            - has_label: "TREASURY_TIER_2"
+        - any:
+            - has_label: "PROTOCOL_UPGRADE"
+            - has_label: "GOVERNANCE_FRAMEWORK"
+    then:
+      set_max_priority: 85
+      set_min_priority: 75
+      set_recommended_handling: "deep_review"
+    rationale: "Critical constitutional/budget items preserve high priority even when closed."
+
+  - id: "OVERRIDE-CLOSED-HIGH-VALUE"
+    name: "Exception: High Value Closed"
+    category: "OVERRIDE"
+    priority: 105
+    when:
+      all:
+        - flag_set: "STATE_CLOSED"
+        - any:
+            - has_label: "TREASURY_TIER_1"
+            - has_label: "TREASURY_TIER_2"
+    then:
+      set_max_priority: 75
+      set_recommended_handling: "deep_review"
+    rationale: "Preserve higher priority for major historical budget items."
+
+  - id: "OVERRIDE-CLOSED-CONSTITUTIONAL"
+    name: "Exception: Constitutional Protocol Closed"
+    category: "OVERRIDE"
+    priority: 104
+    when:
+      all:
+        - flag_set: "STATE_CLOSED"
+        - has_label: "GOVERNANCE_FRAMEWORK"
+        - any:
+            - has_label: "PROTOCOL_UPGRADE"
+            - has_label: "PARAMETER_CHANGE"
+            - has_label: "NEW_PROGRAM"
+    then:
+      set_max_priority: 80
+      set_min_priority: 70
+      set_recommended_handling: "deep_review"
+    rationale: "Constitutional changes preserve significance for historical analysis."
+
+  - id: "OVERRIDE-CLOSED-PROTOCOL"
+    name: "Exception: Protocol Closed"
+    category: "OVERRIDE"
+    priority: 103
+    when:
+      all:
+        - flag_set: "STATE_CLOSED"
+        - has_label: "PROTOCOL_UPGRADE"
+    then:
+      set_max_priority: 75
+      set_min_priority: 65
+      set_recommended_handling: "deep_review"
+    rationale: "Protocol upgrades remain significant even after closure."
+
+  - id: "OVERRIDE-CLOSED-NEW-PROGRAM"
+    name: "Exception: New Program Closed"
+    category: "OVERRIDE"
+    priority: 102
+    when:
+      all:
+        - flag_set: "STATE_CLOSED"
+        - has_label: "NEW_PROGRAM"
+    then:
+      set_max_priority: 70
+      set_min_priority: 60
+      set_recommended_handling: "standard_review"
+    rationale: "New programs preserve moderate priority for historical reference."
+
+  - id: "OVERRIDE-CLOSED-01"
+    name: "Kill Switch: General Closed Proposals"
+    category: "OVERRIDE"
     priority: 100
     when:
       all:
-        - field_equals:
-            field: "status"
-            value: "active"
-        - time_remaining:
-            max_hours: 24
+        - flag_set: "STATE_CLOSED"
+        - not_labeled: ["TREASURY_TIER_1"]
+        - not_labeled: ["TREASURY_TIER_2"]
+        - not_labeled: ["PROTOCOL_UPGRADE"]
+        - not_labeled: ["GOVERNANCE_FRAMEWORK"]
+        - not_labeled: ["NEW_PROGRAM"]
     then:
-      add_priority: 15
-    rationale: "Urgent attention needed before deadline"
-  
-  - id: "TIME-002"
-    name: "Near deadline (≤48h)"
-    category: "TIME_MODIFIER"
+      set_max_priority: 50
+      set_recommended_handling: "standard_review" 
+    rationale: "Standard closed proposals are never urgent."
+
+  - id: "OVERRIDE-CLOSED-02"
+    name: "Kill Switch: Closed Elections"
+    category: "OVERRIDE"
     priority: 99
     when:
       all:
-        - field_equals:
-            field: "status"
-            value: "active"
-        - time_remaining:
-            max_hours: 48
-            min_hours: 24
+        - flag_set: "STATE_CLOSED"
+        - has_label: "ELECTIONS"
     then:
-      add_priority: 10
-    rationale: "Approaching deadline"
-  
-  - id: "TIME-003"
-    name: "Upcoming deadline (≤72h)"
-    category: "TIME_MODIFIER"
-    priority: 98
-    when:
-      all:
-        - field_equals:
-            field: "status"
-            value: "active"
-        - time_remaining:
-            max_hours: 72
-            min_hours: 48
-    then:
-      add_priority: 5
-    rationale: "Deadline within 3 days"
-  
-  - id: "TIME-010"
-    name: "Closed proposal cap (non-incident)"
-    category: "TIME_MODIFIER"
-    priority: 50
-    when:
-      all:
-        - field_in:
-            field: "status"
-            values: ["closed", "executed"]
-        - not_labeled: ["INCIDENT", "REPORTING"]
-    then:
-      set_max_priority: 50
-    rationale: "Historical items have lower urgency unless incident-related"
-  
-  - id: "TIME-011"
-    name: "Closed reporting cap"
-    category: "TIME_MODIFIER"
-    priority: 49
-    when:
-      all:
-        - field_in:
-            field: "status"
-            values: ["closed", "executed"]
-        - has_label: "REPORTING"
-    then:
+      set_recommended_handling: "informational_only"
       set_max_priority: 30
-    rationale: "Past reports are informational only"
-  
-  - id: "TIME-012"
-    name: "Closed incident minimum"
-    category: "TIME_MODIFIER"
-    priority: 51
-    when:
-      all:
-        - field_in:
-            field: "status"
-            values: ["closed", "executed"]
-        - has_label: "INCIDENT"
-    then:
-      set_min_priority: 70
-    rationale: "Past incidents remain high priority for analysis"
-  
-  # ========================================
-  # WORKLOAD/LENGTH MODIFIERS (LEN-*)
-  # ========================================
-  
-  - id: "LEN-001"
-    name: "Long form content"
-    category: "WORKLOAD_MODIFIER"
-    priority: 10
-    when:
-      word_count:
-        gte: 3000
-    then:
-      add_priority: 10
-      add_labels: ["LONG_FORM"]
-    rationale: "Extensive content requires significant reading time"
-  
-  - id: "LEN-002"
-    name: "Medium form content"
-    category: "WORKLOAD_MODIFIER"
-    priority: 9
-    when:
-      word_count:
-        gte: 1500
-        lt: 3000
-    then:
-      add_priority: 6
-      add_labels: ["MEDIUM_FORM"]
-    rationale: "Moderate reading time required"
-  
-  - id: "LEN-003"
-    name: "Standard form content"
-    category: "WORKLOAD_MODIFIER"
-    priority: 8
-    when:
-      word_count:
-        gte: 800
-        lt: 1500
-    then:
-      add_priority: 3
-      add_labels: ["STANDARD_FORM"]
-    rationale: "Standard reading time"
+      set_min_priority: 20
 
-# Special overrides
-overrides:
-  # Any item labeled SECURITY must be urgent_deep_review
-  - condition:
-      has_label: "SECURITY"
-    force:
-      recommended_handling: "urgent_deep_review"
-    rationale: "Security issues always require immediate attention"
+  # ---------------------------------------------------------------------------
+  # PHASE 5: DEFAULT
+  # ---------------------------------------------------------------------------
 
-# Evaluation order (fixed sequence)
-evaluation_order:
-  - "label_rules"           # Apply all label rules first
-  - "base_priority_rules"   # Set minimums/maximums/points
-  - "time_modifiers"        # Apply time-based adjustments
-  - "workload_modifiers"    # Apply length-based adjustments
-  - "clamp_score"           # Clamp to 0-100 range
-  - "apply_overrides"       # Force overrides (e.g., SECURITY)
-  - "map_handling"          # Map score to recommended_handling
+  - id: "DEFAULT-001"
+    name: "Default Classification"
+    category: "DEFAULT"
+    priority: 1
+    when:
+      label_count:
+        lt: 2
+    then:
+      add_labels: ["UNCATEGORIZED"]
+      set_min_priority: 30
+      set_max_priority: 50
+      set_recommended_handling: "standard_review"
+    rationale: "Ensure every proposal has at least basic classification."
 
-# Conflict resolution strategy
+# =============================================================================
+# SCORING CONFIG
+# =============================================================================
+
+score_mapping:
+  urgent_deep_review:
+    min: 90
+    max: 100
+    description: "Immediate attention required - active incidents, critical vulnerabilities"
+  deep_review:
+    min: 70
+    max: 89
+    description: "Focused reading required - protocol changes, constitutional matters, large budgets"
+  standard_review:
+    min: 40
+    max: 69
+    description: "Normal workflow - standard proposals, moderate budgets"
+  fast_track_ok:
+    min: 25
+    max: 39
+    description: "Safe to batch - small grants, routine operations"
+  informational_only:
+    min: 0
+    max: 24
+    description: "Archive only - past reports, completed elections"
+
 conflict_resolution:
-  min_priority: "max"  # Take maximum of all set_min_priority values
-  max_priority: "min"  # Take minimum of all set_max_priority values
-  labels: "additive"   # Labels accumulate
-  priority_caps: "caps_win"  # If both add_priority and set_max_priority, cap wins
+  max_priority: "min"
+  min_priority: "max"
+  labels: "additive"
+  flags: "additive"
