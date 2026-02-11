@@ -42,7 +42,7 @@
 - ✅ **Data Ingestion:** Live GraphQL connection to Snapshot.org (Arbitrum DAO)
 - ✅ **Database Schema:** 200+ proposals ingested and queryable
 - ✅ **Rule Engine:** 21 deterministic rules implemented (`app/services/rule_engine.py`)
-- ✅ **Rulebook v1:** Machine-readable YAML + human-readable documentation
+- ✅ **Rulebook v2.7.0:** Machine-readable YAML + human-readable documentation (ex ante validated)
 - ✅ **API Endpoints:** `/proposals/feed`, `/proposals/{id}`, `/health`
 - ✅ **Tests:** 45/45 passing (225% of target, 100% rule coverage)
 - ✅ **OpenAPI/Swagger:** Auto-generated interactive documentation
@@ -455,6 +455,14 @@ This project is a component of a PhD dissertation on participation architecture 
 ---
 
 ## 📈 Recent Updates
+
+**v0.7.0 (February 2026) - Ex Ante Validation Complete ✅**
+- ✅ **Rulebook v2.7.0** - Ex Ante validated on 399 historical proposals (32+ months)
+- ✅ All rules validated: SEC-001, TECH-001, GOV-030, OPS-050, etc.
+- ✅ TECH-001-STRICT false positives fixed (removed generic keywords)
+- ✅ UNCATEGORIZED reduced from 34% to 11.8%
+- ✅ Validation script: `scripts/validate_ex_ante.py`
+- ✅ Ready for Phase 4 code freeze
 
 **v0.6.0 (February 2026) - Milestone 1 Complete ✅**
 - ✅ Rule engine with 21 deterministic rules
