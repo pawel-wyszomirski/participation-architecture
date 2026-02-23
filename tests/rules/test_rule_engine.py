@@ -1,5 +1,5 @@
 """
-Unit Tests for Rule Engine (Compatible with Rulebook v2.5.0)
+Unit Tests for Rule Engine (Compatible with Rulebook v2.7.0)
 Tests Context phases, Strict rules, Overrides, historical weight preservation,
 all categories, modifiers, edge cases, and determinism.
 
@@ -28,9 +28,8 @@ from app.services.rule_engine import (
 @pytest.fixture
 def engine():
     """
-    Initialize rule engine with the v2.5.0 rulebook.
+    Initialize rule engine with the current rulebook.
     """
-    # Fallback logic for testing convenience
     filename = "rulebook_kimi.yaml" if os.path.exists("rulebook_kimi.yaml") else "rulebook.yaml"
     return RuleEngine(filename)
 
@@ -48,11 +47,11 @@ def base_proposal():
 # TEST: ENGINE INITIALIZATION
 # ============================================================================
 
-def test_engine_loads_rulebook_v2_5(engine):
-    """Test that rule engine loads v2.5.0 rulebook successfully"""
+def test_engine_loads_rulebook(engine):
+    """Test that rule engine loads the current rulebook successfully"""
     assert engine is not None
-    assert engine.version == "2.5.0"
-    assert len(engine.rulebook["rules"]) >= 20 
+    assert engine.version == "2.7.0"
+    assert len(engine.rulebook["rules"]) >= 20
 
 # ============================================================================
 # TEST: PHASE 0 & 1 - CONTEXT & CRITICAL SECURITY (SEC-001-STRICT)
@@ -316,14 +315,10 @@ def test_override_closed_critical_protocol(engine):
     
     result = engine.evaluate_proposal(proposal)
     
-    # CTX-001 sets STATE_CLOSED flag
-    # TECH-001 sets PROTOCOL_UPGRADE
-    # OVERRIDE-CLOSED-PROTOCOL should fire
     assert "CTX-001" in result.reasons
     assert "TECH-001-STRICT" in result.reasons
     assert "OVERRIDE-CLOSED-PROTOCOL" in result.reasons
     
-    # Should maintain high score despite being closed
     assert result.priority_score >= 65
     assert result.recommended_handling == "deep_review"
 
@@ -354,7 +349,7 @@ def test_override_closed_election(engine):
     
     result = engine.evaluate_proposal(proposal)
     
-    assert "CTX-002" in result.reasons # Election context
+    assert "CTX-002" in result.reasons
     assert "OVERRIDE-CLOSED-02" in result.reasons
     
     assert result.priority_score <= 30
@@ -376,7 +371,6 @@ def test_time_modifiers_urgent(engine):
     
     result = engine.evaluate_proposal(proposal)
     assert "TIME-MODIFIERS" in result.reasons
-    # Cannot easily check exact increment without mocking, but we verify rule fired
 
 def test_time_modifiers_upcoming(engine):
     """TIME-MODIFIERS: 48-72h remaining -> +5 Priority"""
@@ -454,7 +448,7 @@ def test_empty_body_proposal(engine):
 
 def test_very_long_title(engine):
     """Test proposal with extremely long title"""
-    long_title = "A" * 1000  # 1000 character title
+    long_title = "A" * 1000
     proposal = create_test_proposal(
         title=long_title,
         body="Content"
@@ -465,8 +459,6 @@ def test_very_long_title(engine):
 
 def test_null_optional_fields(engine):
     """Test proposal with all optional fields as None"""
-    # Create raw object to bypass helper defaults if needed,
-    # or just use helper with explicit Nones where allowed.
     proposal = ProposalInput(
         item_id="null_test",
         title="Minimal Proposal",
