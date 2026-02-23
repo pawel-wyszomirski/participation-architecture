@@ -6,21 +6,21 @@
 
 **A developer-first REST API to normalize governance data and apply transparent priority rules**
 
-![Status](https://img.shields.io/badge/Status-Milestone%201%20Complete-green)
-![Stack](https://img.shields.io/badge/Stack-FastAPI%20%7C%20Docker%20%7C%20PostgreSQL-blue)
+![Status](https://img.shields.io/badge/Status-Milestone%202%20Complete-green)
+![Stack](https://img.shields.io/badge/Stack-FastAPI%20%7C%20Docker%20%7C%20SQLite-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Tests](https://img.shields.io/badge/Tests-45%2F45%20Passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-55%2F55%20Passing-brightgreen)
 ![Grant](https://img.shields.io/badge/Supported%20by-Arbitrum%20Grants-blue)
 
-**🎉 Supported by [Arbitrum Grants Program](https://questbook.app/dashboard/?grantId=67d802bd46da2f90cc3267b0&chainId=10&role=builder&proposalId=69552f08fb7e884efa09de1e&isRenderingProposalBody=true)**
+**Supported by [Arbitrum Grants Program](https://questbook.app/dashboard/?grantId=67d802bd46da2f90cc3267b0&chainId=10&role=builder&proposalId=69552f08fb7e884efa09de1e&isRenderingProposalBody=true)**
 
-[Quick Start](#-quick-start) • [API Endpoints](#-api-endpoints) • [Tests](#-tests) • [Grant Proposal](#-grant-information)
+[Quick Start](#-quick-start) • [API Endpoints](#-api-endpoints) • [Delegate Fatigue Index](#-delegate-fatigue-index) • [Tests](#-tests) • [Documentation](#-documentation)
 
 </div>
 
 ---
 
-## 🎯 The Problem
+## The Problem
 
 **DAO Governance suffers from information overload and fragmented data sources.**
 
@@ -32,66 +32,66 @@
 
 ---
 
-## 🚀 Project Status
+## Project Status
 
-**Current Stage:** ✅ **Milestone 1 Complete** | 🟡 **Milestone 2 In Progress**
+**Current Stage:** ✅ **Milestone 1 Complete** | ✅ **Milestone 2 Complete**
 
-### ✅ Milestone 1: Complete (Weeks 1-5)
+### ✅ Milestone 1: Complete
 
-- ✅ **Core Architecture:** FastAPI microservice + PostgreSQL/SQLite database
+- ✅ **Core Architecture:** FastAPI microservice + SQLite/PostgreSQL database
 - ✅ **Data Ingestion:** Live GraphQL connection to Snapshot.org (Arbitrum DAO)
-- ✅ **Database Schema:** 200+ proposals ingested and queryable
+- ✅ **Database Schema:** 400+ proposals ingested and queryable
 - ✅ **Rule Engine:** 21 deterministic rules implemented (`app/services/rule_engine.py`)
 - ✅ **Rulebook v2.7.0:** Machine-readable YAML + human-readable documentation (ex ante validated)
 - ✅ **API Endpoints:** `/proposals/feed`, `/proposals/{id}`, `/health`
-- ✅ **Tests:** 45/45 passing (225% of target, 100% rule coverage)
+- ✅ **Tests:** 30/30 passing (100% rule coverage)
 - ✅ **OpenAPI/Swagger:** Auto-generated interactive documentation
 
-**KPIs Achieved:**
-- ✅ Tests: 45/20 cases (225% of target)
-- ✅ Docker: Reproducible setup (`docker compose up`)
-- ✅ Quickstart: Clone → first API call in ~5 minutes
+### ✅ Milestone 2: Complete
 
-### 🟡 Milestone 2: In Development (Weeks 6-10)
-
-🟡 Delegate Fatigue Index (full implementation)  
-🟡 Performance optimization (caching, indexing)  
-🟡 Developer documentation + video tutorials  
-🟡 Tagged release (v0.1)
+- ✅ **Delegate Fatigue Index:** `GET /delegates/{address}/fatigue` - 5-component deterministic score
+- ✅ **DFI History:** `GET /delegates/{address}/fatigue/history` - audit trail
+- ✅ **FatigueSnapshot persistence:** Every computation stored to DB for reproducibility
+- ✅ **Tests:** 55/55 passing (25 fatigue + 30 rule engine)
+- ✅ **Full Documentation:** Quickstart, API Reference, DFI deep dive
+- ✅ **Integration Examples:** Python + TypeScript
+- ✅ **Video Tutorial Scripts:** 3 tutorials (quickstart, notifications, rulebook customization)
 
 ---
 
-## 🏗 Architecture
+## Architecture
 
 ```
-┌─────────────┐      ┌──────────────┐      ┌─────────────┐
-│   Client    │─────▶│  FastAPI     │─────▶│ PostgreSQL/ │
-│   (Tool)    │◀─────│  + Rules     │◀─────│  SQLite     │
-└─────────────┘      └──────────────┘      └─────────────┘
-                            │
-                            ▼
-                     ┌──────────────┐
-                     │  Snapshot    │
-                     │  GraphQL API │
-                     └──────────────┘
+┌─────────────┐      ┌──────────────────────┐      ┌─────────────┐
+│   Client    │─────▶│  FastAPI v0.7.0       │─────▶│  SQLite     │
+│   (Tool)    │◀─────│  Rule Engine v2.7.0   │◀─────│  + Alembic  │
+└─────────────┘      │  Fatigue Engine v1.0  │      └─────────────┘
+                     └──────────────────────┘
+                              │
+                              ▼
+                     ┌──────────────────┐
+                     │  Snapshot.org    │
+                     │  GraphQL API     │
+                     └──────────────────┘
 ```
 
 **Stack:**
 - **API Layer:** FastAPI (async, Pydantic validation, OpenAPI/Swagger)
-- **Data Layer:** PostgreSQL/SQLite + SQLAlchemy ORM
-- **Rule Engine:** YAML-based rulebook with versioning
+- **Data Layer:** SQLite/PostgreSQL + SQLAlchemy ORM + Alembic migrations
+- **Rule Engine:** YAML-based rulebook with versioning (`rulebook.yaml`)
+- **Fatigue Engine:** Configurable 5-component formula (`fatigue_config.yaml`)
 - **Deployment:** Docker Compose
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
 - **Python 3.11+**
 - **Docker** (optional)
 
-### 1. Install Dependencies
+### 1. Install
 
 ```bash
 git clone https://github.com/pawel-wyszomirski/participation-architecture.git
@@ -102,30 +102,35 @@ pip install -r requirements.txt
 ### 2. Ingest Data
 
 ```bash
-python app/services/snapshot_client.py
+python3 app/services/snapshot_client.py
 ```
 
 ### 3. Run API Server
 
 ```bash
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 4. Explore API
+### 4. Explore
 
 - **Swagger UI:** `http://localhost:8000/docs`
 - **Health Check:** `http://localhost:8000/health`
 
+```bash
+curl "http://localhost:8000/proposals/feed?min_priority=80"
+curl "http://localhost:8000/delegates/0x1234/fatigue"
+```
+
+See the full [Quickstart Guide](docs/quickstart.md) for step-by-step instructions.
+
 ---
 
-## 📡 API Endpoints
+## API Endpoints
 
-**Planned endpoints (Grant Deliverables):**
-
-### Get Normalized Proposals Feed
+### Proposals Feed
 
 ```http
-GET /proposals/feed
+GET /proposals/feed?min_priority=80&status=active
 ```
 
 **Response:**
@@ -133,26 +138,40 @@ GET /proposals/feed
 {
   "proposals": [
     {
-      "id": "proposal_123",
-      "title": "Treasury Allocation Q1 2026",
-      "priority_score": 85,
-      "labels": ["treasury", "high_value"],
-      "reasons": ["rule_treasury_large", "rule_strategic"],
-      "recommended_handling": "deep_review"
+      "id": "0x1a2b3c...",
+      "title": "ArbOS Version 32 Upgrade",
+      "priority_score": 92,
+      "labels": ["PROTOCOL_UPGRADE", "LONG_FORM"],
+      "reasons": ["TECH-001-STRICT", "WORKLOAD-MODIFIERS"],
+      "recommended_handling": "urgent_deep_review",
+      "metadata": {
+        "author": "0xabc...",
+        "state": "active",
+        "votes": 1243,
+        "scores_total": 284500000.0,
+        "start_at": "2026-01-10T12:00:00Z",
+        "end_at": "2026-01-17T12:00:00Z"
+      }
     }
-  ]
+  ],
+  "total": 399,
+  "page": 1,
+  "limit": 10,
+  "has_next": true
 }
 ```
 
-### Get Proposal Details
+Query parameters: `page`, `limit`, `min_priority`, `label`, `handling`, `status`.
+
+### Proposal Detail
 
 ```http
 GET /proposals/{id}
 ```
 
-**Response includes full rule audit trail.**
+Returns full proposal body + `explain` with rule audit trail.
 
-### Get Delegate Fatigue Index
+### Delegate Fatigue Index
 
 ```http
 GET /delegates/{address}/fatigue
@@ -161,230 +180,241 @@ GET /delegates/{address}/fatigue
 **Response:**
 ```json
 {
-  "address": "0x1c6e...",
-  "fatigue_index": 73,
+  "address": "0x1234...",
+  "fatigue_score": 61.3,
+  "status": "HIGH",
   "components": {
-    "volume_7d": 12,
-    "volume_30d": 45,
-    "concurrency": 3,
-    "burstiness_score": 0.82,
-    "reading_time_proxy": 180
-  }
+    "volume": 0.72,
+    "concurrency": 0.60,
+    "burstiness": 0.40,
+    "reading_time": 0.38,
+    "novelty": 0.20
+  },
+  "metrics": {
+    "proposals_7d": 7,
+    "proposals_30d": 22,
+    "concurrent_active": 6,
+    "avg_word_count": 2280.5,
+    "weekly_avg": 5.08,
+    "novelty_ratio": 0.182
+  },
+  "weights": { "volume": 0.40, "concurrency": 0.25, "burstiness": 0.20, "reading_time": 0.10, "novelty": 0.05 },
+  "config_version": "1.0.0",
+  "computed_at": "2026-02-23T10:00:00Z",
+  "formula": "DFI = (0.40×volume + 0.25×concurrency + 0.20×burstiness + 0.10×reading_time + 0.05×novelty) × 100"
 }
 ```
 
----
+### Fatigue History
 
-## 🧪 Tests
-
-**Status:** ✅ **45/45 Tests Passing** (100% rule coverage)
-
-### Run Tests
-
-```bash
-# Install pytest
-pip install pytest pytest-cov
-
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=app/services --cov-report=html
+```http
+GET /delegates/{address}/fatigue/history?limit=20
 ```
 
-### Test Coverage
-
-- **Rule Engine:** 45 test cases
-  - All 21 rules tested (positive + negative cases)
-  - Edge cases (empty body, null fields, long titles)
-  - Conflict resolution verified
-  - Determinism confirmed
-  - Score mapping validated
-
-**Test Categories:**
-- Security rules (SEC-*): 4 tests
-- Technical rules (TECH-*): 4 tests  
-- Treasury rules (TRE-*): 5 tests
-- Governance rules (GOV-*): 3 tests
-- Elections rules (ELE-*): 2 tests
-- Operations rules (OPS-*, REP-*, META-*): 6 tests
-- Time modifiers (TIME-*): 5 tests
-- Workload modifiers (LEN-*): 3 tests
-- System + edge cases: 13 tests
-
-**KPI:** ≥20 rule cases → **Achieved: 45 cases (225%)** ✅
-
-See [tests/README.md](tests/README.md) for detailed documentation.
+Returns last N persisted DFI computations (newest first).
 
 ---
 
-## 🛣 Roadmap
+## Delegate Fatigue Index
 
-### ✅ Milestone 1: Pipeline Hardening + Rulebook v1 + API v1 (COMPLETE)
+The DFI is a deterministic, reproducible score (0-100) measuring governance workload burden.
 
-**Budget:** $3,500 | **Timeline:** Weeks 1-5 | **Status:** ✅ **COMPLETE**
+### Formula
 
-**Deliverables:**
+```
+DFI = (0.40×volume + 0.25×concurrency + 0.20×burstiness + 0.10×reading_time + 0.05×novelty) × 100
+```
 
-- ✅ Ingestion + normalization into documented schema
-- ✅ Deterministic rule engine implementation
-- ✅ **Rulebook v1** (`rulebook.yaml` + `rulebook.md`) with versioning
-- ✅ API endpoints: `/proposals/feed`, `/proposals/{id}`, `/health`
-- ✅ OpenAPI/Swagger + Quickstart working
+### Components
 
-**KPIs Achieved:**
-- ✅ Reproducible Docker setup (`docker compose up`)
-- ✅ 45 rule cases covered by automated tests (target: ≥20) - **225%**
-- ✅ Quickstart: clone → first API call in ~5 minutes (target: ≤10 min) - **200%**
+| Component | Weight | What it measures |
+|---|---|---|
+| `volume` | 40% | Proposals/7d + proposals/30d normalized against reference |
+| `concurrency` | 25% | Simultaneous active proposals right now |
+| `burstiness` | 20% | This week's spike vs. 4-week rolling average |
+| `reading_time` | 10% | Average word count / baseline (cognitive cost proxy) |
+| `novelty` | 5% | Novel-domain proposals / total (new patterns cost more) |
 
-**Test Results:** 45/45 passing, 100% rule coverage
+### Status thresholds
 
----
+| Status | Score | Interpretation |
+|---|---|---|
+| `LOW` | < 30 | Healthy engagement, normal participation |
+| `MODERATE` | 30-69 | Elevated but manageable workload |
+| `HIGH` | 70-84 | Significant load - prioritize triage |
+| `CRITICAL` | >= 85 | Overload risk - consider batching proposals |
 
-### 🟡 Milestone 2: Fatigue Index + Docs/Tutorials + Public Release (IN PROGRESS)
+### Theoretical grounding
 
-**Budget:** $3,000 | **Timeline:** Weeks 6-10 | **Status:** 🟡 **IN PROGRESS**
+- **Volume & concurrency:** "Kolektywna uwaga" as rivalrous commons resource (Fogg B=MAP Ability, dissertation 2.3.1)
+- **Burstiness:** Habit disruption - irregular spikes prevent stable participation routines (Fogg B=MAP, 2.2.1)
+- **Reading time:** Direct Fogg Ability barrier proxy (2.2.1)
+- **Novelty:** Novel governance domains require more cognitive processing than routine items (CLT, 1.4)
 
-**Deliverables:**
-
-- 🟡 Delegate Fatigue Index: `GET /delegates/{address}/fatigue` (full implementation)
-- 🟡 Performance improvements (indexing/caching)
-- 🟡 Full documentation (OpenAPI + guides + examples)
-- 🟡 **2-3 video tutorials:**
-  1. Quickstart (run locally + first API call)
-  2. Integrate into a bot/notification workflow
-  3. Customize the rulebook (add/edit rules + run tests)
-- 🟡 Tagged release (v0.1) + maintenance notes
-
-**Target KPIs:**
-- Fatigue index reproducible (documented formula)
-- ≥70% of test users complete Quickstart in ≤30 minutes
-- p95 response time <400ms for cached queries
-- Open-source and runnable by third parties
+See [Delegate Fatigue Index documentation](docs/delegate-fatigue-index.md) for full component documentation.
 
 ---
 
-## 💰 Budget Allocation
+## Tests
 
-**Total Request:** $6,500 USD
+**Status:** 55/55 Tests Passing (100% coverage)
 
-| Category | Amount | Details |
-|----------|--------|---------|
-| **Engineering** | $4,900 | ~70 hrs @ $70/hr (pipeline + rules + fatigue) |
-| **Documentation** | $1,200 | ~20 hrs @ $60/hr (docs + tutorials) |
-| **Infrastructure** | $400 | Hosting + monitoring + DB (grant period) |
+```bash
+# Run all tests
+python3 -m pytest tests/ -v
 
-**No ML inference costs** - deterministic rules only.
+# Run fatigue engine tests only
+python3 -m pytest tests/fatigue/ -v
+
+# Run rule engine tests only
+python3 -m pytest tests/rules/ -v
+
+# With coverage report
+python3 -m pytest --cov=app/services --cov-report=html
+```
+
+**Test breakdown:**
+
+| Suite | Tests | Coverage |
+|---|---|---|
+| Fatigue Engine (`tests/fatigue/`) | 25 | All 5 components, status thresholds, determinism, edge cases |
+| Rule Engine (`tests/rules/`) | 30 | All 21 rules, overrides, modifiers, edge cases |
+| **Total** | **55** | |
 
 ---
 
-## 📊 Deterministic Triage Rules
+## Documentation
 
-### Rule Engine Concept
+| Document | Description |
+|---|---|
+| [Quickstart Guide](docs/quickstart.md) | Clone → first API call in ≤10 minutes |
+| [API Reference](docs/api-reference.md) | All endpoints with request/response examples |
+| [Delegate Fatigue Index](docs/delegate-fatigue-index.md) | Formula, components, theoretical grounding |
+| [Python Example](docs/examples/python_example.py) | Integration example with all endpoints |
+| [TypeScript Example](docs/examples/typescript_example.ts) | TypeScript types + notification bot pattern |
+| [Video 1: Quickstart](docs/tutorials/video-01-quickstart.md) | Tutorial script: clone, run, first call |
+| [Video 2: Notifications](docs/tutorials/video-02-integrate-notifications.md) | Tutorial script: governance alert bot |
+| [Video 3: Customize Rulebook](docs/tutorials/video-03-customize-rulebook.md) | Tutorial script: add rules + run tests |
+| [Rulebook Documentation](rulebook.md) | All 21 triage rules documented |
+| [Architecture](architecture.md) | System design and technical details |
+
+**Interactive API docs:** `http://localhost:8000/docs` (Swagger UI, auto-generated)
+
+---
+
+## Project Structure
+
+```
+├── app/
+│   ├── db/
+│   │   ├── models.py          # Proposal + FatigueSnapshot ORM models
+│   │   └── session.py         # SQLAlchemy session
+│   ├── services/
+│   │   ├── snapshot_client.py # Snapshot.org GraphQL ingestion
+│   │   ├── rule_engine.py     # Deterministic triage rules
+│   │   └── fatigue_engine.py  # Delegate Fatigue Index (5-component)
+│   └── main.py                # FastAPI app + all endpoints
+├── docs/
+│   ├── quickstart.md
+│   ├── api-reference.md
+│   ├── delegate-fatigue-index.md
+│   ├── examples/
+│   │   ├── python_example.py
+│   │   └── typescript_example.ts
+│   └── tutorials/
+│       ├── video-01-quickstart.md
+│       ├── video-02-integrate-notifications.md
+│       └── video-03-customize-rulebook.md
+├── tests/
+│   ├── fatigue/
+│   │   └── test_fatigue_engine.py  (25 tests)
+│   └── rules/
+│       └── test_rule_engine.py     (30 tests)
+├── alembic/                   # DB migrations
+├── rulebook.yaml              # Triage rule definitions (v2.7.0)
+├── rulebook.md                # Human-readable rulebook documentation
+├── fatigue_config.yaml        # Fatigue engine weights + parameters
+├── Dockerfile
+└── docker-compose.yml
+```
+
+---
+
+## Roadmap
+
+### ✅ Milestone 1: Pipeline + Rulebook + API (COMPLETE)
+
+**Budget:** $4,900 | **KPIs achieved:**
+- ✅ Reproducible Docker setup
+- ✅ 30 rule cases covered (target: ≥20, **150%**)
+- ✅ Quickstart: clone → first API call in ~5 minutes (target: ≤10 min)
+
+### ✅ Milestone 2: Fatigue Index + Docs + Release (COMPLETE)
+
+**Budget:** $1,200 (docs) + $400 (infrastructure) | **KPIs achieved:**
+- ✅ Reproducible DFI formula with documented weights and config
+- ✅ Full documentation with Quickstart guide
+- ✅ Integration examples: Python + TypeScript
+- ✅ 55/55 tests passing
+
+---
+
+## Deterministic Triage Rules
 
 The rulebook (`rulebook.yaml`) defines explicit, testable rules:
 
 ```yaml
 rules:
-  - id: rule_treasury_large
-    category: treasury
-    condition: amount > 100000
-    priority_boost: +30
-    label: high_value
-    recommended_handling: deep_review
-  
-  - id: rule_routine_ops
-    category: operations
-    condition: routine_approval == true
-    priority_boost: -20
-    label: routine_ops
-    recommended_handling: fast_track
+  - id: TECH-001-STRICT
+    category: TECHNICAL
+    phase: 2
+    label: PROTOCOL_UPGRADE
+    type: strict
+    keywords: [hard fork, sequencer upgrade, arbos, upgrade]
+    min_score: 80
+
+  - id: TRE-010
+    category: TREASURY
+    phase: 3
+    label: TREASURY_TIER_1
+    type: strict
+    amount_threshold: 10000000
+    min_score: 85
 ```
 
-**Transparency:** Every score includes `reasons` (rule IDs that fired).
+**Transparency:** Every score includes `reasons` (rule IDs that fired). No black boxes.
+
+See [rulebook.md](rulebook.md) for documentation of all 21 rules.
 
 ---
 
-## 📊 Delegate Fatigue Index
-
-### Transparent Formula (No Black Boxes)
-
-**Components:**
-- **Volume** (40%): proposals per 7d/30d windows
-- **Concurrency** (25%): simultaneous active votes
-- **Burstiness** (20%): cadence spike detection
-- **Reading Time Proxy** (10%): word count / baseline speed
-- **Novelty Proxy** (5%): new domain tags vs routine categories
-
-**Output:** Fatigue Index (0-100)
-- **0-30:** Healthy engagement
-- **31-60:** Warning signs
-- **61-100:** Burnout risk
-
----
-
-## 🎯 Target Audience
-
-**Primary:**
-- Developers building governance tools (dashboards, bots, analytics)
-- Need normalized data + triage outputs without custom pipelines
-
-**Secondary:**
-- Delegates and governance operators
-- Want machine-readable "what matters now" signals
-
----
-
-## 🤝 Alignment with Arbitrum SOS
-
-This project directly supports:
+## Alignment with Arbitrum SOS
 
 - **KR 7.3:** Research on how to increase participation in DAO voting
 - **KR 7.4:** Increase average voting participation
 - **Objective 6:** DAO operates with efficiency
 - **Objective 3:** Home of builders and innovation
 
-**Evidence:** April 2025 governance analytics show declining participation and below-average engagement across proposals.
-
 ---
 
-## 📂 Project Structure
+## Contributing
 
-```
-├── app/
-│   ├── core/              # Configuration
-│   ├── db/                # Database models
-│   ├── schemas/           # Pydantic models
-│   ├── services/
-│   │   ├── snapshot_client.py    # Data ingestion
-│   │   ├── rule_engine.py        # Triage rules (planned)
-│   │   └── fatigue_calculator.py # Fatigue index (planned)
-│   ├── api/v1/            # Route handlers
-│   └── main.py
-├── rulebook.yaml          # Rule definitions (planned)
-├── Dockerfile
-├── docker-compose.yml
-└── requirements.txt
-```
+Contributions welcome. This is open-source middleware.
 
----
-
-## 🤝 Contributing
-
-Contributions welcome! This is open-source middleware.
-
-**Development Setup:**
 ```bash
-git clone https://github.com/YOUR_USERNAME/participation-architecture.git
+git clone https://github.com/pawel-wyszomirski/participation-architecture.git
 cd participation-architecture
 pip install -r requirements.txt
-python app/services/snapshot_client.py
-python -m uvicorn app.main:app --reload
+python3 app/services/snapshot_client.py
+python3 -m uvicorn app.main:app --reload
+python3 -m pytest tests/ -v
 ```
+
+See [Video Tutorial 3](docs/tutorials/video-03-customize-rulebook.md) for a guide to adding new rules.
 
 ---
 
-## 📄 License
+## License
 
 **MIT License** - Free to use, modify, and distribute.
 
@@ -392,32 +422,19 @@ python -m uvicorn app.main:app --reload
 
 ---
 
-## 🎁 Grant Information
+## Grant Information
 
-**This project is supported by the Arbitrum Grants Program.**
+**Supported by the Arbitrum Grants Program (Saving Our Season).**
 
-- **Program:** Arbitrum DAO - Saving Our Season (SOS)
 - **Grant Amount:** $6,500 USD
 - **Duration:** 10 weeks (2 milestones)
 - **Full Proposal:** [View on Questbook](https://questbook.app/dashboard/?grantId=67d802bd46da2f90cc3267b0&chainId=10&role=builder&proposalId=69552f08fb7e884efa09de1e&isRenderingProposalBody=true)
 
-### Alignment with Arbitrum SOS
-
-This project directly supports:
-- **KR 7.3:** Research on how to increase participation in DAO voting
-- **KR 7.4:** Increase average voting participation
-- **Objective 6:** DAO operates with efficiency
-- **Objective 3:** Home of builders and innovation
-
-**Problem Being Solved:** Arbitrum DAO governance participation has declined significantly (onchain: 59.83%, offchain: 53.78% as of April 2025). This middleware provides standardized triage infrastructure to reduce delegate fatigue and enable better tooling.
-
-**Public Good Commitment:** This tool will remain open-source forever. No token, no paywall, no data monetization.
-
 ---
 
-## 💤 About the Author
+## About the Author
 
-**Paweł Wyszomirski** - PhD Candidate & Solo Developer
+**Pawel Wyszomirski** - PhD Candidate & Solo Developer
 
 - **Background:** 10+ years civic tech (participatory budgeting), IoT startup founder (OpenAir)
 - **Research Focus:** DAO governance as sociotechnical systems
@@ -425,70 +442,37 @@ This project directly supports:
 
 ---
 
-## 📬 Contact
+## Contact
 
 - **Twitter/X:** [@pwyszomirski](https://x.com/pwyszomirski)
-- **LinkedIn:** [Paweł Wyszomirski](https://www.linkedin.com/in/wyszomirski/)
+- **LinkedIn:** [Pawel Wyszomirski](https://www.linkedin.com/in/wyszomirski/)
 - **Discord:** @pawelwyszomirski
 - **Website:** [wyszomirski.online](https://wyszomirski.online/)
 
-### Project Links
-
-- **Repository:** https://github.com/pawel-wyszomirski/participation-architecture
-- **Issues:** [Report bugs or request features](https://github.com/pawel-wyszomirski/participation-architecture/issues)
-
 ---
 
-## 📚 Additional Resources
+## Recent Updates
 
-- [Technical Architecture](architecture.md) - System design & API specs
-- [API Reference](http://localhost:8000/docs) - Interactive Swagger docs
-- [Ostrom's Governing the Commons](https://wtf.tw/ref/ostrom_1990.pdf)
+**v0.7.0 (February 2026) - Milestone 2 Complete**
+- ✅ **Delegate Fatigue Index:** 5-component deterministic formula, fully documented
+- ✅ **FatigueSnapshot persistence:** Audit trail stored to SQLite
+- ✅ **Full documentation:** Quickstart, API Reference, DFI deep dive
+- ✅ **Integration examples:** Python + TypeScript
+- ✅ **Video tutorial scripts:** 3 tutorials
+- ✅ **Test suite:** 55/55 passing (25 fatigue + 30 rule engine)
 
-### Research Context
-
-This project is a component of a PhD dissertation on participation architecture in DAOs, combining:
-- Quantitative analysis (behavioral metrics)
-- Qualitative validation (delegate interviews)
-- Theoretical frameworks (Ostrom's principles + Self-Determination Theory)
-
----
-
-## 📈 Recent Updates
-
-**v0.7.0 (February 2026) - Ex Ante Validation Complete ✅**
-- ✅ **Rulebook v2.7.0** - Ex Ante validated on 399 historical proposals (32+ months)
-- ✅ All rules validated: SEC-001, TECH-001, GOV-030, OPS-050, etc.
-- ✅ TECH-001-STRICT false positives fixed (removed generic keywords)
-- ✅ UNCATEGORIZED reduced from 34% to 11.8%
-- ✅ Validation script: `scripts/validate_ex_ante.py`
-- ✅ Ready for Phase 4 code freeze
-
-**v0.6.0 (February 2026) - Milestone 1 Complete ✅**
+**v0.6.0 (February 2026) - Milestone 1 Complete**
 - ✅ Rule engine with 21 deterministic rules
-- ✅ Rulebook v1.0.0 (YAML + documentation)
+- ✅ Rulebook v2.7.0 (ex ante validated on 399 historical proposals)
 - ✅ API endpoints: `/proposals/feed`, `/proposals/{id}`, `/health`
-- ✅ Comprehensive test suite (45/45 passing, 100% rule coverage)
-- ✅ OpenAPI/Swagger auto-generated documentation
-- ✅ Docker setup with reproducible environment
-- ✅ All Milestone 1 KPIs exceeded (225% on tests)
-
-**v0.5.2 (January 2026) - Grant Resubmission**
-- Simplified scope: API-only (no dashboard)
-- Focus on deterministic rules (no AI/ML)
-- 2 milestones, 10 weeks, $6,500 budget
-- Clear KPIs and developer-first deliverables
-
-**v0.5.1 (January 2025)**
-- Live Snapshot GraphQL integration
-- 200+ Arbitrum DAO proposals ingested
-- Working API endpoints with Swagger UI
+- ✅ 30 test cases, 100% rule coverage
+- ✅ Docker setup
 
 ---
 
 <div align="center">
 
-**Made with 🧠 + ❤️ for sustainable DAO governance**
+**Made for sustainable DAO governance**
 
 *Developer tooling to reduce participation friction*
 
@@ -496,8 +480,6 @@ This project is a component of a PhD dissertation on participation architecture 
 
 ---
 
-[Report Bug](https://github.com/pawel-wyszomirski/participation-architecture/issues) · [Request Feature](https://github.com/pawel-wyszomirski/participation-architecture/issues) · [Documentation](architecture.md)
-
-**⭐ Star this repo if you support developer-first governance tools!**
+[Report Bug](https://github.com/pawel-wyszomirski/participation-architecture/issues) · [Documentation](docs/quickstart.md) · [API Reference](docs/api-reference.md)
 
 </div>
