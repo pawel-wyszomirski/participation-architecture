@@ -1,0 +1,73 @@
+# Delegate Fatigue Index (DFI) Configuration
+# Version follows SemVer - increment when changing weights or thresholds
+#
+# Theoretical grounding:
+#   - Volume:       "kolektywna uwaga" as rivalrous commons resource (dissertation 2.3.1)
+#   - Concurrency:  "paraliż decyzyjny" from simultaneous proposals (dissertation 2.3.1)
+#   - Burstiness:   habit disruption per Fogg B=MAP model (dissertation 2.2.1)
+#   - Reading Time: Fogg Ability reduction via cognitive cost (dissertation 2.2.1)
+#   - Novelty:      novel vs. routine cognitive processing cost (CLT, dissertation 1.4)
+#
+# Formula:
+#   DFI = (w_volume×volume + w_concurrency×concurrency + w_burstiness×burstiness
+#          + w_reading_time×reading_time + w_novelty×novelty) × 100
+
+version: "1.0.0"
+
+# Component weights (must sum to 1.0)
+weights:
+  volume: 0.40        # Dominant driver - volume of governance work over time
+  concurrency: 0.25   # Simultaneous active proposals create parallel decision pressure
+  burstiness: 0.20    # Spikes disrupt regularity needed for habit formation
+  reading_time: 0.10  # Cognitive cost proxy via word count
+  novelty: 0.05       # Novel domains require more cognitive effort than routine items
+
+# Reference values: what counts as "normal" governance load
+# These are calibrated for Arbitrum-scale governance (adjust per DAO)
+reference_values:
+  volume_7d: 5        # proposals/week considered normal (1/day)
+  volume_30d: 20      # proposals/month considered normal
+  concurrent: 5       # simultaneous active votes considered normal
+  reading_words: 3000 # word count considered normal proposal length
+                      # ~15 min reading at 200 wpm
+
+# Status thresholds (score 0-100)
+thresholds:
+  low: 30        # 0-29:  LOW      - manageable governance load
+  moderate: 70   # 30-69: MODERATE - elevated but sustainable
+  high: 85       # 70-84: HIGH     - significant cognitive burden
+                 # 85+:   CRITICAL - burnout risk per SDT framework
+
+# Keywords used to classify proposals as novel vs. routine for the novelty component.
+# Novel = genuinely new decision types requiring extra cognitive effort.
+# Routine = recurring, familiar patterns with lower processing cost.
+novel_keywords:
+  - "exploit"
+  - "hack"
+  - "drain"
+  - "vulnerability"
+  - "hard fork"
+  - "upgrade"
+  - "emergency"
+  - "pause"
+  - "security council"
+  - "arbitrum improvement"
+  - "new program"
+  - "pilot"
+  - "initiative"
+  - "constitution"
+  - "amendment"
+
+routine_keywords:
+  - "report"
+  - "transparency"
+  - "renewal"
+  - "housekeeping"
+  - "maintenance"
+  - "salary"
+  - "stipend"
+  - "compensation"
+  - "monthly"
+  - "quarterly"
+  - "routine"
+  - "operational"
