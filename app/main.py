@@ -230,12 +230,10 @@ async def get_proposals_feed(
     if status:
         query = query.filter(Proposal.state == status)
 
-    total = query.count()
-    offset = (page - 1) * limit
-    proposals = query.order_by(Proposal.start.desc()).offset(offset).limit(limit).all()
+    all_proposals = query.order_by(Proposal.start.desc()).all()
 
-    results = []
-    for db_proposal in proposals:
+    all_results = []
+    for db_proposal in all_proposals:
         proposal_input = proposal_from_db_model(db_proposal)
         triage_result = rule_engine.evaluate_proposal(proposal_input)
 
@@ -246,7 +244,7 @@ async def get_proposals_feed(
         if handling and triage_result.recommended_handling != handling:
             continue
 
-        results.append(ProposalTriageResponse(
+        all_results.append(ProposalTriageResponse(
             id=db_proposal.id,
             title=db_proposal.title,
             priority_score=triage_result.priority_score,
@@ -269,10 +267,13 @@ async def get_proposals_feed(
             ),
         ))
 
-    results.sort(key=lambda x: x.priority_score, reverse=True)
+    all_results.sort(key=lambda x: x.priority_score, reverse=True)
+
+    total = len(all_results)
+    offset = (page - 1) * limit
 
     return ProposalsFeedResponse(
-        proposals=results,
+        proposals=all_results[offset:offset + limit],
         total=total,
         page=page,
         limit=limit,

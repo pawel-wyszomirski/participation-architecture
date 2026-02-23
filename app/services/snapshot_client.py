@@ -27,10 +27,10 @@ class SnapshotClient:
             "Content-Type": "application/json"
         }
 
-    async def fetch_proposals(self, limit: int = 1500) -> List[Dict[str, Any]]:
+    async def fetch_proposals(self, limit: int = 1000) -> List[Dict[str, Any]]:
         """
         Fetches proposals from Snapshot API.
-        Limit set to 1500 to capture ~3 years of history for long-term analysis.
+        Limit set to 1000 (Snapshot.org max for a single query).
         """
         query = """
         query Proposals($space: String!, $limit: Int!) {
@@ -69,7 +69,7 @@ class SnapshotClient:
                 )
                 response.raise_for_status()
                 data = response.json()
-                return data.get("data", {}).get("proposals", [])
+                return data.get("data", {}).get("proposals") or []
             except Exception as e:
                 print(f"❌ Connection Error: {str(e)}")
                 return []
@@ -143,7 +143,7 @@ if __name__ == "__main__":
     async def main():
         print(f"🔄 [STEP 1] Ingestor: Fetching historical data ({ARBITRUM_SPACE})...")
         client = SnapshotClient()
-        proposals = await client.fetch_proposals(limit=1500) 
+        proposals = await client.fetch_proposals(limit=1000)
         if proposals:
             client.save_to_db(proposals)
         
