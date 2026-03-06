@@ -5,6 +5,8 @@
 Target audience: Developers who want to extend the rule engine for their own DAO or use case.
 Duration: ~12-15 minutes.
 
+Prerequisites: API running locally (see Tutorial 1).
+
 ---
 
 ## What we'll cover
@@ -15,9 +17,21 @@ Duration: ~12-15 minutes.
 4. Running the full test suite to verify nothing broke
 5. Customizing the Fatigue Index weights
 
+Ready-to-use snippets are in the repo:
+- Rule: `scripts/tutorial-03-new-rule.yaml`
+- Tests: `scripts/tutorial-03-new-tests.py`
+
 ---
 
 ## Script
+
+### Intro (0:00 - 0:45)
+
+> "In this video, I'll show you how to customize the rulebook - add your own triage rules and verify them with tests. The rule engine is fully deterministic: same input, same output, every time."
+
+> "I've prepared the snippets in the repo so you can follow along without typing everything from scratch."
+
+---
 
 ### Understanding the rulebook structure (0:45 - 3:00)
 
@@ -38,13 +52,21 @@ Duration: ~12-15 minutes.
   description: "Protocol upgrades - high impact technical changes"
 ```
 
-> "Each rule has: `id` (used in `reasons` field), `phase` (evaluation order), `label` (added to labels array), `type` (strict = set minimum score; soft = add to score), `keywords` (checked against title and body), `min_score` (for strict rules)."
+> "Each rule has: `id` (used in the `reasons` field of API responses), `phase` (evaluation order), `label` (added to the labels array), `type` (strict = set minimum score; soft = add to score), `keywords` (checked against title and body), `min_score` (for strict rules)."
 
 ---
 
 ### Adding a new rule (3:00 - 7:00)
 
-**Edit `rulebook.yaml`, add after the PROG-001 rule:**
+> "Let's add a rule that detects developer grant programs. The snippet is ready in the repo."
+
+**Show the snippet first:**
+
+```bash
+cat scripts/tutorial-03-new-rule.yaml
+```
+
+**Then add it to `rulebook.yaml` after the PROG-001 rule:**
 
 ```yaml
 - id: PROG-002
@@ -61,11 +83,19 @@ Duration: ~12-15 minutes.
   description: "Developer-focused grant programs and builder incentives"
 ```
 
-> "Using `type: soft` with `base_score: 65` - contributes a base score, other rules can add to it."
+> "Using `type: soft` with `base_score: 65` - this contributes a base score, and other rules can add to it. If a proposal mentions both a developer grant and a protocol upgrade, both rules fire and the scores combine."
 
 ---
 
-### Writing the test (7:00 - 10:00)
+### Writing the tests (7:00 - 10:00)
+
+> "Every rule needs tests - a positive case and a negative case. The test snippets are ready too."
+
+**Show the snippet:**
+
+```bash
+cat scripts/tutorial-03-new-tests.py
+```
 
 **Add to `tests/rules/test_rule_engine.py`:**
 
@@ -95,7 +125,7 @@ def test_prog_002_negative(engine):
     assert "DEVELOPER_GRANTS" not in result.labels
 ```
 
-> "Always write both positive and negative cases."
+> "Always write both positive and negative cases. The positive test checks that our keywords trigger the rule. The negative test makes sure generic grants without developer context don't fire it."
 
 ---
 
@@ -105,7 +135,7 @@ def test_prog_002_negative(engine):
 python3 -m pytest tests/ -v
 ```
 
-> "55 existing tests plus 2 new ones. I expect 57 to pass."
+> "All existing tests plus our 2 new ones should pass. If any old test breaks, it means our rule conflicts with an existing one - the test suite catches that."
 
 ---
 
@@ -122,7 +152,7 @@ weights:
   novelty: 0.05
 ```
 
-> "Weights must sum to 1.0. Change `reference_values` if your DAO has different baseline activity."
+> "Weights must sum to 1.0. If your DAO has high volume but proposals are short, you might increase the volume weight and decrease reading_time."
 
 ```yaml
 reference_values:
@@ -132,21 +162,33 @@ reference_values:
   reading_words: 3000
 ```
 
-> "Restart the API to reload config. Verify with `GET /debug/fatigue-config`."
+> "Change `reference_values` to match your DAO's baseline activity. Restart the API to reload config."
+
+```bash
+curl http://localhost:8000/debug/fatigue-config | python3 -m json.tool
+```
+
+> "Verify the new config loaded correctly."
 
 ---
 
-### Wrap up
+### Wrap up (14:00 - 15:00)
 
-> "Key workflow: edit YAML -> write test -> run tests -> verify."
+> "Key workflow: edit YAML, write tests, run tests, verify. The rulebook is a versioned institutional artifact - every change is testable and auditable."
 
-> "All documentation is in the docs/ folder. The rulebook.md explains every existing rule in detail."
+> "All snippets from this tutorial are in the `scripts/` folder: `tutorial-03-new-rule.yaml` and `tutorial-03-new-tests.py`. The full rulebook documentation is in `rulebook.md`."
+
+> "Thanks for watching. The repo is open source - issues and PRs are welcome at github.com/pawel-wyszomirski/participation-architecture."
 
 ---
 
 ## Demo commands summary
 
 ```bash
+# View ready-made snippets
+cat scripts/tutorial-03-new-rule.yaml
+cat scripts/tutorial-03-new-tests.py
+
 # Edit the rulebook
 nano rulebook.yaml
 
@@ -156,9 +198,7 @@ nano tests/rules/test_rule_engine.py
 # Run tests
 python3 -m pytest tests/ -v
 
-# Verify fatigue config loaded
+# Verify configs loaded
 curl http://localhost:8000/debug/fatigue-config | python3 -m json.tool
-
-# Verify rulebook loaded
 curl http://localhost:8000/debug/rulebook | python3 -m json.tool
 ```

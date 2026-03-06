@@ -26,10 +26,12 @@ Duration: ~5-7 minutes.
 ```bash
 git clone https://github.com/pawel-wyszomirski/participation-architecture.git
 cd participation-architecture
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-> "First, clone the repo and install dependencies. You'll need Python 3.11 or later. No external API keys required - the governance data comes from Snapshot.org, which is public."
+> "First, clone the repo, create a virtual environment and install dependencies. You'll need Python 3.11 or later. No external API keys required - the governance data comes from Snapshot.org, which is public."
 
 > "Requirements include FastAPI, SQLAlchemy, and PyYAML - lightweight, no ML dependencies. The rule engine is fully deterministic."
 
@@ -59,10 +61,15 @@ python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 ### Step 4: First API calls (3:00 - 5:00)
 
-**Open a second terminal:**
+**Open a second terminal (activate venv there too):**
 
 ```bash
-curl http://localhost:8000/health
+cd participation-architecture
+source venv/bin/activate
+```
+
+```bash
+curl http://localhost:8000/health | python3 -m json.tool
 ```
 
 > "Health check first. You can see the database is connected, 399 proposals loaded, and both engines are initialized."
@@ -106,14 +113,17 @@ curl "http://localhost:8000/delegates/0x1234/fatigue" | python3 -m json.tool
 ## Demo commands summary
 
 ```bash
-# Terminal 1 - API server
+# Terminal 1 - Setup & API server
 git clone https://github.com/pawel-wyszomirski/participation-architecture.git
 cd participation-architecture
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 python3 app/services/snapshot_client.py
 python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-# Terminal 2 - API calls
+# Terminal 2 - API calls (remember to activate venv)
+cd participation-architecture && source venv/bin/activate
 curl http://localhost:8000/health | python3 -m json.tool
 curl "http://localhost:8000/proposals/feed?min_priority=80&limit=5" | python3 -m json.tool
 curl "http://localhost:8000/delegates/0x1234/fatigue" | python3 -m json.tool

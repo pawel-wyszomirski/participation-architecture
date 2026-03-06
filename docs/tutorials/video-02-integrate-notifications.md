@@ -5,14 +5,19 @@
 Target audience: Developers building governance dashboards, bots, or alert systems.
 Duration: ~12-15 minutes.
 
+Prerequisites: API running locally (see Tutorial 1).
+
 ---
 
 ## What we'll build
 
 A Python script that:
-1. Polls the API every hour
-2. Sends alerts when urgent proposals appear or fatigue reaches CRITICAL
-3. Shows the pattern you'd replicate in a Telegram bot, Discord webhook, or cron job
+1. Checks the Delegate Fatigue Index for governance overload
+2. Scans for urgent proposals (priority >= 90)
+3. Outputs alerts you'd send to Telegram, Discord, or email
+
+The complete, runnable script is already in the repo at `scripts/governance_alerts.py`.
+A more comprehensive integration example is at `docs/examples/python_example.py`.
 
 ---
 
@@ -20,13 +25,33 @@ A Python script that:
 
 ### Intro (0:00 - 0:45)
 
-> "In this video, I'll show you how to integrate the Participation Architecture API into a notification workflow. We'll build a polling script that checks for urgent proposals and governance overload."
+> "In this video, I'll show you how to integrate the Participation Architecture API into a notification workflow. We'll walk through a governance alert bot that checks for urgent proposals and governance overload."
 
-> "Prerequisites: the API is running locally from tutorial 1. Let's go."
+> "The complete script is already in the repo - you can run it right away. But let's walk through how it works."
 
 ---
 
-### Step 1: Check fatigue context (2:00 - 4:00)
+### Step 1: Run the alert bot (0:45 - 2:00)
+
+**Show terminal (API must be running from Tutorial 1):**
+
+```bash
+python3 scripts/governance_alerts.py
+```
+
+> "Let's run it first to see what it does, then walk through the code."
+
+> "You can see it checks the fatigue index first - that's the global governance load - then scans for urgent proposals. If anything needs attention, it outputs alerts."
+
+---
+
+### Step 2: Walk through the code (2:00 - 6:00)
+
+**Open `scripts/governance_alerts.py` in editor:**
+
+> "The script has three key functions. Let's look at each."
+
+**Fatigue check:**
 
 ```python
 def get_fatigue():
@@ -45,11 +70,9 @@ def format_fatigue_alert(dfi):
     return None
 ```
 
-> "Check fatigue first - if CRITICAL, send an alert regardless of individual proposals."
+> "Check fatigue first. If the status is CRITICAL, we send an alert regardless of individual proposals. This gives you global context before diving into specifics."
 
----
-
-### Step 2: Check for urgent proposals (4:00 - 6:00)
+**Urgent proposals:**
 
 ```python
 def get_urgent_proposals():
@@ -63,11 +86,9 @@ def get_urgent_proposals():
     return resp.json()["proposals"]
 ```
 
-> "Filter by min_priority=90 and handling=urgent_deep_review. These need immediate attention."
+> "Filter by min_priority=90 and handling=urgent_deep_review. These are proposals that need immediate attention."
 
----
-
-### Step 3: The main loop (7:30 - 10:00)
+**Main check loop:**
 
 ```python
 def run_check():
@@ -81,7 +102,8 @@ def run_check():
     for proposal in get_urgent_proposals():
         alerts.append(
             f"URGENT: {proposal['title'][:80]}\n"
-            f"Score: {proposal['priority_score']}, Rules: {', '.join(proposal['reasons'])}"
+            f"Score: {proposal['priority_score']}, "
+            f"Rules: {', '.join(proposal['reasons'])}"
         )
 
     if alerts:
@@ -90,18 +112,30 @@ def run_check():
             # Replace with: send_telegram(alert) / send_discord_webhook(alert)
     else:
         print("All quiet - no alerts to send.")
-
-if __name__ == "__main__":
-    run_check()
 ```
+
+> "Collect all alerts, then deliver them. Right now it just prints - replace the print with your delivery method: Telegram, Discord, email, whatever you use."
 
 ---
 
-### Adding a schedule (11:30 - 13:00)
+### Step 3: Run the full example (6:00 - 8:00)
 
-**Option 1: cron**
 ```bash
-0 * * * * python3 /path/to/scripts/governance_alerts.py >> /var/log/governance_alerts.log 2>&1
+python3 docs/examples/python_example.py
+```
+
+> "There's also a more comprehensive example that shows all API features: health check, filtered feeds, proposal details, fatigue breakdown with component visualization, and status-based action routing."
+
+---
+
+### Step 4: Scheduling (8:00 - 10:00)
+
+> "To make this run automatically, you have two options."
+
+**Option 1: cron (simplest)**
+```bash
+# Check every hour
+0 * * * * cd /path/to/participation-architecture && venv/bin/python3 scripts/governance_alerts.py >> /var/log/governance_alerts.log 2>&1
 ```
 
 **Option 2: GitHub Actions**
@@ -117,37 +151,37 @@ jobs:
       - uses: actions/checkout@v4
       - run: pip install requests
       - run: python3 scripts/governance_alerts.py
+        env:
+          API_URL: https://your-deployment-url.example.com
 ```
 
 ---
 
-### Wrap up
+### Wrap up (10:00 - 11:00)
 
-> "The key insight: check fatigue first for global context, then look at labeled proposals for specific actions."
+> "The key pattern: check fatigue first for global context, then look at specific proposals."
 
-> "The API is stateless and deterministic - same governance state always produces the same scores."
+> "The API is stateless and deterministic - same governance state always produces the same scores. No surprises."
 
-> "The full script is in docs/examples/python_example.py."
+> "Both scripts are in the repo ready to use: `scripts/governance_alerts.py` for quick alerts, `docs/examples/python_example.py` for a full integration demo. In the next video, we'll customize the rulebook."
 
 ---
 
 ## Demo commands summary
 
-```python
-import requests
+```bash
+# Run the alert bot
+python3 scripts/governance_alerts.py
 
-BASE_URL = "http://localhost:8000"
+# Run the full integration example
+python3 docs/examples/python_example.py
 
-dfi = requests.get(f"{BASE_URL}/delegates/0x0/fatigue").json()
-print(f"Fatigue: {dfi['fatigue_score']:.0f} ({dfi['status']})")
-
-feed = requests.get(f"{BASE_URL}/proposals/feed", params={
-    "min_priority": 85,
-    "status": "active",
-    "limit": 5,
-}).json()
-
-for p in feed["proposals"]:
-    print(f"[{p['priority_score']}] {p['recommended_handling']:22} {p['title'][:60]}")
-    print(f"       {', '.join(p['labels'])}")
+# Interactive exploration
+python3
+>>> import requests
+>>> r = requests.get("http://localhost:8000/delegates/0x0/fatigue")
+>>> r.json()["status"]
+'MODERATE'
+>>> r.json()["fatigue_score"]
+42.5
 ```
