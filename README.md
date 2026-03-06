@@ -14,7 +14,7 @@
 
 **Supported by [Arbitrum Grants Program](https://questbook.app/dashboard/?grantId=67d802bd46da2f90cc3267b0&chainId=10&role=builder&proposalId=69552f08fb7e884efa09de1e&isRenderingProposalBody=true)**
 
-[Quick Start](#-quick-start) • [API Endpoints](#-api-endpoints) • [Delegate Fatigue Index](#-delegate-fatigue-index) • [Tests](#-tests) • [Documentation](#-documentation)
+[Quick Start](#-quick-start) • [API Endpoints](#-api-endpoints) • [Video Tutorials](#-video-tutorials) • [Delegate Fatigue Index](#-delegate-fatigue-index) • [Tests](#-tests) • [Documentation](#-documentation)
 
 </div>
 
@@ -55,7 +55,7 @@
 - ✅ **Tests:** 55/55 passing (25 fatigue + 30 rule engine)
 - ✅ **Full Documentation:** Quickstart, API Reference, DFI deep dive
 - ✅ **Integration Examples:** Python + TypeScript
-- ✅ **Video Tutorial Scripts:** 3 tutorials (quickstart, notifications, rulebook customization)
+- ✅ **Video Tutorials:** [3 published tutorials on YouTube](https://www.youtube.com/playlist?list=PLCETnIPtht9YHuvg6XsoGJuWsr_4ZTPZV)
 
 ---
 
@@ -96,6 +96,8 @@
 ```bash
 git clone https://github.com/pawel-wyszomirski/participation-architecture.git
 cd participation-architecture
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -121,7 +123,24 @@ curl "http://localhost:8000/proposals/feed?min_priority=80"
 curl "http://localhost:8000/delegates/0x1234/fatigue"
 ```
 
-See the full [Quickstart Guide](docs/quickstart.md) for step-by-step instructions.
+See the full [Quickstart Guide](docs/quickstart.md) or watch [Tutorial 1 on YouTube](https://youtu.be/c12DReTyGqk).
+
+---
+
+## Video Tutorials
+
+[Full playlist on YouTube](https://www.youtube.com/playlist?list=PLCETnIPtht9YHuvg6XsoGJuWsr_4ZTPZV)
+
+| # | Tutorial | YouTube | Script |
+|---|---|---|---|
+| 1 | **Quickstart** - Clone, run, first API call | [Watch](https://youtu.be/c12DReTyGqk) | [Script](docs/tutorials/video-01-quickstart.md) |
+| 2 | **Notification Bot** - Build a governance alert bot | [Watch](https://youtu.be/nkV6J4DW4a4) | [Script](docs/tutorials/video-02-integrate-notifications.md) |
+| 3 | **Customize Rulebook** - Add rules and run tests | [Watch](https://youtu.be/hZhBm-ik-vk) | [Script](docs/tutorials/video-03-customize-rulebook.md) |
+
+Runnable demo scripts are included in the repo:
+- `scripts/governance_alerts.py` - Alert bot from Tutorial 2
+- `scripts/tutorial-03-new-rule.yaml` - Rule snippet from Tutorial 3
+- `scripts/tutorial-03-new-tests.py` - Test snippet from Tutorial 3
 
 ---
 
@@ -201,7 +220,7 @@ GET /delegates/{address}/fatigue
   "weights": { "volume": 0.40, "concurrency": 0.25, "burstiness": 0.20, "reading_time": 0.10, "novelty": 0.05 },
   "config_version": "1.0.0",
   "computed_at": "2026-02-23T10:00:00Z",
-  "formula": "DFI = (0.40×volume + 0.25×concurrency + 0.20×burstiness + 0.10×reading_time + 0.05×novelty) × 100"
+  "formula": "DFI = (0.40*volume + 0.25*concurrency + 0.20*burstiness + 0.10*reading_time + 0.05*novelty) * 100"
 }
 ```
 
@@ -222,7 +241,7 @@ The DFI is a deterministic, reproducible score (0-100) measuring governance work
 ### Formula
 
 ```
-DFI = (0.40×volume + 0.25×concurrency + 0.20×burstiness + 0.10×reading_time + 0.05×novelty) × 100
+DFI = (0.40*volume + 0.25*concurrency + 0.20*burstiness + 0.10*reading_time + 0.05*novelty) * 100
 ```
 
 ### Components
@@ -287,16 +306,23 @@ python3 -m pytest --cov=app/services --cov-report=html
 
 | Document | Description |
 |---|---|
-| [Quickstart Guide](docs/quickstart.md) | Clone → first API call in ≤10 minutes |
+| [Quickstart Guide](docs/quickstart.md) | Clone to first API call in <=10 minutes |
 | [API Reference](docs/api-reference.md) | All endpoints with request/response examples |
 | [Delegate Fatigue Index](docs/delegate-fatigue-index.md) | Formula, components, theoretical grounding |
 | [Python Example](docs/examples/python_example.py) | Integration example with all endpoints |
 | [TypeScript Example](docs/examples/typescript_example.ts) | TypeScript types + notification bot pattern |
-| [Video 1: Quickstart](docs/tutorials/video-01-quickstart.md) | Tutorial script: clone, run, first call |
-| [Video 2: Notifications](docs/tutorials/video-02-integrate-notifications.md) | Tutorial script: governance alert bot |
-| [Video 3: Customize Rulebook](docs/tutorials/video-03-customize-rulebook.md) | Tutorial script: add rules + run tests |
 | [Rulebook Documentation](rulebook.md) | All 21 triage rules documented |
 | [Architecture](architecture.md) | System design and technical details |
+
+### Video Tutorials
+
+| Tutorial | YouTube | Script |
+|---|---|---|
+| 1. Quickstart | [Watch](https://youtu.be/c12DReTyGqk) | [Script](docs/tutorials/video-01-quickstart.md) |
+| 2. Notification Bot | [Watch](https://youtu.be/nkV6J4DW4a4) | [Script](docs/tutorials/video-02-integrate-notifications.md) |
+| 3. Customize Rulebook | [Watch](https://youtu.be/hZhBm-ik-vk) | [Script](docs/tutorials/video-03-customize-rulebook.md) |
+
+[Full playlist](https://www.youtube.com/playlist?list=PLCETnIPtht9YHuvg6XsoGJuWsr_4ZTPZV)
 
 **Interactive API docs:** `http://localhost:8000/docs` (Swagger UI, auto-generated)
 
@@ -325,6 +351,10 @@ python3 -m pytest --cov=app/services --cov-report=html
 │       ├── video-01-quickstart.md
 │       ├── video-02-integrate-notifications.md
 │       └── video-03-customize-rulebook.md
+├── scripts/
+│   ├── governance_alerts.py           # Runnable alert bot demo
+│   ├── tutorial-03-new-rule.yaml      # Rule snippet for Tutorial 3
+│   └── tutorial-03-new-tests.py       # Test snippet for Tutorial 3
 ├── tests/
 │   ├── fatigue/
 │   │   └── test_fatigue_engine.py  (25 tests)
@@ -346,8 +376,8 @@ python3 -m pytest --cov=app/services --cov-report=html
 
 **Budget:** $4,900 | **KPIs achieved:**
 - ✅ Reproducible Docker setup
-- ✅ 30 rule cases covered (target: ≥20, **150%**)
-- ✅ Quickstart: clone → first API call in ~5 minutes (target: ≤10 min)
+- ✅ 30 rule cases covered (target: >=20, **150%**)
+- ✅ Quickstart: clone to first API call in ~5 minutes (target: <=10 min)
 
 ### ✅ Milestone 2: Fatigue Index + Docs + Release (COMPLETE)
 
@@ -355,6 +385,7 @@ python3 -m pytest --cov=app/services --cov-report=html
 - ✅ Reproducible DFI formula with documented weights and config
 - ✅ Full documentation with Quickstart guide
 - ✅ Integration examples: Python + TypeScript
+- ✅ 3 video tutorials published on [YouTube](https://www.youtube.com/playlist?list=PLCETnIPtht9YHuvg6XsoGJuWsr_4ZTPZV)
 - ✅ 55/55 tests passing
 
 ---
@@ -404,13 +435,15 @@ Contributions welcome. This is open-source middleware.
 ```bash
 git clone https://github.com/pawel-wyszomirski/participation-architecture.git
 cd participation-architecture
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 python3 app/services/snapshot_client.py
 python3 -m uvicorn app.main:app --reload
 python3 -m pytest tests/ -v
 ```
 
-See [Video Tutorial 3](docs/tutorials/video-03-customize-rulebook.md) for a guide to adding new rules.
+See [Video Tutorial 3](https://youtu.be/hZhBm-ik-vk) for a guide to adding new rules.
 
 ---
 
@@ -458,7 +491,8 @@ See [Video Tutorial 3](docs/tutorials/video-03-customize-rulebook.md) for a guid
 - ✅ **FatigueSnapshot persistence:** Audit trail stored to SQLite
 - ✅ **Full documentation:** Quickstart, API Reference, DFI deep dive
 - ✅ **Integration examples:** Python + TypeScript
-- ✅ **Video tutorial scripts:** 3 tutorials
+- ✅ **Video tutorials:** [3 tutorials on YouTube](https://www.youtube.com/playlist?list=PLCETnIPtht9YHuvg6XsoGJuWsr_4ZTPZV)
+- ✅ **Runnable demo scripts:** `scripts/governance_alerts.py` + tutorial snippets
 - ✅ **Test suite:** 55/55 passing (25 fatigue + 30 rule engine)
 
 **v0.6.0 (February 2026) - Milestone 1 Complete**
