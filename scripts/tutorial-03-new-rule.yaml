@@ -1,0 +1,19 @@
+# Tutorial 3: New rule to add to rulebook.yaml
+# Paste this after the PROG-001 rule in rulebook.yaml
+#
+# Usage during video recording:
+#   cat scripts/tutorial-03-new-rule.yaml
+#   # then copy-paste the rule below into rulebook.yaml
+
+- id: PROG-002
+  category: PROGRAMS
+  phase: 3
+  label: DEVELOPER_GRANTS
+  type: soft
+  keywords:
+    - developer grant
+    - builder program
+    - developer incentive
+    - build grant
+  base_score: 65
+  description: "Developer-focused grant programs and builder incentives"
