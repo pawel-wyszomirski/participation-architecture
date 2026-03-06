@@ -6,7 +6,7 @@
 
 **A developer-first REST API to normalize governance data and apply transparent priority rules**
 
-![Status](https://img.shields.io/badge/Status-Milestone%202%20Complete-green)
+![Status](https://img.shields.io/badge/Status-v0.1.0%20Released-green)
 ![Stack](https://img.shields.io/badge/Stack-FastAPI%20%7C%20Docker%20%7C%20SQLite-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Tests](https://img.shields.io/badge/Tests-55%2F55%20Passing-brightgreen)
@@ -14,7 +14,9 @@
 
 **Supported by [Arbitrum Grants Program](https://questbook.app/dashboard/?grantId=67d802bd46da2f90cc3267b0&chainId=10&role=builder&proposalId=69552f08fb7e884efa09de1e&isRenderingProposalBody=true)**
 
-[Quick Start](#-quick-start) • [API Endpoints](#-api-endpoints) • [Video Tutorials](#-video-tutorials) • [Delegate Fatigue Index](#-delegate-fatigue-index) • [Tests](#-tests) • [Documentation](#-documentation)
+**Live Demo:** [pa.wyszomirski.online](https://pa.wyszomirski.online/docs) | [Health Check](https://pa.wyszomirski.online/health)
+
+[Quick Start](#-quick-start) • [Live Demo](#-live-demo) • [API Endpoints](#-api-endpoints) • [Video Tutorials](#-video-tutorials) • [Delegate Fatigue Index](#-delegate-fatigue-index) • [Tests](#-tests) • [Documentation](#-documentation)
 
 </div>
 
@@ -34,7 +36,7 @@
 
 ## Project Status
 
-**Current Stage:** ✅ **Milestone 1 Complete** | ✅ **Milestone 2 Complete**
+**Current Stage:** ✅ **v0.1.0 Released** | ✅ **Milestone 1 Complete** | ✅ **Milestone 2 Complete**
 
 ### ✅ Milestone 1: Complete
 
@@ -56,6 +58,27 @@
 - ✅ **Full Documentation:** Quickstart, API Reference, DFI deep dive
 - ✅ **Integration Examples:** Python + TypeScript
 - ✅ **Video Tutorials:** [3 published tutorials on YouTube](https://www.youtube.com/playlist?list=PLCETnIPtht9YHuvg6XsoGJuWsr_4ZTPZV)
+- ✅ **Live Demo:** [pa.wyszomirski.online](https://pa.wyszomirski.online/docs)
+- ✅ **Tagged Release:** [v0.1.0](https://github.com/pawel-wyszomirski/participation-architecture/releases/tag/v0.1.0)
+
+---
+
+## Live Demo
+
+**The API is publicly available for testing and integration:**
+
+| Resource | URL |
+|---|---|
+| **Swagger UI** | [pa.wyszomirski.online/docs](https://pa.wyszomirski.online/docs) |
+| **Health Check** | [pa.wyszomirski.online/health](https://pa.wyszomirski.online/health) |
+| **Proposals Feed** | [pa.wyszomirski.online/proposals/feed](https://pa.wyszomirski.online/proposals/feed?limit=5) |
+
+```bash
+# Try it now - no setup required
+curl "https://pa.wyszomirski.online/proposals/feed?min_priority=80&limit=3"
+curl "https://pa.wyszomirski.online/delegates/0x1234/fatigue"
+curl "https://pa.wyszomirski.online/health"
+```
 
 ---
 
@@ -122,6 +145,8 @@ python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 curl "http://localhost:8000/proposals/feed?min_priority=80"
 curl "http://localhost:8000/delegates/0x1234/fatigue"
 ```
+
+Or use the [live demo](https://pa.wyszomirski.online/docs) without any local setup.
 
 See the full [Quickstart Guide](docs/quickstart.md) or watch [Tutorial 1 on YouTube](https://youtu.be/c12DReTyGqk).
 
@@ -324,7 +349,7 @@ python3 -m pytest --cov=app/services --cov-report=html
 
 [Full playlist](https://www.youtube.com/playlist?list=PLCETnIPtht9YHuvg6XsoGJuWsr_4ZTPZV)
 
-**Interactive API docs:** `http://localhost:8000/docs` (Swagger UI, auto-generated)
+**Interactive API docs:** [pa.wyszomirski.online/docs](https://pa.wyszomirski.online/docs) (Swagger UI)
 
 ---
 
@@ -387,6 +412,8 @@ python3 -m pytest --cov=app/services --cov-report=html
 - ✅ Integration examples: Python + TypeScript
 - ✅ 3 video tutorials published on [YouTube](https://www.youtube.com/playlist?list=PLCETnIPtht9YHuvg6XsoGJuWsr_4ZTPZV)
 - ✅ 55/55 tests passing
+- ✅ [Live demo deployed](https://pa.wyszomirski.online/docs)
+- ✅ [Tagged release v0.1.0](https://github.com/pawel-wyszomirski/participation-architecture/releases/tag/v0.1.0)
 
 ---
 
@@ -485,6 +512,11 @@ See [Video Tutorial 3](https://youtu.be/hZhBm-ik-vk) for a guide to adding new r
 ---
 
 ## Recent Updates
+
+**v0.1.0 (March 2026) - Production Release**
+- ✅ **Live Demo:** [pa.wyszomirski.online](https://pa.wyszomirski.online/docs)
+- ✅ **Tagged release:** [v0.1.0](https://github.com/pawel-wyszomirski/participation-architecture/releases/tag/v0.1.0)
+- ✅ **Production deployment** with SSL, Docker, nginx
 
 **v0.7.0 (February 2026) - Milestone 2 Complete**
 - ✅ **Delegate Fatigue Index:** 5-component deterministic formula, fully documented
