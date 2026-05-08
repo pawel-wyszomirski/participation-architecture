@@ -28,8 +28,9 @@ RUN apt-get update && \
 COPY --from=builder /install /usr/local
 COPY . .
 
-# Create non-root user for security
-RUN useradd -m appuser
+# Create non-root user for security and grant ownership of /app so the
+# uvicorn process can write SQLite journal/WAL files alongside the DB.
+RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8000
