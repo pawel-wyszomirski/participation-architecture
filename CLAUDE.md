@@ -35,6 +35,10 @@ Projekt związany z grantem PA ($6,500 / $14,000). FastAPI + SQLAlchemy + Postgr
 - fastapi, uvicorn, sqlalchemy, alembic, pydantic, httpx, openai
 - PostgreSQL 15 (Docker)
 
+## Deploy
+- Pełna procedura: `DEPLOY.md`
+- Skrót: `git push origin main` (mozg) → SSH na `89.167.126.253` → `cd /opt/participation-architecture && git pull && docker build -t pa-api . && docker stop/rm pa-api && docker run -d --name pa-api --restart unless-stopped -p 127.0.0.1:8000:8000 -v /opt/pa-data:/app/data pa-api`
+
 ## Pułapki
 - Dwa silniki niezależne: RuleEngine (rulebook.yaml) i FatigueEngine (fatigue_config.yaml)
 - Oba mogą nie zainicjować się (brak YAML) - API zwraca 503
