@@ -237,10 +237,8 @@ class FatigueEngine:
         cutoff_7d  = now_ts - (7  * 86_400)
         cutoff_30d = now_ts - (30 * 86_400)
 
-        # Upper bound (start <= now_ts) lets caller pass `now` in the past
-        # to compute DFI retrospectively (see endpoint `as_of` parameter).
-        proposals_7d  = sum(1 for p in proposals if cutoff_7d  <= (p.start or 0) <= now_ts)
-        proposals_30d = sum(1 for p in proposals if cutoff_30d <= (p.start or 0) <= now_ts)
+        proposals_7d  = sum(1 for p in proposals if (p.start or 0) >= cutoff_7d)
+        proposals_30d = sum(1 for p in proposals if (p.start or 0) >= cutoff_30d)
 
         # Concurrent: proposals where start <= now <= end
         concurrent_active = sum(
@@ -249,7 +247,7 @@ class FatigueEngine:
         )
 
         # Average word count across 30d window
-        recent = [p for p in proposals if cutoff_30d <= (p.start or 0) <= now_ts]
+        recent = [p for p in proposals if (p.start or 0) >= cutoff_30d]
         if recent:
             word_counts = [len((p.body or "").split()) for p in recent]
             avg_word_count = sum(word_counts) / len(word_counts)

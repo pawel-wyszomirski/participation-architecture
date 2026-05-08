@@ -387,41 +387,6 @@ def test_proposal_ending_right_now_not_concurrent(engine, now):
 
 
 # ---------------------------------------------------------------------------
-# Retrospective computation: passing `now` in the past must exclude
-# future proposals (those with start > now). Required for the `as_of`
-# query parameter on /delegates/{address}/fatigue.
-# ---------------------------------------------------------------------------
-def test_retrospective_excludes_future_proposals(engine, now):
-    """Proposals starting AFTER `now` must not be counted."""
-    past = now - timedelta(days=60)
-    # Proposals: one inside past's 30d window, one in the "future" relative to past
-    p_inside = make_proposal(past, started_days_ago=10)
-    p_future = make_proposal(past, started_days_ago=-15)  # start = past + 15d
-    result = engine.compute("0xtest", proposals=[p_inside, p_future], now=past)
-    assert result.metrics.proposals_30d == 1
-    assert result.metrics.proposals_7d == 0
-
-
-def test_retrospective_window_shifts_with_now(engine, now):
-    """proposals_30d at now-60d sees only proposals started in [now-90d, now-60d]."""
-    proposals = [
-        make_proposal(now, started_days_ago=10),   # in current 30d window only
-        make_proposal(now, started_days_ago=70),   # in past 30d window only (now-90 to now-60)
-    ]
-    result_now = engine.compute("0xtest", proposals=proposals, now=now)
-    result_past = engine.compute("0xtest", proposals=proposals, now=now - timedelta(days=60))
-    assert result_now.metrics.proposals_30d == 1
-    assert result_past.metrics.proposals_30d == 1
-
-
-def test_retrospective_computed_at_matches_now(engine, now):
-    """`computed_at` in the result must equal the passed `now`, not wall clock."""
-    past = now - timedelta(days=45)
-    result = engine.compute("0xtest", proposals=[], now=past)
-    assert result.computed_at == past
-
-
-# ---------------------------------------------------------------------------
 # Run
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":

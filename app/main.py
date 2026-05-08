@@ -325,19 +325,7 @@ async def get_proposal_detail(proposal_id: str, db: Session = Depends(get_db)):
 # ============================================================================
 
 @app.get("/delegates/{address}/fatigue", response_model=FatigueResponse, tags=["Delegates"])
-async def get_delegate_fatigue(
-    address: str,
-    as_of: Optional[datetime] = Query(
-        None,
-        description=(
-            "Compute DFI as of this UTC timestamp (ISO 8601, e.g. 2026-04-01T00:00:00Z). "
-            "Window of 30/7 days extends backwards from this point. "
-            "Defaults to current time. Used for retrospective fatigue measurement "
-            "(e.g. matching survey responses to past governance load)."
-        ),
-    ),
-    db: Session = Depends(get_db),
-):
+async def get_delegate_fatigue(address: str, db: Session = Depends(get_db)):
     """
     Delegate Fatigue Index (DFI) — ecosystem governance workload score (0-100).
 
@@ -369,29 +357,20 @@ async def get_delegate_fatigue(
     if not fatigue_engine:
         raise HTTPException(status_code=503, detail="Fatigue engine not initialized")
 
-    # Reference time: caller-supplied `as_of` for retrospective computation,
-    # or now() for the standard live measurement.
-    ref_time = as_of if as_of else datetime.now(timezone.utc)
-    if ref_time.tzinfo is None:
-        ref_time = ref_time.replace(tzinfo=timezone.utc)
-    ref_ts = int(ref_time.timestamp())
+    # Fetch proposals covering last 30+ days (30d window is the longest used)
+    cutoff_ts = int((datetime.now(timezone.utc) - timedelta(days=35)).timestamp())
+    proposals = db.query(Proposal).filter(Proposal.start >= cutoff_ts).all()
 
-    # Fetch proposals covering 35d window ending at ref_time (30d window + buffer)
-    cutoff_ts = int((ref_time - timedelta(days=35)).timestamp())
-    proposals = db.query(Proposal).filter(
-        Proposal.start >= cutoff_ts,
-        Proposal.start <= ref_ts,
-    ).all()
-
-    # Also include proposals active at ref_time that may have started earlier
+    # Also include currently active proposals that may have started earlier
+    now_ts = int(datetime.now(timezone.utc).timestamp())
     active = db.query(Proposal).filter(
         Proposal.start < cutoff_ts,
-        Proposal.start <= ref_ts,
-        Proposal.end >= ref_ts,
+        Proposal.end >= now_ts,
     ).all()
     all_proposals = proposals + active
 
-    result = fatigue_engine.compute(address=address, proposals=all_proposals, now=ref_time)
+    now = datetime.now(timezone.utc)
+    result = fatigue_engine.compute(address=address, proposals=all_proposals, now=now)
 
     # --- Persist snapshot ---
     snapshot = FatigueSnapshot(
