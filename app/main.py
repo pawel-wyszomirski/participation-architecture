@@ -19,6 +19,7 @@ from app.services.rule_engine import (
     proposal_from_db_model,
 )
 from app.services.fatigue_engine import FatigueEngine
+from app.services.snapshot_client import SnapshotClient
 
 # Create all tables (including fatigue_snapshots)
 Base.metadata.create_all(bind=engine)
@@ -168,6 +169,21 @@ class FatigueResponse(BaseModel):
         default=FatigueEngine.FORMULA,
         description="Exact formula used to compute fatigue_score"
     )
+
+
+class PerEventFatigueResponse(FatigueResponse):
+    """
+    Per-event DFI: the Delegate Fatigue Index for ONE vote (dissertation 5.3.5a,
+    per-event pivot 2026-05-11). Extends FatigueResponse with the rated proposal
+    and the as_of timestamp (the vote time used as the reference point).
+
+    reading_time/novelty describe the rated proposal (intrinsic load);
+    volume/concurrency/burstiness describe the delegate's context around the vote.
+    """
+    mode: str = Field(default="per_event", description="Always 'per_event'")
+    target_proposal_id: str = Field(..., description="Snapshot id of the rated proposal")
+    target_proposal_title: str = Field(..., description="Title of the rated proposal")
+    as_of: datetime = Field(..., description="Vote timestamp used as the DFI reference point")
 
 
 # ============================================================================
@@ -468,6 +484,117 @@ async def get_fatigue_history(
         }
         for r in rows
     ]
+
+
+@app.get(
+    "/delegates/{address}/per-event-fatigue",
+    response_model=PerEventFatigueResponse,
+    tags=["Delegates"],
+)
+async def get_per_event_fatigue(
+    address: str,
+    proposal_id: Optional[str] = Query(
+        None,
+        description=(
+            "Snapshot id of the proposal to rate. If omitted, the delegate's "
+            "most recent vote is used."
+        ),
+    ),
+    db: Session = Depends(get_db),
+):
+    """
+    Per-event Delegate Fatigue Index (dissertation 5.3.5a; per-event pivot).
+
+    Computes DFI for a SINGLE vote by the delegate, matched to the vote time
+    (as_of). The unit is one vote, not a 30-day aggregate - this is what aligns
+    DFI with the task-specific NASA-TLX (validated to ~24h, Hernandez 2021).
+
+    Flow: fetch the delegate's voted proposals from Snapshot -> pick the target
+    (given proposal_id, else the most recent vote) -> compute_per_event with
+    as_of = the proposal's start time.
+
+    reading_time/novelty come from the rated proposal (intrinsic load);
+    volume/concurrency/burstiness from the delegate's voting context.
+
+    UI note (anti-anchoring, decision D8): the survey must collect NASA-TLX
+    BEFORE this score is shown to the delegate.
+    """
+    if not fatigue_engine:
+        raise HTTPException(status_code=503, detail="Fatigue engine not initialized")
+
+    client = SnapshotClient()
+    voted = await client.fetch_voted_proposals(address, limit=200)
+    if not voted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No Snapshot votes found for delegate {address}",
+        )
+
+    if proposal_id:
+        target = next((p for p in voted if p.id == proposal_id), None)
+        if target is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Delegate {address} has no vote on proposal {proposal_id}",
+            )
+    else:
+        target = max(voted, key=lambda p: (p.start or 0))
+
+    ref_time = datetime.fromtimestamp(target.start or 0, tz=timezone.utc)
+    result = fatigue_engine.compute_per_event(
+        address=address, target_proposal=target, voted_history=voted, now=ref_time
+    )
+
+    # Persist snapshot for reproducibility (same table as ecosystem variant).
+    snapshot = FatigueSnapshot(
+        address=result.address,
+        computed_at=result.computed_at,
+        fatigue_score=result.fatigue_score,
+        status=result.status,
+        config_version=result.config_version,
+        comp_volume=result.components.volume,
+        comp_concurrency=result.components.concurrency,
+        comp_burstiness=result.components.burstiness,
+        comp_reading_time=result.components.reading_time,
+        comp_novelty=result.components.novelty,
+        metric_proposals_7d=result.metrics.proposals_7d,
+        metric_proposals_30d=result.metrics.proposals_30d,
+        metric_concurrent_active=result.metrics.concurrent_active,
+        metric_avg_word_count=result.metrics.avg_word_count,
+        metric_weekly_avg=result.metrics.weekly_avg,
+        metric_novelty_ratio=result.metrics.novelty_ratio,
+    )
+    db.add(snapshot)
+    db.commit()
+
+    return PerEventFatigueResponse(
+        address=result.address,
+        fatigue_score=result.fatigue_score,
+        status=result.status,
+        components=FatigueComponentsResponse(
+            volume=result.components.volume,
+            concurrency=result.components.concurrency,
+            burstiness=result.components.burstiness,
+            reading_time=result.components.reading_time,
+            novelty=result.components.novelty,
+        ),
+        metrics=FatigueMetricsResponse(
+            proposals_7d=result.metrics.proposals_7d,
+            proposals_30d=result.metrics.proposals_30d,
+            concurrent_active=result.metrics.concurrent_active,
+            avg_word_count=result.metrics.avg_word_count,
+            weekly_avg=result.metrics.weekly_avg,
+            novelty_ratio=result.metrics.novelty_ratio,
+        ),
+        weights=FatigueWeightsResponse(**result.weights),
+        config_version=result.config_version,
+        computed_at=result.computed_at,
+        formula=FatigueEngine.FORMULA,
+        mode=result.mode,
+        target_proposal_id=target.id,
+        target_proposal_title=(getattr(target, "title", None) or ""),
+        as_of=ref_time,
+    )
 
 
 # ============================================================================
