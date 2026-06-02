@@ -31,18 +31,20 @@ reference_values:
   reading_words: 3000 # word count considered normal proposal length
                       # ~15 min reading at 200 wpm
 
-# Reference values for the PER-DELEGATE variant (compute_per_delegate).
-# Unit of analysis: proposals the delegate ACTUALLY voted on
-# (revealed activity, dissertation 5.3.5a), not all ecosystem proposals -
-# so "normal" counts are lower than the ecosystem references above.
-# PRELIMINARY - to be calibrated on real Arbitrum delegates (smoke test,
-# critical-path step 4). reading_words unchanged: proposal length is a
-# property of the proposal, not of which delegate reads it.
-reference_values_per_delegate:
-  volume_7d: 3        # votes/week considered normal for an active delegate
-  volume_30d: 12      # votes/month considered normal
-  concurrent: 3       # voted proposals simultaneously active considered normal
-  reading_words: 3000 # same as ecosystem
+# Reference values for the PER-EVENT variant (compute_per_event).
+# Unit of analysis: a SINGLE vote (most recent vote), per the 2026-05-11
+# per-event pivot (NASA-TLX is task-specific, validated only up to 24h -
+# Hernandez 2021; dissertation L5 + 5.3.5a). DFI is matched to the vote via
+# as_of = vote timestamp.
+#   - reading_time: length of THE voted proposal (intrinsic load)
+#   - volume/concurrency/burstiness: delegate's context around the vote
+# CALIBRATED 2026-06-02 on real Arbitrum data (Snapshot):
+#   proposal length median ~1404 words; votes/delegate median 2/30d, max 5/90d.
+reference_values_per_event:
+  volume_7d: 1        # votes/week considered normal (median 7d = 2, ref slightly below)
+  volume_30d: 3       # votes/month considered normal (median 30d ~2-3)
+  concurrent: 2       # voted proposals simultaneously active considered normal
+  reading_words: 1500 # median Arbitrum proposal length ~1404 words (~7 min @200wpm)
 
 # Status thresholds (score 0-100)
 thresholds:

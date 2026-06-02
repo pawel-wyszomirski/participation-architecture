@@ -224,60 +224,92 @@ class FatigueEngine:
             mode="ecosystem",
         )
 
-    def compute_per_delegate(
+    def compute_per_event(
         self,
         address: str,
-        voted_proposals: List[Any],
+        target_proposal: Any,
+        voted_history: List[Any],
         now: Optional[datetime] = None,
     ) -> FatigueResult:
         """
-        Per-delegate Delegate Fatigue Index (dissertation 5.3.5a).
+        Per-event Delegate Fatigue Index (dissertation 5.3.5a; per-event pivot
+        2026-05-11).
 
-        Unlike compute() (ecosystem-level, shared governance burden), this
-        variant operationalizes cognitive load at the level of the individual
-        delegate, grounded in Cognitive Load Theory (Sweller 1988; Klepsch
-        et al. 2017). The five components are computed from the delegate's
-        REVEALED ACTIVITY - the proposals the delegate actually voted on -
-        not from the global proposal list. That is what introduces
-        between-delegate variance (a prerequisite for the H_val correlation
-        with NASA-TLX), which the ecosystem variant lacks by construction.
+        The unit of analysis is a SINGLE vote, not a 30-day aggregate. NASA-TLX
+        is task-specific and validated only up to ~24h (Hernandez 2021), so the
+        survey rates one concrete vote and DFI is matched to it via
+        as_of = vote timestamp (`now`). Grounded in Cognitive Load Theory
+        (Sweller 1988; Klepsch et al. 2017):
+
+          - reading_time, novelty : INTRINSIC load of THE voted proposal
+            (its length and whether it is a novel governance domain). This is
+            the main source of between-event variance (proposal length on
+            Arbitrum ranges ~150-6000 words).
+          - volume, concurrency, burstiness : EXTRANEOUS/context load - how
+            much the delegate had on their plate around the vote, computed from
+            their voting history in the window ending at `now`.
 
         Args:
             address:         Delegate wallet address.
-            voted_proposals: Proposals the delegate voted on, already filtered
-                             by the caller (e.g. from the Snapshot `votes` API).
-                             Should cover at least the last 30 days.
-            now:             Reference UTC datetime. Defaults to now(UTC).
+            target_proposal: The proposal the vote (and the NASA-TLX rating)
+                             refers to. Needs .body / .title.
+            voted_history:   Proposals the delegate voted on up to `now`
+                             (e.g. from Snapshot `votes`). Drives the context
+                             components. Should cover >=30 days before `now`.
+            now:             Vote timestamp (as_of). Defaults to now(UTC).
                              Pass explicitly in tests for deterministic results.
 
         Returns:
-            FatigueResult with mode="per_delegate".
+            FatigueResult with mode="per_event".
 
-        Limitations (dissertation 5.3.5a): vote count is endogenous (both
+        Limitations (dissertation 5.3.5a): vote activity is endogenous (both
         exposure and a possible response to load); off-vote reading and
-        forum/Discord load are not captured; data source is Snapshot
-        (off-chain). See section 6.5.
+        forum/Discord load are not captured; Snapshot data is off-chain. See 6.5.
         """
         if now is None:
             now = datetime.now(timezone.utc)
 
         now_ts = int(now.timestamp())
         weights = self.config["weights"]
-        # Per-delegate references (fall back to ecosystem refs if absent).
         ref = self.config.get(
-            "reference_values_per_delegate", self.config["reference_values"]
+            "reference_values_per_event", self.config["reference_values"]
         )
 
-        metrics = self._compute_metrics(voted_proposals, now_ts)
-        components = self._compute_components(metrics, ref)
+        # Context components from the delegate's history around the vote.
+        ctx = self._compute_metrics(voted_history, now_ts)
+        ctx_components = self._compute_components(ctx, ref)
+
+        # Intrinsic components from THE voted proposal (per-event).
+        ref_words = max(ref.get("reading_words", 1500), 1)
+        words = len((getattr(target_proposal, "body", None) or "").split())
+        reading_time = round(min(min(words / ref_words, 2.0) / 2.0, 1.0), 4)
+        novelty = round(self._proposal_is_novel(target_proposal), 4)
+
+        components = FatigueComponents(
+            volume=ctx_components.volume,
+            concurrency=ctx_components.concurrency,
+            burstiness=ctx_components.burstiness,
+            reading_time=reading_time,
+            novelty=novelty,
+        )
 
         fatigue_score = self._aggregate_score(components, weights)
         status = self._determine_status(fatigue_score)
 
+        # Metrics reflect the per-event view: context counts + THIS proposal's length.
+        metrics = FatigueMetrics(
+            proposals_7d=ctx.proposals_7d,
+            proposals_30d=ctx.proposals_30d,
+            concurrent_active=ctx.concurrent_active,
+            avg_word_count=float(words),
+            weekly_avg=ctx.weekly_avg,
+            novelty_ratio=novelty,
+        )
+
         logger.info(
-            f"FatigueEngine[per_delegate]: address={address} score={fatigue_score} "
-            f"status={status} voted_30d={metrics.proposals_30d} "
-            f"concurrent={metrics.concurrent_active}"
+            f"FatigueEngine[per_event]: address={address} score={fatigue_score} "
+            f"status={status} words={words} ctx_voted_30d={ctx.proposals_30d} "
+            f"concurrent={ctx.concurrent_active}"
         )
 
         return FatigueResult(
@@ -289,8 +321,25 @@ class FatigueEngine:
             weights=weights,
             config_version=self.version,
             computed_at=now,
-            mode="per_delegate",
+            mode="per_event",
         )
+
+    def _proposal_is_novel(self, proposal: Any) -> float:
+        """
+        Novelty of a single proposal for the per-event variant: 1.0 if it
+        contains a novel-domain keyword and no routine keyword, else 0.0.
+        Same keyword logic as the ecosystem novelty ratio, applied to one item.
+        """
+        novel_kw = [k.lower() for k in self.config.get("novel_keywords", [])]
+        routine_kw = [k.lower() for k in self.config.get("routine_keywords", [])]
+        text = (
+            (getattr(proposal, "title", None) or "")
+            + " "
+            + (getattr(proposal, "body", None) or "")
+        ).lower()
+        has_novel = any(kw in text for kw in novel_kw)
+        has_routine = any(kw in text for kw in routine_kw)
+        return 1.0 if (has_novel and not has_routine) else 0.0
 
     @staticmethod
     def _aggregate_score(

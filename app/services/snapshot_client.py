@@ -206,6 +206,66 @@ class SnapshotClient:
         finally:
             session.close()
 
+    async def fetch_voted_proposals(
+        self, voter: str, space: str = ARBITRUM_SPACE, limit: int = 200
+    ) -> List["Proposal"]:
+        """
+        Fetch the proposals a delegate voted on, WITH the full proposal fields
+        (start, end, body, title) needed by compute_per_delegate().
+
+        Self-contained: extends the Snapshot `votes` query with the nested
+        proposal payload, so it does not depend on the `proposals` table being
+        populated. Returns transient Proposal instances (NOT persisted), ready
+        to pass straight into FatigueEngine.compute_per_delegate().
+        """
+        query = """
+        query Votes($voter: String!, $space: String!, $first: Int!) {
+          votes(
+            first: $first,
+            where: { voter: $voter, space: $space },
+            orderBy: "created",
+            orderDirection: desc
+          ) {
+            id
+            proposal { id title body start end state }
+          }
+        }
+        """
+        variables = {"voter": voter, "space": space, "first": limit}
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    self.url,
+                    json={"query": query, "variables": variables},
+                    headers=self.headers,
+                    timeout=60.0,
+                )
+                response.raise_for_status()
+                data = response.json()
+                raw = data.get("data", {}).get("votes") or []
+            except Exception as e:
+                print(f"❌ Connection Error (voted proposals): {str(e)}")
+                return []
+
+        out = []
+        seen = set()
+        for v in raw:
+            p = v.get("proposal") or {}
+            pid = p.get("id")
+            if not pid or pid in seen:
+                continue
+            seen.add(pid)
+            out.append(Proposal(
+                id=pid,
+                title=p.get("title") or "",
+                body=p.get("body") or "",
+                state=p.get("state") or "closed",
+                start=p.get("start"),
+                end=p.get("end"),
+            ))
+        return out
+
 class FatigueEngine:
     """Core logic for calculating Delegate Fatigue Index"""
     
