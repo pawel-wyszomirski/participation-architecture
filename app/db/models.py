@@ -29,6 +29,30 @@ class Proposal(Base):
     fatigue_score = Column(Float, default=0.0)
 
 
+class Vote(Base):
+    """
+    A single delegate vote on a proposal, sourced from the Snapshot `votes` API.
+
+    Backs the PER-DELEGATE DFI variant (dissertation 5.3.5a): the set of
+    proposals a delegate actually voted on is the delegate's *revealed
+    activity*, which is the unit of analysis for compute_per_delegate().
+
+    Note: distinct from Proposal.votes (an aggregate vote *count* on a
+    proposal). This table holds individual (voter, proposal) records.
+    """
+    __tablename__ = "votes"
+
+    id = Column(String, primary_key=True, index=True)   # Snapshot vote id
+    voter = Column(String, index=True, nullable=False)  # delegate wallet address
+    proposal_id = Column(String, index=True, nullable=False)  # references proposals.id
+    created = Column(Integer)        # unix timestamp of the vote
+    choice = Column(Text)            # raw Snapshot choice (int/list/dict) as JSON string
+    space = Column(String)           # governance space, e.g. arbitrumfoundation.eth
+
+    # Metadane systemowe
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class FatigueSnapshot(Base):
     """
     Persisted result of a Delegate Fatigue Index computation.

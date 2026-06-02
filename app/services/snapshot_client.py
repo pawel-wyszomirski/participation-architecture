@@ -2,6 +2,7 @@ import httpx
 import asyncio
 import os
 import sys
+import json
 from typing import List, Dict, Any
 from datetime import datetime, timedelta, timezone
 
@@ -9,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 sys.path.append(os.getcwd())
 
 from app.db.session import SessionLocal, engine, Base
-from app.db.models import Proposal
+from app.db.models import Proposal, Vote
 from sqlalchemy import func
 
 # Ensure tables exist
@@ -108,6 +109,99 @@ class SnapshotClient:
             print(f"💾 Database Updated: +{new_count} new, ^{updated_count} updated.")
         except Exception as e:
             print(f"❌ Database Error: {e}")
+            session.rollback()
+        finally:
+            session.close()
+
+    async def fetch_votes_by_voter(
+        self, voter: str, space: str = ARBITRUM_SPACE, limit: int = 200
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch a delegate's vote history from Snapshot (revealed activity).
+
+        Returns one record per vote: snapshot vote id, proposal id, created
+        timestamp, raw choice, space, voter. Backs the per-delegate DFI
+        (dissertation 5.3.5a) - the set of proposals the delegate actually
+        voted on. Votes whose proposal was deleted (no id) are dropped, as
+        they cannot be mapped to a cognitive-load contribution.
+        """
+        query = """
+        query Votes($voter: String!, $space: String!, $first: Int!) {
+          votes(
+            first: $first,
+            where: { voter: $voter, space: $space },
+            orderBy: "created",
+            orderDirection: desc
+          ) {
+            id
+            created
+            choice
+            space { id }
+            proposal { id }
+          }
+        }
+        """
+        variables = {"voter": voter, "space": space, "first": limit}
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    self.url,
+                    json={"query": query, "variables": variables},
+                    headers=self.headers,
+                    timeout=60.0,
+                )
+                response.raise_for_status()
+                data = response.json()
+                raw = data.get("data", {}).get("votes") or []
+            except Exception as e:
+                print(f"❌ Connection Error (votes): {str(e)}")
+                return []
+
+        out = []
+        for v in raw:
+            proposal = v.get("proposal") or {}
+            space_obj = v.get("space") or {}
+            out.append({
+                "id": v.get("id"),
+                "voter": voter,
+                "proposal_id": proposal.get("id"),
+                "created": v.get("created"),
+                "choice": v.get("choice"),
+                "space": space_obj.get("id"),
+            })
+        return [r for r in out if r["id"] and r["proposal_id"]]
+
+    def save_votes_to_db(self, votes_data: List[Dict[str, Any]]):
+        """Persist delegate votes to the local DB (upsert by Snapshot vote id)."""
+        session = SessionLocal()
+        new_count = 0
+        updated_count = 0
+        try:
+            for v in votes_data:
+                choice_str = (
+                    v["choice"] if isinstance(v["choice"], str)
+                    else json.dumps(v["choice"])
+                )
+                existing = session.query(Vote).filter(Vote.id == v["id"]).first()
+                if existing:
+                    existing.choice = choice_str
+                    existing.created = v.get("created")
+                    updated_count += 1
+                else:
+                    session.add(Vote(
+                        id=v["id"],
+                        voter=v["voter"],
+                        proposal_id=v["proposal_id"],
+                        created=v.get("created"),
+                        choice=choice_str,
+                        space=v.get("space"),
+                    ))
+                    new_count += 1
+            session.commit()
+            print(f"💾 Votes Updated: +{new_count} new, ^{updated_count} updated.")
+        except Exception as e:
+            print(f"❌ Database Error (votes): {e}")
             session.rollback()
         finally:
             session.close()
