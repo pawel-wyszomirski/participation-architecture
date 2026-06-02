@@ -346,7 +346,7 @@ class FatigueEngine:
         components: "FatigueComponents", weights: Dict[str, float]
     ) -> float:
         """Weighted aggregate of component scores -> DFI in [0, 100].
-        Shared by compute() and compute_per_delegate() so the formula
+        Shared by compute() and compute_per_event() so the formula
         lives in exactly one place."""
         raw = (
             weights["volume"]        * components.volume
