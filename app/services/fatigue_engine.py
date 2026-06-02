@@ -90,6 +90,7 @@ class FatigueResult:
     weights: Dict[str, float]      # weights used (from fatigue_config.yaml)
     config_version: str            # config version for reproducibility
     computed_at: datetime          # UTC timestamp of computation
+    mode: str = "ecosystem"        # "ecosystem" (shared burden) | "per_delegate" (revealed activity)
 
 
 # ---------------------------------------------------------------------------
@@ -202,18 +203,11 @@ class FatigueEngine:
         metrics = self._compute_metrics(proposals, now_ts)
         components = self._compute_components(metrics, ref)
 
-        raw = (
-            weights["volume"]       * components.volume
-            + weights["concurrency"]  * components.concurrency
-            + weights["burstiness"]   * components.burstiness
-            + weights["reading_time"] * components.reading_time
-            + weights["novelty"]      * components.novelty
-        )
-        fatigue_score = round(min(raw * 100, 100.0), 1)
+        fatigue_score = self._aggregate_score(components, weights)
         status = self._determine_status(fatigue_score)
 
         logger.info(
-            f"FatigueEngine: address={address} score={fatigue_score} "
+            f"FatigueEngine[ecosystem]: address={address} score={fatigue_score} "
             f"status={status} proposals_30d={metrics.proposals_30d} "
             f"concurrent={metrics.concurrent_active}"
         )
@@ -227,7 +221,92 @@ class FatigueEngine:
             weights=weights,
             config_version=self.version,
             computed_at=now,
+            mode="ecosystem",
         )
+
+    def compute_per_delegate(
+        self,
+        address: str,
+        voted_proposals: List[Any],
+        now: Optional[datetime] = None,
+    ) -> FatigueResult:
+        """
+        Per-delegate Delegate Fatigue Index (dissertation 5.3.5a).
+
+        Unlike compute() (ecosystem-level, shared governance burden), this
+        variant operationalizes cognitive load at the level of the individual
+        delegate, grounded in Cognitive Load Theory (Sweller 1988; Klepsch
+        et al. 2017). The five components are computed from the delegate's
+        REVEALED ACTIVITY - the proposals the delegate actually voted on -
+        not from the global proposal list. That is what introduces
+        between-delegate variance (a prerequisite for the H_val correlation
+        with NASA-TLX), which the ecosystem variant lacks by construction.
+
+        Args:
+            address:         Delegate wallet address.
+            voted_proposals: Proposals the delegate voted on, already filtered
+                             by the caller (e.g. from the Snapshot `votes` API).
+                             Should cover at least the last 30 days.
+            now:             Reference UTC datetime. Defaults to now(UTC).
+                             Pass explicitly in tests for deterministic results.
+
+        Returns:
+            FatigueResult with mode="per_delegate".
+
+        Limitations (dissertation 5.3.5a): vote count is endogenous (both
+        exposure and a possible response to load); off-vote reading and
+        forum/Discord load are not captured; data source is Snapshot
+        (off-chain). See section 6.5.
+        """
+        if now is None:
+            now = datetime.now(timezone.utc)
+
+        now_ts = int(now.timestamp())
+        weights = self.config["weights"]
+        # Per-delegate references (fall back to ecosystem refs if absent).
+        ref = self.config.get(
+            "reference_values_per_delegate", self.config["reference_values"]
+        )
+
+        metrics = self._compute_metrics(voted_proposals, now_ts)
+        components = self._compute_components(metrics, ref)
+
+        fatigue_score = self._aggregate_score(components, weights)
+        status = self._determine_status(fatigue_score)
+
+        logger.info(
+            f"FatigueEngine[per_delegate]: address={address} score={fatigue_score} "
+            f"status={status} voted_30d={metrics.proposals_30d} "
+            f"concurrent={metrics.concurrent_active}"
+        )
+
+        return FatigueResult(
+            address=address,
+            fatigue_score=fatigue_score,
+            status=status,
+            components=components,
+            metrics=metrics,
+            weights=weights,
+            config_version=self.version,
+            computed_at=now,
+            mode="per_delegate",
+        )
+
+    @staticmethod
+    def _aggregate_score(
+        components: "FatigueComponents", weights: Dict[str, float]
+    ) -> float:
+        """Weighted aggregate of component scores -> DFI in [0, 100].
+        Shared by compute() and compute_per_delegate() so the formula
+        lives in exactly one place."""
+        raw = (
+            weights["volume"]        * components.volume
+            + weights["concurrency"]  * components.concurrency
+            + weights["burstiness"]   * components.burstiness
+            + weights["reading_time"] * components.reading_time
+            + weights["novelty"]      * components.novelty
+        )
+        return round(min(raw * 100, 100.0), 1)
 
     # ------------------------------------------------------------------
     # Metrics computation

@@ -31,6 +31,19 @@ reference_values:
   reading_words: 3000 # word count considered normal proposal length
                       # ~15 min reading at 200 wpm
 
+# Reference values for the PER-DELEGATE variant (compute_per_delegate).
+# Unit of analysis: proposals the delegate ACTUALLY voted on
+# (revealed activity, dissertation 5.3.5a), not all ecosystem proposals -
+# so "normal" counts are lower than the ecosystem references above.
+# PRELIMINARY - to be calibrated on real Arbitrum delegates (smoke test,
+# critical-path step 4). reading_words unchanged: proposal length is a
+# property of the proposal, not of which delegate reads it.
+reference_values_per_delegate:
+  volume_7d: 3        # votes/week considered normal for an active delegate
+  volume_30d: 12      # votes/month considered normal
+  concurrent: 3       # voted proposals simultaneously active considered normal
+  reading_words: 3000 # same as ecosystem
+
 # Status thresholds (score 0-100)
 thresholds:
   low: 30        # 0-29:  LOW      - manageable governance load
