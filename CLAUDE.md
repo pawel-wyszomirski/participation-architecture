@@ -8,8 +8,11 @@ Projekt związany z grantem PA ($6,500 / $14,000). FastAPI + SQLAlchemy + Postgr
 ## Kluczowe pliki
 - `app/main.py` - FastAPI aplikacja v0.7.0 (endpointy: proposals feed, fatigue index)
 - `app/services/rule_engine.py` - deterministyczny silnik reguł (triage propozycji)
-- `app/services/fatigue_engine.py` - DFI: 5 komponentów (volume, concurrency, burstiness, reading_time, novelty)
-- `app/db/models.py` - modele SQLAlchemy (Proposal, FatigueSnapshot)
+- `app/services/fatigue_engine.py` - DFI: 5 komponentów (volume, concurrency, burstiness, reading_time, novelty) + `compute_per_event` (per-event, dissertation 5.3.5a)
+- `app/services/snapshot_client.py` - głosy off-chain (Snapshot GraphQL); `fetch_voted_proposals` zwraca `voted_at`+`source`
+- `app/services/tally_client.py` - głosy ON-CHAIN (Tally); 2-step (proposals Arbitrum org `2206072050315953936` → votes by proposalIds+voter, bo Tally nie ma votes-by-voter). Klucz: env `TALLY_API_KEY`
+- `app/static/dashboard.html` - DFI dashboard (vanilla JS, serwowany przez `GET /`); per-event UI dla doktoratu, branch `feature/dfi-per-delegate-research`
+- `app/db/models.py` - modele SQLAlchemy (Proposal, FatigueSnapshot, Vote)
 - `rulebook.yaml` - konfiguracja reguł triagu
 - `fatigue_config.yaml` - wagi i progi DFI
 - `docker-compose.yml` - PostgreSQL 15 + API (dev)
@@ -18,9 +21,11 @@ Projekt związany z grantem PA ($6,500 / $14,000). FastAPI + SQLAlchemy + Postgr
 - `tests/` - testy pytest
 
 ## Endpointy API
+- `GET /` - DFI dashboard (HTML, `?address=`); na produkcji `arbitrum.wyszomirski.online` (osobny kontener, branch feature/dfi-per-delegate-research)
+- `GET /delegates/{address}/per-event-fatigue` - per-event DFI dla JEDNEGO głosu (najnowszy lub `?proposal_id=`); scala on-chain (Tally) + off-chain (Snapshot), as_of=czas głosu
 - `GET /proposals/feed` - lista propozycji z priorytetem (filtry: min_priority, label, handling, status)
 - `GET /proposals/{id}` - szczegóły z audit trail
-- `GET /delegates/{address}/fatigue` - DFI score (0-100) z rozbiciem na komponenty
+- `GET /delegates/{address}/fatigue` - DFI score (0-100) ecosystem-level (grant) z rozbiciem na komponenty
 - `GET /delegates/{address}/fatigue/history` - historia DFI
 - `GET /health` - healthcheck
 - `GET /debug/*` - debug endpointy (rulebook, fatigue-config, raw proposals)
