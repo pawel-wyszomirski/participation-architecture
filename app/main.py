@@ -22,6 +22,7 @@ from app.services.rule_engine import (
 )
 from app.services.fatigue_engine import FatigueEngine
 from app.services.snapshot_client import SnapshotClient
+from app.services.tally_client import TallyClient
 
 # Create all tables (including fatigue_snapshots)
 Base.metadata.create_all(bind=engine)
@@ -544,12 +545,17 @@ async def get_per_event_fatigue(
     if not fatigue_engine:
         raise HTTPException(status_code=503, detail="Fatigue engine not initialized")
 
-    client = SnapshotClient()
-    voted = await client.fetch_voted_proposals(address, limit=200)
+    # Merge off-chain (Snapshot) and on-chain (Tally) votes. Cognitive load is
+    # source-agnostic: every decision the delegate makes counts (dissertation
+    # 5.3.5a). Each source returns transient Proposals with .voted_at + .source;
+    # different systems -> different proposal ids, so this is a union, not a dedup.
+    snap_votes = await SnapshotClient().fetch_voted_proposals(address, limit=200)
+    tally_votes = await TallyClient().fetch_voted_proposals(address, limit=200)
+    voted = (snap_votes or []) + (tally_votes or [])
     if not voted:
         raise HTTPException(
             status_code=404,
-            detail=f"No Snapshot votes found for delegate {address}",
+            detail=f"No Snapshot or Tally votes found for delegate {address}",
         )
 
     if proposal_id:
@@ -560,9 +566,14 @@ async def get_per_event_fatigue(
                 detail=f"Delegate {address} has no vote on proposal {proposal_id}",
             )
     else:
-        target = max(voted, key=lambda p: (p.start or 0))
+        # Most recent vote = latest by VOTE time (when the delegate voted),
+        # not by proposal start. voted_at falls back to start if absent.
+        target = max(voted, key=lambda p: (getattr(p, "voted_at", None) or p.start or 0))
 
-    ref_time = datetime.fromtimestamp(target.start or 0, tz=timezone.utc)
+    # as_of = the vote timestamp (per-event, dissertation 5.3.5a), not the
+    # proposal start. The delegate rated THIS vote, cast at this moment.
+    _vote_ts = getattr(target, "voted_at", None) or target.start or 0
+    ref_time = datetime.fromtimestamp(_vote_ts, tz=timezone.utc)
     result = fatigue_engine.compute_per_event(
         address=address, target_proposal=target, voted_history=voted, now=ref_time
     )

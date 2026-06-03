@@ -227,6 +227,7 @@ class SnapshotClient:
             orderDirection: desc
           ) {
             id
+            created
             proposal { id title body start end state }
           }
         }
@@ -256,14 +257,20 @@ class SnapshotClient:
             if not pid or pid in seen:
                 continue
             seen.add(pid)
-            out.append(Proposal(
+            prop = Proposal(
                 id=pid,
                 title=p.get("title") or "",
                 body=p.get("body") or "",
                 state=p.get("state") or "closed",
                 start=p.get("start"),
                 end=p.get("end"),
-            ))
+            )
+            # Vote timestamp (when the delegate actually voted) — distinct from
+            # proposal.start. Used as as_of for the per-event DFI. Transient
+            # attribute on the non-persisted Proposal instance.
+            prop.voted_at = v.get("created")
+            prop.source = "snapshot"
+            out.append(prop)
         return out
 
 class FatigueEngine:
