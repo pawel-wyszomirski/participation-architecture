@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ACUS · Delegate Fatigue Index</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink: #1a1a1a;
+    --accent: #2563eb;
+    --accent-deep: #1e40af;
+    --bg: #f9fafb;
+    --card: #ffffff;
+    --line: #e5e7eb;
+    --muted: #6b7280;
+    --radius: 4px;
+    --maxw: 760px;
+    --sora: "Sora", system-ui, sans-serif;
+    --inter: "Inter", system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--inter);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "tnum" off;
+  }
+
+  /* Subtle engineering / millimeter grid */
+  body.eng-grid {
+    background-image:
+      repeating-linear-gradient(to right, rgba(26, 26, 26, 0.028) 0 1px, transparent 1px 24px),
+      repeating-linear-gradient(to bottom, rgba(26, 26, 26, 0.028) 0 1px, transparent 1px 24px),
+      repeating-linear-gradient(to right, rgba(26, 26, 26, 0.045) 0 1px, transparent 1px 120px),
+      repeating-linear-gradient(to bottom, rgba(26, 26, 26, 0.045) 0 1px, transparent 1px 120px);
+  }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { color: var(--accent-deep); text-decoration: underline; text-underline-offset: 2px; }
+
+  .num, .dfi-num { font-feature-settings: "tnum"; font-variant-numeric: tabular-nums; }
+
+  /* ---------- layout ---------- */
+  .dfi-page { min-height: 100vh; }
+  .dfi-shell {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 72px 28px 88px;
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+  }
+
+  /* ---------- header ---------- */
+  .dfi-header { display: flex; flex-direction: column; gap: 14px; }
+  .dfi-eyebrow {
+    font-family: var(--inter);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .dfi-h1 {
+    font-family: var(--sora);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    font-size: 26px;
+    line-height: 1.3;
+    margin: 0;
+    color: var(--ink);
+    text-wrap: pretty;
+    max-width: 36ch;
+  }
+  .dfi-h1--empty { font-weight: 700; }
+  .dfi-prop-link { font-weight: 500; }
+  .dfi-sub { margin: 0; color: var(--muted); font-size: 15px; max-width: 52ch; }
+
+  /* ---------- gauge ---------- */
+  .dfi-gauge-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0 4px;
+  }
+  .dfi-gauge { display: block; }
+  .dfi-gauge-track { fill: none; stroke: var(--line); stroke-width: 14; stroke-linecap: round; }
+  .dfi-gauge-fill { fill: none; stroke: var(--accent); stroke-width: 14; stroke-linecap: round; transition: stroke-dasharray 0.9s cubic-bezier(0.22,1,0.36,1); }
+  .dfi-gauge-tip { fill: var(--accent); stroke: var(--card); stroke-width: 3; }
+  .dfi-tick { stroke: #cbd2dc; stroke-width: 2; stroke-linecap: round; }
+  .dfi-end-label { fill: var(--muted); font-family: var(--inter); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .dfi-mini-label { fill: var(--muted); font-family: var(--inter); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; }
+  .dfi-score { fill: var(--ink); font-family: var(--sora); font-weight: 700; font-size: 62px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .dfi-score-dec { font-size: 30px; fill: var(--muted); font-weight: 600; }
+
+  .dfi-status-line { font-family: var(--inter); font-size: 15px; color: var(--muted); }
+  .dfi-status-token {
+    font-family: var(--sora);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--ink);
+    text-transform: uppercase;
+    font-size: 14px;
+  }
+  .dfi-framing { margin: 2px 0 0; color: var(--ink); font-size: 15px; }
+
+  /* ---------- card ---------- */
+  .dfi-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 28px 30px;
+  }
+  .dfi-card-title {
+    font-family: var(--sora);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    font-size: 16px;
+    margin: 0 0 4px;
+  }
+  .dfi-card-note { margin: 0 0 20px; color: var(--muted); font-size: 13.5px; }
+
+  /* ---------- breakdown ---------- */
+  .dfi-breakdown-grid {
+    display: grid;
+    grid-template-columns: 1fr 1px 1fr;
+    gap: 32px;
+    margin-top: 6px;
+  }
+  .dfi-bd-divider { background: var(--line); }
+  .dfi-group-label {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--accent-deep);
+    margin-bottom: 2px;
+  }
+  .dfi-group-note { margin: 0 0 18px; color: var(--muted); font-size: 12.5px; }
+  .dfi-bar-row { margin-bottom: 16px; }
+  .dfi-bar-row:last-child { margin-bottom: 0; }
+  .dfi-bar-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    width: 100%; margin-bottom: 7px; padding: 0; border: none; background: none;
+    font: inherit; text-align: left; cursor: pointer; color: inherit;
+  }
+  .dfi-bar-right { display: flex; align-items: center; gap: 9px; }
+  .dfi-bar-caret {
+    width: 7px; height: 7px; border-right: 1.5px solid var(--muted);
+    border-bottom: 1.5px solid var(--muted); transform: rotate(45deg);
+    transition: transform 0.2s ease; opacity: 0.7;
+  }
+  .dfi-bar-caret.is-open { transform: rotate(-135deg); }
+  .dfi-bar-head:hover .dfi-bar-label { color: var(--accent-deep); }
+  .dfi-bar-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+  .dfi-bar-label { font-size: 14px; color: var(--ink); }
+  .dfi-bar-val { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .dfi-bar-track { height: 6px; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .dfi-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.7s cubic-bezier(0.22,1,0.36,1); }
+  .dfi-bar-detail { margin: 9px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); max-width: 46ch; }
+
+  /* ---------- loading skeleton ---------- */
+  .dfi-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .sk { background: #eceff3; border-radius: var(--radius); position: relative; overflow: hidden; }
+  .sk-line { height: 12px; }
+  .sk-gauge { width: 300px; height: 150px; border-radius: 150px 150px 8px 8px; }
+  .dfi-sk-bar { margin-bottom: 16px; }
+  .dfi-sk-bar:last-child { margin-bottom: 0; }
+  .sk::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.65), transparent);
+    transform: translateX(-100%); animation: sk-shimmer 1.3s infinite;
+  }
+  @keyframes sk-shimmer { 100% { transform: translateX(100%); } }
+
+  /* ---------- proposals ---------- */
+  .dfi-prop-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .dfi-prop-item {
+    display: grid;
+    grid-template-columns: 86px 1fr;
+    gap: 18px;
+    align-items: start;
+    padding: 16px 0;
+    border-top: 1px solid var(--line);
+  }
+  .dfi-prop-item:first-child { border-top: none; padding-top: 4px; }
+  .dfi-prio {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 9.5px;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: var(--radius);
+    border: 1px solid var(--line);
+    text-align: center;
+    color: var(--muted);
+    margin-top: 2px;
+    white-space: nowrap;
+  }
+  .dfi-prio--high { color: var(--accent-deep); border-color: rgba(37,99,235,0.35); background: rgba(37,99,235,0.05); }
+  .dfi-prio--medium { color: var(--ink); }
+  .dfi-prio--low { color: var(--muted); }
+  .dfi-prop-title { font-size: 14.5px; font-weight: 500; color: var(--ink); }
+  .dfi-prop-tldr { font-size: 13.5px; color: var(--muted); margin-top: 2px; max-width: 52ch; }
+
+  /* ---------- how calculated ---------- */
+  .dfi-details {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+  }
+  .dfi-summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 18px 30px;
+    font-family: var(--inter);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .dfi-summary::-webkit-details-marker { display: none; }
+  .dfi-summary-icon { width: 10px; height: 10px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg); transition: transform 0.2s ease; }
+  .dfi-details[open] .dfi-summary-icon { transform: rotate(-135deg); }
+  .dfi-details-body { padding: 4px 30px 26px; }
+  .dfi-formula {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12.5px;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    line-height: 1.7;
+    overflow-x: auto;
+    margin-bottom: 20px;
+  }
+  .dfi-weights { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .dfi-weights th {
+    text-align: left;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--muted);
+    padding: 6px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .dfi-weights th:last-child, .dfi-weights td:last-child { text-align: right; }
+  .dfi-weights td { padding: 9px 0; border-bottom: 1px solid var(--line); color: var(--ink); }
+  .dfi-weights tr:last-child td { border-bottom: none; }
+  .dfi-audit-note { margin: 18px 0 0; font-size: 12.5px; color: var(--muted); max-width: 56ch; }
+
+  /* ---------- footer ---------- */
+  .dfi-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 24px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+  }
+  .dfi-meta-item { font-size: 12px; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .dfi-meta-label { text-transform: uppercase; letter-spacing: 0.05em; font-size: 9.5px; font-weight: 600; color: var(--muted); margin-right: 6px; }
+  .dfi-asof { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-left: auto; white-space: nowrap; }
+  .dfi-asof-select {
+    font-family: var(--inter);
+    font-size: 12px;
+    color: var(--ink);
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 6px 10px;
+  }
+  .dfi-asof-select:focus-visible, .dfi-summary:focus-visible, a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* ---------- entry / lookup (production: address input) ---------- */
+  .dfi-entry { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 24px 0; }
+  .dfi-entry-form { display: flex; gap: 10px; width: 100%; max-width: 480px; }
+  .dfi-entry-input {
+    flex: 1; font-family: var(--inter); font-size: 14px; color: var(--ink);
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 11px 14px;
+  }
+  .dfi-entry-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .dfi-entry-btn {
+    font-family: var(--inter); font-size: 14px; font-weight: 500; color: var(--card);
+    background: var(--accent); border: 1px solid var(--accent); border-radius: var(--radius);
+    padding: 11px 18px; cursor: pointer;
+  }
+  .dfi-entry-btn:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
+  .dfi-entry-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- empty / error ---------- */
+  .dfi-empty { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 12px 0; }
+  .dfi-empty-mark { opacity: 0.6; }
+  .dfi-empty-text { max-width: 44ch; text-align: center; color: var(--muted); font-size: 15px; }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 600px) {
+    .dfi-shell { padding: 44px 20px 64px; gap: 44px; }
+    .dfi-breakdown-grid { grid-template-columns: 1fr; gap: 28px; }
+    .dfi-bd-divider { height: 1px; }
+    .dfi-h1 { font-size: 22px; }
+    .dfi-card { padding: 24px 22px; }
+    .dfi-entry-form { flex-direction: column; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dfi-bar-fill, .dfi-gauge-fill { transition: none; }
+    .sk::after { animation: none; }
+  }
+</style>
+</head>
+<body class="eng-grid">
+  <div class="dfi-page">
+    <main class="dfi-shell" id="shell"></main>
+  </div>
+
+<script>
+/* ACUS · DFI Dashboard — production build (vanilla JS, no framework).
+   Recreated from the Claude Design prototype (pixel-perfect CSS), wired to the
+   live endpoint GET /delegates/{address}/per-event-fatigue.
+   Informational, never judgmental. No gamification. No prescriptions. */
+
+"use strict";
+
+const FRAMING = {
+  LOW: "Manageable load for this decision.",
+  MODERATE: "Elevated but sustainable load.",
+  HIGH: "Significant cognitive load for this decision.",
+  CRITICAL: "Very high load for this decision.",
+};
+
+const COMPLEXITY = [
+  { key: "reading_time", label: "Reading length", tip: "How long this proposal was to read" },
+  { key: "novelty", label: "Novelty", tip: "Whether this was a new kind of decision" },
+];
+const PARALLEL = [
+  { key: "volume", label: "Recent volume", tip: "How many votes you cast recently" },
+  { key: "concurrency", label: "Concurrent proposals", tip: "How many active proposals overlapped" },
+  { key: "burstiness", label: "Activity spike", tip: "Spike vs. your own 4-week average" },
+];
+const WEIGHT_ROWS = [
+  ["volume", "Recent volume"],
+  ["concurrency", "Concurrent proposals"],
+  ["burstiness", "Activity spike"],
+  ["reading_time", "Reading length"],
+  ["novelty", "Novelty"],
+];
+
+/* ---------- tiny DOM helper ---------- */
+function el(tag, attrs, children) {
+  const n = document.createElement(tag);
+  if (attrs) for (const k in attrs) {
+    if (k === "class") n.className = attrs[k];
+    else if (k === "html") n.innerHTML = attrs[k];
+    else if (k === "text") n.textContent = attrs[k];
+    else if (k.startsWith("on") && typeof attrs[k] === "function") n.addEventListener(k.slice(2), attrs[k]);
+    else if (attrs[k] != null) n.setAttribute(k, attrs[k]);
+  }
+  if (children) (Array.isArray(children) ? children : [children]).forEach(function (c) {
+    if (c == null) return;
+    n.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+  });
+  return n;
+}
+const SVGNS = "http://www.w3.org/2000/svg";
+function svgEl(tag, attrs) {
+  const n = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) if (attrs[k] != null) n.setAttribute(k, attrs[k]);
+  return n;
+}
+function fmtTimestamp(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", timeZone: "UTC",
+  }) + " UTC";
+}
+const prefersReduced = window.matchMedia &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------- header ---------- */
+function renderHeader(data) {
+  const eyebrow = el("div", { class: "dfi-eyebrow", text: "ACUS · Delegate Fatigue Index" });
+  if (!data) {
+    return el("header", { class: "dfi-header" }, [
+      eyebrow,
+      el("h1", { class: "dfi-h1 dfi-h1--empty", text: "Delegate Fatigue Index" }),
+      el("p", { class: "dfi-sub", text: "Enter an Arbitrum delegate address to see the cognitive load of their most recent vote." }),
+    ]);
+  }
+  const title = data.target_proposal_title || "your most recent vote";
+  let titleNode;
+  if (data.target_proposal_id) {
+    const url = "https://snapshot.org/#/arbitrumfoundation.eth/proposal/" + data.target_proposal_id;
+    titleNode = el("a", { class: "dfi-prop-link", href: url, target: "_blank", rel: "noopener noreferrer", text: title });
+  } else {
+    titleNode = document.createTextNode(title);
+  }
+  const h1 = el("h1", { class: "dfi-h1" }, ["Workload for your vote on: ", titleNode]);
+  return el("header", { class: "dfi-header" }, [
+    eyebrow, h1,
+    el("p", { class: "dfi-sub", text: "This score reflects the cognitive load of this single vote." }),
+  ]);
+}
+
+/* ---------- radial gauge ---------- */
+function renderGauge(score, status) {
+  const cx = 170, cy = 176, R = 134;
+  function polar(r, f) {
+    const a = Math.PI * (1 - f);
+    return [cx + r * Math.cos(a), cy - r * Math.sin(a)];
+  }
+  const track = "M " + (cx - R) + " " + cy + " A " + R + " " + R + " 0 0 1 " + (cx + R) + " " + cy;
+  const target = Math.max(0, Math.min(score / 100, 1));
+  const tip = polar(R, target);
+  const whole = Math.floor(score);
+  const dec = Math.round((score - whole) * 10);
+
+  const svg = svgEl("svg", { class: "dfi-gauge", viewBox: "0 0 340 210", width: "340", height: "210" });
+  svg.appendChild(svgEl("path", { d: track, class: "dfi-gauge-track", pathLength: "100" }));
+  const fill = svgEl("path", { d: track, class: "dfi-gauge-fill", pathLength: "100", "stroke-dasharray": "0 100" });
+  svg.appendChild(fill);
+  [30, 70, 85].forEach(function (t) {
+    const p1 = polar(R + 4, t / 100), p2 = polar(R + 12, t / 100);
+    svg.appendChild(svgEl("line", { class: "dfi-tick", x1: p1[0], y1: p1[1], x2: p2[0], y2: p2[1] }));
+  });
+  svg.appendChild(svgEl("circle", { class: "dfi-gauge-tip", cx: tip[0], cy: tip[1], r: "6" }));
+  const t0 = svgEl("text", { class: "dfi-end-label", x: cx - R, y: cy + 18, "text-anchor": "middle" }); t0.textContent = "0"; svg.appendChild(t0);
+  const t100 = svgEl("text", { class: "dfi-end-label", x: cx + R, y: cy + 18, "text-anchor": "middle" }); t100.textContent = "100"; svg.appendChild(t100);
+  const tdfi = svgEl("text", { class: "dfi-mini-label", x: cx, y: cy - 64, "text-anchor": "middle" }); tdfi.textContent = "DFI"; svg.appendChild(tdfi);
+  const tscore = svgEl("text", { class: "dfi-score", x: cx, y: cy - 8, "text-anchor": "middle" });
+  tscore.appendChild(document.createTextNode(String(whole)));
+  const dspan = svgEl("tspan", { class: "dfi-score-dec" }); dspan.textContent = "." + dec; tscore.appendChild(dspan);
+  svg.appendChild(tscore);
+
+  // Settle the fill via CSS transition (robust against rAF throttling).
+  if (prefersReduced) {
+    fill.setAttribute("stroke-dasharray", (target * 100) + " 100");
+  } else {
+    setTimeout(function () { fill.setAttribute("stroke-dasharray", (target * 100) + " 100"); }, 40);
+  }
+
+  const wrap = el("div", {
+    class: "dfi-gauge-wrap", role: "img",
+    "aria-label": "Delegate Fatigue Index " + score + " out of 100, status " + status,
+  }, [svg]);
+  wrap.appendChild(el("div", { class: "dfi-status-line" }, [
+    "Your cognitive load for this decision: ",
+    el("span", { class: "dfi-status-token", text: status }),
+  ]));
+  wrap.appendChild(el("p", { class: "dfi-framing", text: FRAMING[status] || "" }));
+  return wrap;
+}
+
+/* ---------- breakdown ---------- */
+function detailText(key, m) {
+  m = m || {};
+  switch (key) {
+    case "reading_time": return "This proposal ran about " + (m.avg_word_count || 0).toLocaleString() + " words.";
+    case "novelty": return "About " + Math.round((m.novelty_ratio || 0) * 100) + "% of your recent proposals were a new kind of decision.";
+    case "volume": return "You cast " + m.proposals_7d + " " + (m.proposals_7d === 1 ? "vote" : "votes") + " in the last 7 days, " + m.proposals_30d + " in 30 days.";
+    case "concurrency": return m.concurrent_active + " proposals were open at the same time.";
+    case "burstiness": return m.proposals_7d + " this week vs. your " + m.weekly_avg + "/week average over 4 weeks.";
+    default: return "";
+  }
+}
+function renderBarRow(spec, value, metrics) {
+  const did = "bd-" + spec.key;
+  const valSpan = el("span", { class: "dfi-bar-val", text: value.toFixed(2) });
+  const caret = el("span", { class: "dfi-bar-caret", "aria-hidden": "true" });
+  const detail = el("p", { id: did, class: "dfi-bar-detail", text: detailText(spec.key, metrics) });
+  detail.style.display = "none";
+  let open = false;
+  const head = el("button", {
+    type: "button", class: "dfi-bar-head", "aria-expanded": "false", "aria-controls": did, title: spec.tip,
+    onclick: function () {
+      open = !open;
+      head.setAttribute("aria-expanded", String(open));
+      caret.classList.toggle("is-open", open);
+      detail.style.display = open ? "" : "none";
+    },
+  }, [
+    el("span", { class: "dfi-bar-label", text: spec.label }),
+    el("span", { class: "dfi-bar-right" }, [valSpan, caret]),
+  ]);
+  const fill = el("div", { class: "dfi-bar-fill" }); fill.style.width = "0%";
+  const trackDiv = el("div", {
+    class: "dfi-bar-track", role: "meter", "aria-valuemin": "0", "aria-valuemax": "1",
+    "aria-valuenow": value, "aria-label": spec.label + ": " + value.toFixed(2) + " of 1",
+  }, [fill]);
+  if (prefersReduced) fill.style.width = (value * 100) + "%";
+  else setTimeout(function () { fill.style.width = (value * 100) + "%"; }, 60);
+  return el("div", { class: "dfi-bar-row" }, [head, trackDiv, detail]);
+}
+function renderBreakdown(components, metrics) {
+  const grid = el("div", { class: "dfi-breakdown-grid" }, [
+    el("div", { class: "dfi-bd-group" }, [
+      el("div", { class: "dfi-group-label", text: "Complexity of this decision" }),
+      el("p", { class: "dfi-group-note", text: "Intrinsic to the proposal itself." }),
+    ].concat(COMPLEXITY.map(function (c) { return renderBarRow(c, components[c.key], metrics); }))),
+    el("div", { class: "dfi-bd-divider", "aria-hidden": "true" }),
+    el("div", { class: "dfi-bd-group" }, [
+      el("div", { class: "dfi-group-label", text: "Parallel load around it" }),
+      el("p", { class: "dfi-group-note", text: "Context of your governance activity." }),
+    ].concat(PARALLEL.map(function (c) { return renderBarRow(c, components[c.key], metrics); }))),
+  ]);
+  return el("section", { class: "dfi-card dfi-breakdown", "aria-labelledby": "bd-title" }, [
+    el("h2", { class: "dfi-card-title", id: "bd-title", text: "What shaped this score" }),
+    grid,
+  ]);
+}
+
+/* ---------- how calculated ---------- */
+function renderHowCalculated(formula, weights) {
+  const tbody = el("tbody", {}, WEIGHT_ROWS.map(function (r) {
+    return el("tr", {}, [
+      el("td", { text: r[1] }),
+      el("td", { class: "dfi-num", text: Math.round((weights[r[0]] || 0) * 100) + "%" }),
+    ]);
+  }));
+  const table = el("table", { class: "dfi-weights" }, [
+    el("thead", {}, el("tr", {}, [el("th", { text: "Component" }), el("th", { text: "Weight" })])),
+    tbody,
+  ]);
+  const summary = el("summary", { class: "dfi-summary" }, [
+    el("span", { text: "How is this calculated?" }),
+    el("span", { class: "dfi-summary-icon", "aria-hidden": "true" }),
+  ]);
+  return el("details", { class: "dfi-details" }, [
+    summary,
+    el("div", { class: "dfi-details-body" }, [
+      el("div", { class: "dfi-formula", text: formula }),
+      table,
+      el("p", { class: "dfi-audit-note", text: "The scoring rules are open and auditable. Weights and thresholds are published in the project configuration." }),
+    ]),
+  ]);
+}
+
+/* ---------- footer ---------- */
+function renderFooter(data) {
+  const items = [];
+  if (data.computed_at) items.push(el("span", { class: "dfi-meta-item" }, [
+    el("span", { class: "dfi-meta-label", text: "Computed" }), " " + fmtTimestamp(data.computed_at),
+  ]));
+  items.push(el("span", { class: "dfi-meta-item" }, [
+    el("span", { class: "dfi-meta-label", text: "Config" }), " v" + data.config_version,
+  ]));
+  if (data.address) items.push(el("span", { class: "dfi-meta-item" }, [
+    el("span", { class: "dfi-meta-label", text: "Address" }), " " + data.address,
+  ]));
+  if (data.as_of) items.push(el("span", { class: "dfi-asof" }, [
+    el("span", { class: "dfi-meta-label", text: "Vote as of" }), " " + fmtTimestamp(data.as_of),
+  ]));
+  return el("footer", { class: "dfi-footer" }, items);
+}
+
+/* ---------- entry / lookup ---------- */
+function renderEntry() {
+  const input = el("input", {
+    class: "dfi-entry-input", type: "text", id: "addr-input",
+    placeholder: "0x… delegate address or Snapshot ENS",
+    "aria-label": "Arbitrum delegate address",
+  });
+  const submit = function () {
+    const v = input.value.trim();
+    if (v) window.location.search = "?address=" + encodeURIComponent(v);
+  };
+  const form = el("form", {
+    class: "dfi-entry-form",
+    onsubmit: function (e) { e.preventDefault(); submit(); },
+  }, [input, el("button", { class: "dfi-entry-btn", type: "submit", text: "View index" })]);
+  return el("div", { class: "dfi-entry" }, [form]);
+}
+
+/* ---------- empty / error ---------- */
+function renderEmpty(text) {
+  const svg = svgEl("svg", { viewBox: "0 0 340 210", width: "340", height: "210" });
+  svg.appendChild(svgEl("path", { d: "M 36 176 A 134 134 0 0 1 304 176", class: "dfi-gauge-track", pathLength: "100" }));
+  return el("div", { class: "dfi-empty" }, [
+    el("div", { class: "dfi-empty-mark", "aria-hidden": "true" }, [svg]),
+    el("p", { class: "dfi-empty-text", text: text }),
+  ]);
+}
+
+/* ---------- loading skeleton ---------- */
+function skLine(w, h, mt) {
+  const n = el("div", { class: "sk sk-line" });
+  n.style.width = typeof w === "number" ? w + "px" : w;
+  if (h) n.style.height = h + "px";
+  if (mt) n.style.marginTop = mt + "px";
+  return n;
+}
+function renderLoading() {
+  const skBar = function () {
+    return el("div", { class: "dfi-sk-bar" }, [
+      (function () { const l = skLine("55%", 12); l.style.marginBottom = "9px"; return l; })(),
+      (function () { const b = el("div", { class: "sk" }); b.style.cssText = "width:100%;height:6px;border-radius:2px;"; return b; })(),
+    ]);
+  };
+  const gaugeWrap = el("div", { class: "dfi-gauge-wrap", "aria-hidden": "true" }, [
+    el("div", { class: "sk sk-gauge" }), skLine(240, 14, 8), skLine(170, 12),
+  ]);
+  const card = el("section", { class: "dfi-card", "aria-hidden": "true" }, [
+    (function () { const l = skLine(180, 16); l.style.marginBottom = "24px"; return l; })(),
+    el("div", { class: "dfi-breakdown-grid" }, [
+      el("div", { class: "dfi-bd-group" }, [(function () { const l = skLine(150, 10); l.style.marginBottom = "20px"; return l; })(), skBar(), skBar()]),
+      el("div", { class: "dfi-bd-divider" }),
+      el("div", { class: "dfi-bd-group" }, [(function () { const l = skLine(150, 10); l.style.marginBottom = "20px"; return l; })(), skBar(), skBar(), skBar()]),
+    ]),
+  ]);
+  return el("div", {}, [gaugeWrap, card, el("span", { class: "dfi-sr-only", role: "status", text: "Loading your fatigue index…" })]);
+}
+
+/* ---------- mount helpers ---------- */
+function mount(nodes) {
+  const shell = document.getElementById("shell");
+  shell.innerHTML = "";
+  (Array.isArray(nodes) ? nodes : [nodes]).forEach(function (n) { if (n) shell.appendChild(n); });
+}
+
+function renderDashboard(data) {
+  mount([
+    renderHeader(data),
+    renderGauge(data.fatigue_score, data.status),
+    renderBreakdown(data.components, data.metrics),
+    renderHowCalculated(data.formula, data.weights),
+    renderFooter(data),
+  ]);
+}
+
+/* ---------- boot ---------- */
+async function boot() {
+  const params = new URLSearchParams(window.location.search);
+  const address = (params.get("address") || "").trim();
+
+  if (!address) {
+    mount([renderHeader(null), renderEntry()]);
+    const inp = document.getElementById("addr-input");
+    if (inp) inp.focus();
+    return;
+  }
+
+  mount([renderHeader(null), renderLoading()]);
+
+  try {
+    const res = await fetch("/delegates/" + encodeURIComponent(address) + "/per-event-fatigue", {
+      headers: { "Accept": "application/json" },
+    });
+    if (res.status === 404) {
+      mount([renderHeader(null), renderEmpty(
+        "We found no recent Snapshot vote for this delegate to measure. The Delegate Fatigue Index is computed from your most recent governance vote."
+      ), renderEntry()]);
+      return;
+    }
+    if (!res.ok) {
+      mount([renderHeader(null), renderEmpty(
+        "Could not compute the index right now (server returned " + res.status + "). Please try again later."
+      ), renderEntry()]);
+      return;
+    }
+    const data = await res.json();
+    renderDashboard(data);
+  } catch (e) {
+    mount([renderHeader(null), renderEmpty(
+      "Could not reach the service. Check your connection and try again."
+    ), renderEntry()]);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", boot);
+</script>
+</body>
+</html>

@@ -1,6 +1,8 @@
 import os
 import sys
+import pathlib
 from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
@@ -55,6 +57,26 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# ============================================================================
+# DASHBOARD (DFI per-event UI — served at root; arbitrum.wyszomirski.online)
+# ============================================================================
+
+_DASHBOARD_HTML = pathlib.Path(__file__).parent / "static" / "dashboard.html"
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def dashboard():
+    """ACUS Delegate Fatigue Index dashboard (per-event).
+
+    Shown AFTER the NASA-TLX survey (anti-anchoring, D8). The page reads
+    ?address=0x... and fetches GET /delegates/{address}/per-event-fatigue.
+    """
+    try:
+        return _DASHBOARD_HTML.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="Dashboard asset not found")
 
 
 # ============================================================================
