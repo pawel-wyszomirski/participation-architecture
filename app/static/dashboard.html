@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ACUS · Delegate Fatigue Index</title>
+<title>Participation Architecture · Delegate Fatigue Index</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -290,6 +290,17 @@
     outline-offset: 2px;
   }
 
+  /* ---------- research note ---------- */
+  .dfi-research-note {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--muted);
+    max-width: 60ch;
+    margin: 0;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+  }
+
   /* ---------- entry / lookup (production: address input) ---------- */
   .dfi-entry { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 24px 0; }
   .dfi-entry-form { display: flex; gap: 10px; width: 100%; max-width: 480px; }
@@ -344,7 +355,7 @@
 const FRAMING = {
   LOW: "Manageable load for this decision.",
   MODERATE: "Elevated but sustainable load.",
-  HIGH: "Significant cognitive load for this decision.",
+  HIGH: "A demanding vote — significant workload.",
   CRITICAL: "Very high load for this decision.",
 };
 
@@ -401,12 +412,12 @@ const prefersReduced = window.matchMedia &&
 
 /* ---------- header ---------- */
 function renderHeader(data) {
-  const eyebrow = el("div", { class: "dfi-eyebrow", text: "ACUS · Delegate Fatigue Index" });
+  const eyebrow = el("div", { class: "dfi-eyebrow", text: "Participation Architecture · Delegate Fatigue Index" });
   if (!data) {
     return el("header", { class: "dfi-header" }, [
       eyebrow,
       el("h1", { class: "dfi-h1 dfi-h1--empty", text: "Delegate Fatigue Index" }),
-      el("p", { class: "dfi-sub", text: "Enter an Arbitrum delegate address to see the cognitive load of their most recent vote." }),
+      el("p", { class: "dfi-sub", text: "Enter an Arbitrum delegate address to see the workload of their most recent governance vote." }),
     ]);
   }
   const title = data.target_proposal_title || "your most recent vote";
@@ -420,7 +431,7 @@ function renderHeader(data) {
   const h1 = el("h1", { class: "dfi-h1" }, ["Workload for your vote on: ", titleNode]);
   return el("header", { class: "dfi-header" }, [
     eyebrow, h1,
-    el("p", { class: "dfi-sub", text: "This score reflects the cognitive load of this single vote." }),
+    el("p", { class: "dfi-sub", text: "How demanding this single vote was — measured from your Arbitrum voting activity (on-chain and Snapshot)." }),
   ]);
 }
 
@@ -466,7 +477,7 @@ function renderGauge(score, status) {
     "aria-label": "Delegate Fatigue Index " + score + " out of 100, status " + status,
   }, [svg]);
   wrap.appendChild(el("div", { class: "dfi-status-line" }, [
-    "Your cognitive load for this decision: ",
+    "Your workload for this decision: ",
     el("span", { class: "dfi-status-token", text: status }),
   ]));
   wrap.appendChild(el("p", { class: "dfi-framing", text: FRAMING[status] || "" }));
@@ -575,6 +586,16 @@ function renderFooter(data) {
   return el("footer", { class: "dfi-footer" }, items);
 }
 
+/* ---------- research note (study context) ---------- */
+function renderResearchNote() {
+  return el("p", { class: "dfi-research-note" }, [
+    "Part of doctoral research on delegate decision-making in DAOs, WSB University. ",
+    "Researcher: Paweł Wyszomirski (",
+    el("a", { href: "mailto:pawel.wyszomirski@gmail.com", text: "pawel.wyszomirski@gmail.com" }),
+    "). Your address is used only to compute this index for the research and is not shared.",
+  ]);
+}
+
 /* ---------- entry / lookup ---------- */
 function renderEntry() {
   const input = el("input", {
@@ -646,6 +667,7 @@ function renderDashboard(data) {
     renderBreakdown(data.components, data.metrics),
     renderHowCalculated(data.formula, data.weights),
     renderFooter(data),
+    renderResearchNote(),
   ]);
 }
 
@@ -655,7 +677,7 @@ async function boot() {
   const address = (params.get("address") || "").trim();
 
   if (!address) {
-    mount([renderHeader(null), renderEntry()]);
+    mount([renderHeader(null), renderEntry(), renderResearchNote()]);
     const inp = document.getElementById("addr-input");
     if (inp) inp.focus();
     return;
