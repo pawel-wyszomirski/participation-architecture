@@ -21,6 +21,7 @@ from app.services.rule_engine import (
     proposal_from_db_model,
 )
 from app.services.fatigue_engine import FatigueEngine
+from app.services.governor_client import GovernorClient
 from app.services.snapshot_client import SnapshotClient
 from app.services.tally_client import TallyClient
 
@@ -545,17 +546,26 @@ async def get_per_event_fatigue(
     if not fatigue_engine:
         raise HTTPException(status_code=503, detail="Fatigue engine not initialized")
 
-    # Merge off-chain (Snapshot) and on-chain (Tally) votes. Cognitive load is
+    # Merge off-chain (Snapshot) and on-chain votes. Cognitive load is
     # source-agnostic: every decision the delegate makes counts (dissertation
     # 5.3.5a). Each source returns transient Proposals with .voted_at + .source;
     # different systems -> different proposal ids, so this is a union, not a dedup.
+    #
+    # Three sources, because on-chain needs two of them (2026-08-03):
+    # Tally froze its Arbitrum index on 2026-06-08 while the Governor contract
+    # kept accepting votes - six votes by the three pilot participants were
+    # missing from both Tally and Snapshot. GovernorClient reads the contract
+    # directly and is authoritative for Arbitrum; Tally stays for coverage of
+    # anything it still indexes, and duplicate ids cannot collide because each
+    # client prefixes its own.
     snap_votes = await SnapshotClient().fetch_voted_proposals(address, limit=200)
     tally_votes = await TallyClient().fetch_voted_proposals(address, limit=200)
-    voted = (snap_votes or []) + (tally_votes or [])
+    chain_votes = await GovernorClient().fetch_voted_proposals(address, limit=200)
+    voted = (snap_votes or []) + (tally_votes or []) + (chain_votes or [])
     if not voted:
         raise HTTPException(
             status_code=404,
-            detail=f"No Snapshot or Tally votes found for delegate {address}",
+            detail=f"No Snapshot, Tally or on-chain votes found for delegate {address}",
         )
 
     if proposal_id:
