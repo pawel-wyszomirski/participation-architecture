@@ -169,6 +169,7 @@
   .dfi-bar-track { height: 6px; background: var(--line); border-radius: 2px; overflow: hidden; }
   .dfi-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.7s cubic-bezier(0.22,1,0.36,1); }
   .dfi-bar-detail { margin: 9px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); max-width: 46ch; }
+  .dfi-bar-hint { margin: 6px 0 0; font-size: 12px; line-height: 1.45; color: var(--muted); max-width: 46ch; }
 
   /* ---------- loading skeleton ---------- */
   .dfi-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
@@ -359,14 +360,23 @@ const FRAMING = {
   CRITICAL: "Very high load for this decision.",
 };
 
+/* Each component carries a one-line definition shown on the page, not behind a
+   click. Pilot participants read this panel without the researcher next to them
+   (P02 on burstiness: "what does that mean in this context?"), so a tooltip or a
+   collapsed row is not where the definition belongs. */
 const COMPLEXITY = [
-  { key: "reading_time", label: "Reading length", tip: "How long this proposal was to read" },
-  { key: "novelty", label: "Novelty", tip: "Whether this was a new kind of decision" },
+  { key: "reading_time", label: "Reading length", tip: "How long this proposal was to read",
+    hint: "How much text this proposal asked you to read, against a typical Arbitrum proposal." },
+  { key: "novelty", label: "Novelty", tip: "Whether this was a new kind of decision",
+    hint: "How unlike your recent proposals this one was — a familiar decision type scores low." },
 ];
 const PARALLEL = [
-  { key: "volume", label: "Recent volume", tip: "How many votes you cast recently" },
-  { key: "concurrency", label: "Concurrent proposals", tip: "How many active proposals overlapped" },
-  { key: "burstiness", label: "Activity spike", tip: "Spike vs. your own 4-week average" },
+  { key: "volume", label: "Recent volume", tip: "How many votes you cast recently",
+    hint: "How many votes you cast in the period leading up to this one." },
+  { key: "concurrency", label: "Concurrent proposals", tip: "How many active proposals overlapped",
+    hint: "How many proposals were open at the same time, competing for your attention." },
+  { key: "burstiness", label: "Activity spike", tip: "Spike vs. your own 4-week average",
+    hint: "How unevenly your votes were spread in time — a burst of votes in one week is heavier than the same number spread out." },
 ];
 const WEIGHT_ROWS = [
   ["volume", "Recent volume"],
@@ -431,7 +441,7 @@ function renderHeader(data) {
   const h1 = el("h1", { class: "dfi-h1" }, ["Workload for your vote on: ", titleNode]);
   return el("header", { class: "dfi-header" }, [
     eyebrow, h1,
-    el("p", { class: "dfi-sub", text: "How demanding this single vote was — measured from your Arbitrum voting activity (on-chain and Snapshot)." }),
+    el("p", { class: "dfi-sub", text: "How demanding this single vote was — measured from your public Arbitrum voting record: on-chain votes read from the Governor contract and Tally, plus off-chain votes from Snapshot. Nothing here comes from a survey or from you." }),
   ]);
 }
 
@@ -515,6 +525,7 @@ function renderBarRow(spec, value, metrics) {
     el("span", { class: "dfi-bar-label", text: spec.label }),
     el("span", { class: "dfi-bar-right" }, [valSpan, caret]),
   ]);
+  const hint = spec.hint ? el("p", { class: "dfi-bar-hint", text: spec.hint }) : null;
   const fill = el("div", { class: "dfi-bar-fill" }); fill.style.width = "0%";
   const trackDiv = el("div", {
     class: "dfi-bar-track", role: "meter", "aria-valuemin": "0", "aria-valuemax": "1",
@@ -522,7 +533,7 @@ function renderBarRow(spec, value, metrics) {
   }, [fill]);
   if (prefersReduced) fill.style.width = (value * 100) + "%";
   else setTimeout(function () { fill.style.width = (value * 100) + "%"; }, 60);
-  return el("div", { class: "dfi-bar-row" }, [head, trackDiv, detail]);
+  return el("div", { class: "dfi-bar-row" }, hint ? [head, trackDiv, hint, detail] : [head, trackDiv, detail]);
 }
 function renderBreakdown(components, metrics) {
   const grid = el("div", { class: "dfi-breakdown-grid" }, [
@@ -563,6 +574,7 @@ function renderHowCalculated(formula, weights) {
     el("div", { class: "dfi-details-body" }, [
       el("div", { class: "dfi-formula", text: formula }),
       table,
+      el("p", { class: "dfi-audit-note", text: "Where the data comes from: your votes are read from three public sources — the Arbitrum Governor contract on-chain, Tally, and Snapshot for off-chain votes. Proposal text is read from the proposal itself. No private or self-reported data is used." }),
       el("p", { class: "dfi-audit-note", text: "The scoring rules are open and auditable. Weights and thresholds are published in the project configuration." }),
     ]),
   ]);
