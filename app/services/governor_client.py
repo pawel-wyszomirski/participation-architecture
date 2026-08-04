@@ -237,5 +237,6 @@ async def _demo(address: str) -> None:
 
 if __name__ == "__main__":
     import sys
-    asyncio.run(_demo(sys.argv[1] if len(sys.argv) > 1
-                      else "0xd333Bc5c9670C9cEb18f9A2CF02C6E86807a8227"))
+    if len(sys.argv) < 2:
+        raise SystemExit("usage: python -m app.services.governor_client <delegate address>")
+    asyncio.run(_demo(sys.argv[1]))
