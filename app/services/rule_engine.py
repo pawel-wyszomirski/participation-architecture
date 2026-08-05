@@ -261,6 +261,10 @@ class RuleEngine:
         if "label_count" in condition:
             return self._check_label_count(condition["label_count"], state)
 
+        if "classifying_label_count" in condition:
+            return self._check_classifying_label_count(
+                condition["classifying_label_count"], state)
+
         if "flag_set" in condition:
             return self._check_flag_set(condition["flag_set"], state)
         
@@ -325,6 +329,23 @@ class RuleEngine:
     
     def _check_label_count(self, params: Dict, state: EvaluationState) -> bool:
         count = len(state.labels)
+        if "lt" in params and count >= params["lt"]: return False
+        if "gt" in params and count <= params["gt"]: return False
+        if "eq" in params and count != params["eq"]: return False
+        return True
+
+    def _check_classifying_label_count(self, params: Dict,
+                                       state: EvaluationState) -> bool:
+        """Liczy WYLACZNIE etykiety klasyfikujace, z listy w rulebooku.
+
+        `label_count` liczy wszystko, razem z modyfikatorami typu LONG_FORM.
+        Regula domyslna oparta na nim doklejala UNCATEGORIZED do propozycji, ktora
+        miala juz jedna etykiete merytoryczna - i przy okazji obnizala jej obsluge
+        do standard_review. Wynik byl wewnetrznie sprzeczny: PROTOCOL_UPGRADE
+        i UNCATEGORIZED naraz.
+        """
+        klasyfikujace = set(self.rulebook.get("classifying_labels", []))
+        count = len(state.labels & klasyfikujace) if klasyfikujace else len(state.labels)
         if "lt" in params and count >= params["lt"]: return False
         if "gt" in params and count <= params["gt"]: return False
         if "eq" in params and count != params["eq"]: return False

@@ -624,14 +624,40 @@ rules:
     category: "DEFAULT"
     priority: 1
     when:
-      label_count:
-        lt: 2
+      classifying_label_count:
+        lt: 1
     then:
       add_labels: ["UNCATEGORIZED"]
       set_min_priority: 30
       set_max_priority: 50
       set_recommended_handling: "standard_review"
     rationale: "Ensure every proposal has at least basic classification."
+
+# =============================================================================
+# ETYKIETY KLASYFIKUJACE
+# =============================================================================
+# Etykiety odpowiadajace na pytanie "czym jest ta propozycja". Reszta to
+# modyfikatory opisujace jej ceche (dlugosc, pilnosc) i NIE stanowi klasyfikacji.
+#
+# Do v0.1.0 regula domyslna liczyla wszystkie etykiety razem, wiec propozycja
+# z jedna etykieta klasyfikujaca (np. PROTOCOL_UPGRADE) dostawala do niej
+# UNCATEGORIZED i obnizenie obslugi do standard_review. Dwie sprzeczne etykiety
+# naraz, a decyzja operacyjna po cichu zdegradowana.
+classifying_labels:
+  - ELECTIONS
+  - OPERATIONS
+  - INCIDENT
+  - EMERGENCY
+  - PROTOCOL_UPGRADE
+  - NEW_PROGRAM
+  - STRATEGY
+  - PARAMETER_CHANGE
+  - TREASURY
+  - GOVERNANCE_FRAMEWORK
+  - META_GOV
+  - SPONSORSHIP
+  - REPORTING
+  - RESEARCH
 
 # =============================================================================
 # SCORING CONFIG

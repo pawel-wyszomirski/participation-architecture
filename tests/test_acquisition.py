@@ -252,3 +252,44 @@ class TestProgFinansowyMowiOSobie:
         self._silnik()._apply_treasury_tiers(s, "TRE-001")
         assert "TREASURY_TIER_NOT_EVALUABLE" in s.labels
         assert any("ARB" in r for r in s.reasons)
+
+
+# ---------------------------------------------------------------------------
+# Z5: regula domyslna doklejala UNCATEGORIZED do propozycji sklasyfikowanej
+# ---------------------------------------------------------------------------
+
+class TestReguleDomyslna:
+    """Warunek `label_count lt 2` liczyl WSZYSTKIE etykiety, razem z modyfikatorami
+    typu LONG_FORM. Propozycja z jedna etykieta merytoryczna wpadala wiec w regule
+    domyslna: dostawala UNCATEGORIZED obok wlasnej etykiety, a jej obsluge
+    obnizano do standard_review.
+
+    Zmierzone na v0.1.0: aktualizacja protokolu z priorytetem 80 szla do
+    standard_review zamiast deep_review."""
+
+    def _wynik(self, sciezka_rulebooka):
+        import yaml
+        from app.services.rule_engine import RuleEngine, create_test_proposal
+        kw = yaml.safe_load(open("rulebook.yaml"))["keyword_groups"]["UPGRADE_CUES"][0]
+        p = create_test_proposal(
+            item_id="z5", title=f"AIP: {kw} for Arbitrum One",
+            body=f"We propose a {kw}. " * 20, status="active")
+        return RuleEngine(sciezka_rulebooka).evaluate_proposal(p)
+
+    def test_sklasyfikowana_nie_dostaje_uncategorized(self):
+        r = self._wynik("rulebook.yaml")
+        assert "PROTOCOL_UPGRADE" in r.labels
+        assert "UNCATEGORIZED" not in r.labels
+
+    def test_obsluga_nie_jest_obnizana(self):
+        r = self._wynik("rulebook.yaml")
+        assert r.recommended_handling == "deep_review"
+
+    def test_nieskasyfikowana_nadal_dostaje_uncategorized(self):
+        """Regula domyslna ma dzialac tam, gdzie faktycznie brak klasyfikacji -
+        poprawka nie moze jej wylaczyc."""
+        from app.services.rule_engine import RuleEngine, create_test_proposal
+        p = create_test_proposal(item_id="z5b", title="Weekly community call notes",
+                                 body="Notes from the call. " * 10, status="active")
+        r = RuleEngine("rulebook.yaml").evaluate_proposal(p)
+        assert "UNCATEGORIZED" in r.labels
