@@ -42,8 +42,26 @@ import httpx
 
 from app.services.snapshot_client import Proposal
 
-# Arbitrum One core governor - taken from the govId in alt.gov.arbitrum.foundation URLs
-GOVERNOR_ADDRESS = "0xf07DeD9dC292157749B6Fd268E37DF6EA38395B9"
+# Arbitrum One runs TWO governors and a delegate's workload spans both.
+#
+# The core address comes from the govId in alt.gov.arbitrum.foundation URLs. The
+# treasury address was not guessed: an unfiltered getLogs scan for
+# ProposalCreated around a known treasury proposal (Continued Funding for the
+# Arbitrum Foundation, 2026-06-08 16:52 UTC) returned exactly one event, emitted
+# by 0x789f. Reading the address off the chain that produced the proposal beats
+# copying it from documentation that can go stale the way Tally's index did.
+#
+# Why both matter (2026-08-05): arbdata.com lists 89 proposals - 31 core and
+# 58 treasury. Scanning core alone left two thirds of the DAO's business outside
+# the measurement, so a delegate voting on treasury matters carried load the
+# index could not see. That is a coverage defect, distinct from the look-ahead
+# and the missing end timestamp: those corrupted events we could see, this one
+# removed events from view.
+GOVERNORS = {
+    "core": "0xf07DeD9dC292157749B6Fd268E37DF6EA38395B9",
+    "treasury": "0x789fC99093B09aD01C34DC7251D0C89ce743e5a4",
+}
+GOVERNOR_ADDRESS = GOVERNORS["core"]  # zgodność wsteczna
 CHAIN_ID = 42161
 
 # Public endpoints, tried in order. Public RPCs answer 403 when a getLogs range is
@@ -197,11 +215,27 @@ class GovernorClient:
 
     async def fetch_voted_proposals(self, address: str, days: int = 120,
                                     limit: int = 200) -> List[Proposal]:
-        """Proposals this delegate voted on, newest first.
+        """Proposals this delegate voted on across BOTH governors, newest first.
 
         `days` bounds the scan. The DFI context window is far shorter, but a wider
         history keeps the novelty component meaningful.
+
+        Scanning both contracts is the point: two thirds of Arbitrum's proposals
+        live on the treasury governor, and a workload measure that reads one
+        contract reports a delegate as idle while they were voting.
         """
+        wszystkie: List[Proposal] = []
+        for rola, adres in GOVERNORS.items():
+            klient = GovernorClient(address=adres, endpoints=self.endpoints)
+            klient._endpoint = self._endpoint
+            wszystkie.extend(await klient._votes_on_one_governor(address, days, limit, rola))
+        wszystkie.sort(key=lambda p: p.voted_at or 0, reverse=True)
+        return wszystkie
+
+    async def _votes_on_one_governor(self, address: str, days: int, limit: int,
+                                     rola: str) -> List[Proposal]:
+        """Jeden kontrakt. Wydzielone z `fetch_voted_proposals`, bo skan chodzi
+        teraz po dwóch, a każdy ma własne `votingDelay()` i własny zbiór zdarzeń."""
         voter_topic = "0x" + "0" * 24 + address[2:].lower()
         async with httpx.AsyncClient() as client:
             try:
@@ -295,8 +329,10 @@ class GovernorClient:
                     opens, closes = voted_at, None
                     without_window += 1
                 # Prefix keeps ids from colliding with Tally and Snapshot on merge.
+                # The governor role goes in too: the same delegate can face a core
+                # and a treasury proposal at once, and the two must stay distinct.
                 prop = Proposal(
-                    id=f"governor:{pid}",
+                    id=f"governor:{rola}:{pid}",
                     title=title,
                     body=body,
                     state="closed",
@@ -304,10 +340,10 @@ class GovernorClient:
                 )
                 prop.end = closes
                 prop.voted_at = voted_at
-                prop.source = "governor"
+                prop.source = f"governor:{rola}"
                 out.append(prop)
             if without_window:
-                print(f"⚠ Governor: {without_window} of {len(out)} votes have no "
+                print(f"⚠ Governor[{rola}]: {without_window} of {len(out)} votes have no "
                       f"known voting window (proposal created before the "
                       f"{days}-day scan) - excluded from concurrency")
             out.sort(key=lambda p: p.voted_at or 0, reverse=True)
