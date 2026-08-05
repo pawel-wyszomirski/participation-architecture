@@ -106,7 +106,11 @@ def probka(wiersze: list[dict], ile: int) -> list[dict]:
     los = random.Random(ZIARNO)
 
     def ma_incydent(w):
-        t = f"{w['title']} {w['fragment']}".lower()
+        # PELNA tresc, nie fragment. Druga przyczyna tej samej usterki: przy
+        # krotszym fragmencie slowo incydentu wypadalo poza okno i propozycja
+        # ladowala w innej warstwie. Wszystko, co decyduje o SKLADZIE probki,
+        # musi czytac zrodlo, nie jego skrot.
+        t = f"{w['title']} {w.get('body') or ''}".lower()
         return any(s in t for s in SLOWA_INCYDENTU)
 
     incydentowe = [w for w in wiersze if ma_incydent(w)]
