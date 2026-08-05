@@ -25,6 +25,12 @@ class Proposal(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Pola dla algorytmu (legacy - zostawione dla kompatybilności)
+    # Odcisk tresci i moment jej ostatniej zmiany (v0.2.0). Do v0.1.0 ponowny
+    # import nie odswiezal tytulu ani tresci, wiec nie dalo sie stwierdzic, czy
+    # etykieta opisuje wersje, ktora klasyfikator faktycznie widzial.
+    content_hash = Column(String, nullable=True)
+    content_updated_at = Column(DateTime, nullable=True)
+
     is_signal = Column(Boolean, default=False)
     fatigue_score = Column(Float, default=0.0)
 
