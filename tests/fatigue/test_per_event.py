@@ -127,6 +127,111 @@ def test_avg_word_count_reflects_target(engine, now):
 
 
 # ---------------------------------------------------------------------------
+# Temporal validity: the evidence set is frozen at the target vote's timestamp
+#
+# Raised in the public source-level review on the forum (2026-08-03, thread
+# "Participation Architecture - Final Grant Report"). The context windows were
+# computed from `proposal.start`, but the delegate may have voted on that
+# proposal days later, so a proposal opened before the target vote could enter
+# the target's history even though the vote had not been cast yet. The
+# invariant to hold:
+#
+#     same target event + same evidence available at target time
+#     + same instrument version = same measurement forever
+# ---------------------------------------------------------------------------
+
+@dataclass
+class MockVote:
+    """A proposal the delegate voted on. `start`/`end` describe the proposal,
+    `voted_at` describes the delegate's own act of voting - in practice the two
+    differ by days, which is what these tests are about."""
+    start: int
+    end: int
+    voted_at: int
+    body: str = "routine monthly report"
+    title: str = "Test Proposal"
+    state: str = "closed"
+
+
+def cast(now: datetime, started_days_ago: float, voted_days_ago: float,
+         open_for_days: float = 3.0) -> MockVote:
+    """One vote positioned relative to the target vote. A negative
+    `voted_days_ago` places the vote AFTER the target."""
+    start = now - timedelta(days=started_days_ago)
+    return MockVote(
+        start=int(start.timestamp()),
+        end=int((start + timedelta(days=open_for_days)).timestamp()),
+        voted_at=int((now - timedelta(days=voted_days_ago)).timestamp()),
+    )
+
+
+def test_later_vote_on_earlier_proposal_leaves_frozen_measurement_intact(engine, now):
+    """Proposal B opens BEFORE the target vote, but the delegate votes on it
+    five days AFTER. Adding that vote must not move the target's measurement."""
+    at_target = [
+        cast(now, started_days_ago=2, voted_days_ago=2),
+        cast(now, started_days_ago=10, voted_days_ago=9),
+    ]
+    cast_later = cast(now, started_days_ago=1, voted_days_ago=-5)
+
+    frozen = engine.compute_per_event("0xA", proposal(), at_target, now=now)
+    recomputed = engine.compute_per_event(
+        "0xA", proposal(), at_target + [cast_later], now=now
+    )
+
+    assert recomputed.fatigue_score == frozen.fatigue_score
+    assert recomputed.components == frozen.components
+    assert recomputed.metrics.proposals_7d == frozen.metrics.proposals_7d
+
+
+def test_window_counts_the_vote_not_the_proposal_start(engine, now):
+    """A proposal opened 40 days before the target but voted on 3 days before it
+    belongs INSIDE the 7-day window. Counting by proposal start drops it out of
+    both windows and understates the delegate's workload."""
+    late_vote_on_old_proposal = cast(
+        now, started_days_ago=40, voted_days_ago=3, open_for_days=45
+    )
+    r = engine.compute_per_event("0xA", proposal(), [late_vote_on_old_proposal], now=now)
+
+    assert r.metrics.proposals_7d == 1
+    assert r.metrics.proposals_30d == 1
+
+
+def test_vote_after_target_is_excluded_from_every_window(engine, now):
+    """A vote cast after the target counts nowhere, whatever the proposal's own
+    timing."""
+    r = engine.compute_per_event(
+        "0xA", proposal(), [cast(now, started_days_ago=3, voted_days_ago=-1)], now=now
+    )
+
+    assert r.metrics.proposals_7d == 0
+    assert r.metrics.proposals_30d == 0
+    assert r.metrics.concurrent_active == 0
+    assert r.components.volume == 0.0
+
+
+def test_concurrency_still_uses_proposal_timing(engine, now):
+    """Concurrency is a proposal-time concept - how many decisions stood open
+    around the delegate at the target moment. It keeps using start/end; only the
+    freezing rule (vote already cast) is added."""
+    open_at_target = cast(now, started_days_ago=1, voted_days_ago=1, open_for_days=5)
+    already_closed = cast(now, started_days_ago=20, voted_days_ago=19, open_for_days=2)
+    r = engine.compute_per_event(
+        "0xA", proposal(), [open_at_target, already_closed], now=now
+    )
+
+    assert r.metrics.concurrent_active == 1
+
+
+def test_history_without_vote_time_falls_back_to_proposal_start(engine, now):
+    """Sources that carry no vote timestamp must keep working - the ecosystem
+    variant passes proposals with `start` only."""
+    r = engine.compute_per_event("0xA", proposal(), history(now, [2]), now=now)
+
+    assert r.metrics.proposals_7d == 1
+
+
+# ---------------------------------------------------------------------------
 # Regression: ecosystem variant untouched
 # ---------------------------------------------------------------------------
 

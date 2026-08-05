@@ -275,8 +275,15 @@ class FatigueEngine:
             "reference_values_per_event", self.config["reference_values"]
         )
 
+        # Freeze the evidence set at the target vote before anything is counted.
+        # A proposal may open before the target vote and be voted on days after
+        # it; without this filter that later vote would enter the target's
+        # history and the historical DFI would depend on information that did
+        # not exist at the declared as_of boundary.
+        frozen_history = [p for p in voted_history if self._vote_ts(p) <= now_ts]
+
         # Context components from the delegate's history around the vote.
-        ctx = self._compute_metrics(voted_history, now_ts)
+        ctx = self._compute_metrics(frozen_history, now_ts, by_vote_time=True)
         ctx_components = self._compute_components(ctx, ref)
 
         # Intrinsic components from THE voted proposal (per-event).
@@ -361,14 +368,36 @@ class FatigueEngine:
     # Metrics computation
     # ------------------------------------------------------------------
 
-    def _compute_metrics(self, proposals: List[Any], now_ts: int) -> FatigueMetrics:
+    @staticmethod
+    def _vote_ts(item: Any) -> int:
+        """When the delegate acted on this item. Falls back to the proposal's
+        start for sources that carry no vote timestamp (the ecosystem variant
+        counts proposals, not votes)."""
+        return int(getattr(item, "voted_at", None) or getattr(item, "start", None) or 0)
+
+    def _compute_metrics(
+        self, proposals: List[Any], now_ts: int, by_vote_time: bool = False
+    ) -> FatigueMetrics:
+        """
+        Volume windows measure votes per week/month when `by_vote_time` is set
+        (per-event variant): the window anchors on when the delegate voted, not
+        on when the proposal opened. A proposal that opened 40 days out but was
+        voted on yesterday is yesterday's workload.
+
+        Concurrency stays on proposal start/end in both variants - it asks how
+        many decisions stood open around the delegate at `now_ts`, which is a
+        proposal-time concept and not a substitute for the vote timestamp.
+        """
         cutoff_7d  = now_ts - (7  * 86_400)
         cutoff_30d = now_ts - (30 * 86_400)
 
-        # Upper bound (start <= now_ts) lets caller pass `now` in the past
+        def window_ts(p: Any) -> int:
+            return self._vote_ts(p) if by_vote_time else (p.start or 0)
+
+        # Upper bound (<= now_ts) lets caller pass `now` in the past
         # to compute DFI retrospectively (see endpoint `as_of` parameter).
-        proposals_7d  = sum(1 for p in proposals if cutoff_7d  <= (p.start or 0) <= now_ts)
-        proposals_30d = sum(1 for p in proposals if cutoff_30d <= (p.start or 0) <= now_ts)
+        proposals_7d  = sum(1 for p in proposals if cutoff_7d  <= window_ts(p) <= now_ts)
+        proposals_30d = sum(1 for p in proposals if cutoff_30d <= window_ts(p) <= now_ts)
 
         # Concurrent: proposals where start <= now <= end
         concurrent_active = sum(
@@ -377,7 +406,7 @@ class FatigueEngine:
         )
 
         # Average word count across 30d window
-        recent = [p for p in proposals if cutoff_30d <= (p.start or 0) <= now_ts]
+        recent = [p for p in proposals if cutoff_30d <= window_ts(p) <= now_ts]
         if recent:
             word_counts = [len((p.body or "").split()) for p in recent]
             avg_word_count = sum(word_counts) / len(word_counts)
