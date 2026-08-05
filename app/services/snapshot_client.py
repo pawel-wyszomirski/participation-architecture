@@ -113,6 +113,59 @@ class SnapshotClient:
         finally:
             session.close()
 
+    async def fetch_space_voters(
+        self, space: str = ARBITRUM_SPACE, limit: int = 40, scan: int = 1000
+    ) -> List[str]:
+        """Distinct addresses that voted in a space, most recent first.
+
+        Used to calibrate the DFI reference values against the field's own
+        activity distribution rather than against constants. The current
+        constants saturate two components for any delegate voting more than
+        once a week, so half the scale is fixed regardless of who is measured -
+        a property of the calibration, not of the DAO, which is why the
+        procedure has to run per field site.
+
+        `scan` bounds how many recent votes are read before distinct voters are
+        taken. Sampling recent votes biases toward currently active delegates,
+        which is the intended population: a reference value is meant to answer
+        "busy compared to whom", and the comparison group is people who vote.
+        """
+        query = """
+        query SpaceVotes($space: String!, $first: Int!) {
+          votes(
+            first: $first,
+            where: { space: $space },
+            orderBy: "created",
+            orderDirection: desc
+          ) {
+            voter
+          }
+        }
+        """
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    self.url,
+                    json={"query": query,
+                          "variables": {"space": space, "first": min(scan, 1000)}},
+                    headers=self.headers,
+                    timeout=60.0,
+                )
+                response.raise_for_status()
+                raw = response.json().get("data", {}).get("votes") or []
+            except Exception as e:  # noqa: BLE001
+                print(f"❌ Connection Error (space voters): {e}")
+                return []
+
+        seen: List[str] = []
+        for v in raw:
+            addr = v.get("voter")
+            if addr and addr not in seen:
+                seen.append(addr)
+            if len(seen) >= limit:
+                break
+        return seen
+
     async def fetch_votes_by_voter(
         self, voter: str, space: str = ARBITRUM_SPACE, limit: int = 200
     ) -> List[Dict[str, Any]]:
