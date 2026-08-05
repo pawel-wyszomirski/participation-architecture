@@ -446,3 +446,63 @@ class TestWdrozenie:
         wejscie = pathlib.Path("entrypoint.sh").read_text()
         assert "snapshot_client" in wejscie
         assert "INGEST_ON_START" in wejscie
+
+
+# ---------------------------------------------------------------------------
+# Z9, Z10, Z11: walidacja i raport
+# ---------------------------------------------------------------------------
+
+class TestRaportNieZamieniaZeraWDowod:
+    """Najciezszy zarzut z czternastki, bo dotyczy dokumentu opublikowanego jako
+    produkt grantu.
+
+    generate_pdf_report.py mial:
+        if analysis['sec_001_analysis']['count'] == 0:
+            conclusions.append("SEC-001-STRICT: No false positives.
+                                Rule correctly identifies only active security incidents.")
+
+    `count` to liczba ODPALEN reguly, nie falszywych trafien. Zero odpalen
+    zamienialo sie we wniosek o poprawnosci dzialania. Korpus zawieral wylacznie
+    propozycje zamkniete, a regula wymaga `not_flag: STATE_CLOSED` - zero bylo
+    wynikiem konstrukcji, nie pomiarem."""
+
+    def _zrodlo(self, plik):
+        import pathlib
+        return pathlib.Path(plik).read_text(encoding="utf-8")
+
+    def test_wniosek_o_poprawnosci_zniknal(self):
+        z = self._zrodlo("scripts/generate_pdf_report.py")
+        # wystepuje juz tylko w komentarzu opisujacym usterke
+        linie = [l for l in z.splitlines()
+                 if "Rule correctly identifies" in l and not l.strip().startswith("#")]
+        assert not linie, f"twierdzenie o poprawnosci wrocilo: {linie}"
+
+    def test_raport_podaje_kwalifikowalnosc(self):
+        """Liczba odpalen bez liczby propozycji, ktore MOGLY odpalic, nie znaczy nic."""
+        z = self._zrodlo("scripts/generate_pdf_report.py")
+        assert "sec_001_eligible" in z
+        assert "NOT EVALUABLE" in z
+
+    def test_komorka_falszywych_trafien_niesie_falszywe_trafienia(self):
+        """W tabeli stala LICZBA ODPALEN pod etykieta "False Positives", ze statusem
+        wpisanym na sztywno. Przy pieciu odpaleniach pokazalaby "5, None"."""
+        z = self._zrodlo("scripts/generate_pdf_report.py")
+        assert "['SEC-001 False Positives', str(analysis['sec_001_analysis']['count']), '✓ None']" not in z
+
+    def test_heurystyka_nie_udaje_oznaczonej_prawdy(self):
+        """Z9: falszywe trafienia wykrywa lista slow w tytule, na tym samym
+        korpusie, na ktorym strojono reguly. Raport ma to mowic."""
+        z = self._zrodlo("scripts/generate_pdf_report.py")
+        assert "not independently labelled ground truth" in z
+
+
+class TestWalidacjaLiczyPokrycie:
+    def test_wynik_niesie_stan_propozycji(self):
+        import pathlib
+        z = pathlib.Path("scripts/validate_ex_ante.py").read_text(encoding="utf-8")
+        assert "'state': row['state']" in z
+
+    def test_analiza_liczy_kwalifikujace_sie(self):
+        import pathlib
+        z = pathlib.Path("scripts/validate_ex_ante.py").read_text(encoding="utf-8")
+        assert "sec_001_eligible" in z and "by_state" in z

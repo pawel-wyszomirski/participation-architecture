@@ -76,6 +76,20 @@ def analyze_results(results: list) -> dict:
     """Analyze triage results for potential issues across ALL rules"""
 
     analysis = {
+        # Z10: sklad korpusu i ILE PROPOZYCJI W OGOLE MOGLO uruchomic dana regule.
+        #
+        # Do v0.1.0 raport podawal, ile razy regula odpalila, i nie mowil, ile razy
+        # MOGLA. Korpus pochodzil z pobierania ograniczonego do propozycji
+        # zamknietych, a SEC-001-STRICT wymaga `not_flag: STATE_CLOSED` - zero
+        # odpalen bylo wiec wynikiem konstrukcji, nie pomiarem. Skrypt sam pisal
+        # "expected for historical data" i mimo to zero szlo do raportu jako
+        # dowod trafnosci.
+        'coverage': {
+            'by_state': defaultdict(int),
+            'sec_001_eligible': 0,      # propozycje NIE zamkniete - tylko te moga odpalic
+            'note': ('Zero firings on a corpus that cannot trigger a rule is a '
+                     'property of the corpus, not evidence about the rule.'),
+        },
         'summary': {
             'total_proposals': len(results),
             'by_handling': defaultdict(int),
@@ -218,6 +232,12 @@ def analyze_results(results: list) -> dict:
         reasons = r['reasons']
         handling = r['recommended_handling']
         title_lower = title.lower()
+
+        # Z10: sklad korpusu i kwalifikowalnosc do reguly bezpieczenstwa
+        stan = (r.get('state') or 'unknown')
+        analysis['coverage']['by_state'][stan] += 1
+        if stan != 'closed':
+            analysis['coverage']['sec_001_eligible'] += 1
 
         # Summary stats
         analysis['summary']['by_handling'][handling] += 1
@@ -449,8 +469,15 @@ def print_report(analysis: dict, verbose: bool = False):
     sec = analysis['sec_001_analysis']
     print(f"\n  SEC-001-STRICT: Active Security Incident")
     print(f"  Fired: {sec['count']} times")
-    if sec['count'] == 0:
-        print("  ✅ No security incidents flagged (expected for historical data)")
+    kwalifikujace = analysis['coverage']['sec_001_eligible']
+    print(f"  Eligible proposals (not closed): {kwalifikujace}")
+    if kwalifikujace == 0:
+        print("  ⚠️  NIE DA SIE NIC ORZEC: zaden element korpusu nie mogl uruchomic")
+        print("     tej reguly (wymaga not_flag STATE_CLOSED). Zero odpalen jest")
+        print("     wlasnoscia korpusu, nie wynikiem o regule.")
+    elif sec['count'] == 0:
+        print(f"  Brak odpalen przy {kwalifikujace} propozycjach kwalifikujacych sie.")
+        print("     To wynik. Wczesniej korpus nie zawieral zadnej takiej propozycji.")
     else:
         print(f"  Proposals: {[p['title'][:40] for p in sec['proposals'][:3]]}")
 
@@ -715,6 +742,10 @@ def main():
         results.append({
             'item_id': result.item_id,
             'title': row['title'],
+            # Z10: stan propozycji musi wejsc do wyniku, inaczej nie da sie
+            # policzyc, ile elementow korpusu W OGOLE moglo uruchomic regule
+            # wymagajaca `not_flag: STATE_CLOSED`.
+            'state': row['state'] or 'unknown',
             'priority_score': result.priority_score,
             'labels': result.labels,
             'reasons': result.reasons,

@@ -89,7 +89,19 @@ def create_pdf_report(data: dict, output_path: str):
     summary_data = [
         ['Metric', 'Value', 'Status'],
         ['Total Proposals', str(total), '✓'],
-        ['SEC-001 False Positives', str(analysis['sec_001_analysis']['count']), '✓ None'],
+        # Z11: w tej komorce stala LICZBA ODPALEN reguly pod etykieta "False
+        # Positives", ze statusem "OK None" wpisanym na sztywno. Przy pieciu
+        # odpaleniach tabela pokazalaby "5, None". Teraz komorka niesie to, co
+        # deklaruje, a status liczy sie z wartosci.
+        ['SEC-001 False Positives',
+         str(len(analysis['sec_001_analysis'].get('potential_false_positives', []))),
+         '✓ None' if not analysis['sec_001_analysis'].get('potential_false_positives')
+         else '⚠ Review'],
+        ['SEC-001 fired / eligible',
+         f"{analysis['sec_001_analysis']['count']} / "
+         f"{analysis.get('coverage', {}).get('sec_001_eligible', 0)}",
+         '✓' if analysis.get('coverage', {}).get('sec_001_eligible', 0) > 0
+         else '⚠ corpus cannot trigger this rule'],
         ['TECH-001 False Positives', str(len(analysis['tech_001_analysis'].get('potential_false_positives', []))), '✓ None' if len(analysis['tech_001_analysis'].get('potential_false_positives', [])) == 0 else '⚠ Review'],
         ['Uncategorized', f"{analysis['uncategorized']['count']} ({analysis['uncategorized']['count']/total*100:.1f}%)", '✓ OK' if analysis['uncategorized']['count']/total < 0.15 else '⚠ High'],
     ]
@@ -185,8 +197,17 @@ def create_pdf_report(data: dict, output_path: str):
     sec = analysis['sec_001_analysis']
     content.append(Paragraph(f"<b>Times Fired:</b> {sec['count']}", normal_style))
     content.append(Paragraph(f"<b>Potential False Positives:</b> {len(sec.get('potential_false_positives', []))}", normal_style))
-    if sec['count'] == 0:
-        content.append(Paragraph("✓ No security incidents flagged (expected for historical data)", normal_style))
+    _kwal = analysis.get('coverage', {}).get('sec_001_eligible', 0)
+    content.append(Paragraph(
+        f"<b>Eligible proposals (rule requires non-closed):</b> {_kwal}", normal_style))
+    if _kwal == 0:
+        content.append(Paragraph(
+            "⚠ NOT EVALUABLE: no proposal in this corpus could trigger the rule. "
+            "Zero firings describes the corpus, not the rule.", normal_style))
+    elif sec['count'] == 0:
+        content.append(Paragraph(
+            f"No firings across {_kwal} eligible proposals. Absence of firings is "
+            "not evidence of correctness on its own.", normal_style))
     content.append(Spacer(1, 0.5*cm))
 
     content.append(Paragraph("4.2 TECH-001-STRICT: Protocol Upgrade", h2_style))
@@ -194,7 +215,11 @@ def create_pdf_report(data: dict, output_path: str):
     content.append(Paragraph(f"<b>Times Fired:</b> {tech['count']} ({tech['count']/total*100:.1f}%)", normal_style))
     content.append(Paragraph(f"<b>Potential False Positives:</b> {len(tech.get('potential_false_positives', []))}", normal_style))
     if len(tech.get('potential_false_positives', [])) == 0:
-        content.append(Paragraph("✓ No false positives detected", normal_style))
+        content.append(Paragraph(
+            "No potential false positives flagged by the title heuristic. "
+            "NOTE: this heuristic is not independently labelled ground truth - "
+            "it runs on the same corpus the rules were tuned against.",
+            normal_style))
     content.append(Spacer(1, 1*cm))
 
     # Phase 2: Standard Rules
@@ -348,8 +373,33 @@ def create_pdf_report(data: dict, output_path: str):
     conclusions = []
 
     # SEC-001
-    if analysis['sec_001_analysis']['count'] == 0:
-        conclusions.append("SEC-001-STRICT: ✓ No false positives. Rule correctly identifies only active security incidents.")
+    #
+    # Z11: stalo tu "if count == 0: No false positives. Rule correctly identifies
+    # only active security incidents". `count` to liczba ODPALEN, nie falszywych
+    # trafien - zero odpalen zamienialo sie we wniosek o poprawnosci dzialania.
+    # Korpus pochodzil z pobierania ograniczonego do propozycji zamknietych,
+    # a regula wymaga `not_flag: STATE_CLOSED`, wiec zero bylo wynikiem
+    # konstrukcji. Twierdzenie o trafnosci nie mialo pokrycia w danych.
+    kwalifikujace = analysis.get('coverage', {}).get('sec_001_eligible', 0)
+    odpalen = analysis['sec_001_analysis']['count']
+    falszywe = len(analysis['sec_001_analysis'].get('potential_false_positives', []))
+    if kwalifikujace == 0:
+        conclusions.append(
+            "SEC-001-STRICT: NOT EVALUABLE. No proposal in this corpus could "
+            "trigger the rule - it requires a non-closed proposal and every item "
+            "here is closed. Zero firings is a property of the corpus, not a "
+            "finding about the rule. This says nothing about accuracy.")
+    elif odpalen == 0:
+        conclusions.append(
+            f"SEC-001-STRICT: no firings across {kwalifikujace} eligible proposals. "
+            "This is a result, but absence of firings is not by itself evidence of "
+            "correctness - establishing that needs independently labelled cases "
+            "where the rule SHOULD fire.")
+    else:
+        conclusions.append(
+            f"SEC-001-STRICT: fired {odpalen} times across {kwalifikujace} eligible "
+            f"proposals; {falszywe} flagged as potential false positives by title "
+            "heuristics (not independently labelled ground truth).")
 
     # TECH-001
     tech_fp = len(analysis['tech_001_analysis'].get('potential_false_positives', []))
