@@ -92,6 +92,17 @@ class EvaluationState:
     priority_adjustments: List[Dict[str, Any]] = field(default_factory=list)
     manual_handling_override: Optional[str] = None
 
+    #: Z6 - czas ewaluacji jako CZESC WEJSCIA, nie odczyt zegara w srodku.
+    #: Do v0.1.0 dwa miejsca wolaly `datetime.now()` podczas oceny, wiec ta sama
+    #: propozycja i ten sam rulebook dawaly pozniej inny wynik BEZ zmiany wejscia.
+    #: Wynik nie byl odtwarzalny, choc silnik deklarowal determinizm w naglowku.
+    evaluated_at: int = 0
+
+    #: Z7 - slad decyzji per regula. `reasons` mowilo wylacznie, ze warunek sie
+    #: dopasowal. Nie dalo sie odczytac, czy dzialanie zastosowano, odrzucono,
+    #: czy nadpisala je regula o wyzszym priorytecie.
+    audit: List[Dict[str, Any]] = field(default_factory=list)
+
 
 # ============================================================================
 # RULE ENGINE
@@ -144,14 +155,27 @@ class RuleEngine:
             patterns[group_name] = re.compile(f"(?i)\\b({pattern_str})\\b")
         return patterns
     
-    def evaluate_proposal(self, proposal: ProposalInput) -> TriageResult:
+    def evaluate_proposal(self, proposal: ProposalInput,
+                          evaluated_at: Optional[int] = None) -> TriageResult:
         """
         Main entry point: evaluate a proposal against all rules.
+
+        `evaluated_at` (epoch) is part of the INPUT. Passing it makes the result
+        reproducible; omitting it takes the current clock and records the value in
+        `explain`, so a stored result can always be replayed.
+
+        Until v0.1.0 two rule paths read `datetime.now()` mid-evaluation and the
+        timestamp was recorded nowhere. The same proposal and the same rulebook
+        produced a different verdict later with no input change, while the module
+        header declared determinism.
         """
         logger.debug(f"Evaluating proposal {proposal.item_id}: {proposal.title[:50]}")
         
         # Initialize state
-        state = EvaluationState(proposal=proposal)
+        state = EvaluationState(
+            proposal=proposal,
+            evaluated_at=int(evaluated_at if evaluated_at is not None
+                             else datetime.now(timezone.utc).timestamp()))
         
         # Compute derived data if missing
         if proposal.word_count == 0 and proposal.body:
@@ -196,6 +220,8 @@ class RuleEngine:
             recommended_handling=handling,
             reasons=state.reasons,
             explain={
+                "evaluated_at": state.evaluated_at,
+                "audit": state.audit,
                 "min_priority": state.min_priority,
                 "max_priority": state.max_priority,
                 "priority_adjustments": state.priority_adjustments,
@@ -273,7 +299,8 @@ class RuleEngine:
         
         # --- Modifiers ---
         if "time_remaining" in condition:
-            return self._check_time_remaining(condition["time_remaining"], state.proposal)
+            return self._check_time_remaining(condition["time_remaining"],
+                                             state.proposal, state.evaluated_at)
         
         if "word_count" in condition:
             return self._check_word_count(condition["word_count"], state.proposal)
@@ -357,9 +384,9 @@ class RuleEngine:
     def _check_not_flag(self, flag: str, state: EvaluationState) -> bool:
         return flag not in state.flags
 
-    def _check_time_remaining(self, params: Dict, proposal: ProposalInput) -> bool:
+    def _check_time_remaining(self, params: Dict, proposal: ProposalInput,
+                              now: float) -> bool:
         if not proposal.end_at: return False
-        now = datetime.now(timezone.utc).timestamp()
         remaining_seconds = proposal.end_at - now
         remaining_hours = remaining_seconds / 3600
         
@@ -384,8 +411,12 @@ class RuleEngine:
         rule_id = rule.get("id", "unknown")
         actions = rule.get("then", {})
         
-        # Audit trail
+        # Audit trail. `reasons` zostaje dla zgodnosci wstecznej, `audit` niesie
+        # to, czego brakowalo: JAKIE dzialania zregula zazadala.
         state.reasons.append(rule_id)
+        wpis = {"rule": rule_id, "matched": True,
+                "requested": sorted(actions.keys()), "applied": [], "skipped": []}
+        state.audit.append(wpis)
         
         # Labels
         if "add_labels" in actions:
@@ -414,8 +445,12 @@ class RuleEngine:
             # the limiting intent of a specific rule.
             if state.max_priority < 100 and new_min >= state.max_priority:
                  logger.debug(f"Rule {rule_id} set_min_priority {new_min} ignored: exceeds max_priority {state.max_priority} set by higher rule.")
+                 wpis["skipped"].append(
+                     f"set_min_priority={new_min} superseded by max_priority="
+                     f"{state.max_priority}")
             else:
                 state.min_priority = max(state.min_priority, new_min)
+                wpis["applied"].append(f"set_min_priority={new_min}")
             
         if "set_max_priority" in actions:
             new_max = actions["set_max_priority"]
@@ -487,7 +522,7 @@ class RuleEngine:
 
     def _apply_time_tiers(self, state: EvaluationState, rule_id: str):
         if not state.proposal.end_at: return
-        now = datetime.now(timezone.utc).timestamp()
+        now = state.evaluated_at
         remaining_hours = (state.proposal.end_at - now) / 3600
         if remaining_hours < 0: return
 

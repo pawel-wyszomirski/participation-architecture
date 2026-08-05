@@ -293,3 +293,82 @@ class TestReguleDomyslna:
                                  body="Notes from the call. " * 10, status="active")
         r = RuleEngine("rulebook.yaml").evaluate_proposal(p)
         assert "UNCATEGORIZED" in r.labels
+
+
+# ---------------------------------------------------------------------------
+# Z6: czas ewaluacji jako czesc wejscia
+# ---------------------------------------------------------------------------
+
+class TestCzasEwaluacji:
+    """Dwa miejsca w silniku wolaly `datetime.now()` w trakcie oceny, a znacznik
+    nie byl nigdzie zapisywany. Ta sama propozycja i ten sam rulebook dawaly
+    pozniej inny werdykt BEZ zmiany wejscia - przy naglowku deklarujacym
+    determinizm."""
+
+    def _silnik(self):
+        from app.services.rule_engine import RuleEngine
+        return RuleEngine("rulebook.yaml")
+
+    def _propozycja(self, koniec):
+        from app.services.rule_engine import create_test_proposal
+        return create_test_proposal(
+            item_id="z6", title="Community update on operations",
+            body="Operational note. " * 40, status="active", end_at=koniec)
+
+    def test_ten_sam_czas_daje_ten_sam_wynik(self):
+        import time
+        t = int(time.time())
+        e = self._silnik()
+        a = e.evaluate_proposal(self._propozycja(t + 36000), evaluated_at=t)
+        b = e.evaluate_proposal(self._propozycja(t + 36000), evaluated_at=t)
+        assert a.priority_score == b.priority_score
+        assert a.labels == b.labels
+
+    def test_czas_realnie_zmienia_wynik_wiec_musi_byc_wejsciem(self):
+        """Gdyby czas nie zmienial wyniku, zamrozenie byloby kosmetyka.
+        Zmienia: ta sama propozycja oceniona przed i po zamknieciu glosowania."""
+        import time
+        t = int(time.time())
+        e = self._silnik()
+        przed = e.evaluate_proposal(self._propozycja(t + 36000), evaluated_at=t)
+        po = e.evaluate_proposal(self._propozycja(t + 36000), evaluated_at=t + 72000)
+        assert przed.priority_score != po.priority_score
+
+    def test_znacznik_wraca_w_wyniku(self):
+        """Bez zapisanego znacznika nie da sie odtworzyc oceny z przeszlosci."""
+        import time
+        t = int(time.time())
+        r = self._silnik().evaluate_proposal(self._propozycja(t + 3600), evaluated_at=t)
+        assert r.explain["evaluated_at"] == t
+
+
+# ---------------------------------------------------------------------------
+# Z7: slad decyzji, nie samo dopasowanie warunku
+# ---------------------------------------------------------------------------
+
+class TestSladDecyzji:
+    """`reasons` mowilo wylacznie, ze warunek reguly sie dopasowal. Nie dalo sie
+    odczytac, czy dzialanie zastosowano, czy nadpisala je regula o wyzszym
+    priorytecie - a to jest roznica miedzy 'regula zadziala' a 'regula probowala'."""
+
+    def _wynik(self):
+        import time, yaml
+        from app.services.rule_engine import RuleEngine, create_test_proposal
+        kw = yaml.safe_load(open("rulebook.yaml"))["keyword_groups"]["UPGRADE_CUES"][0]
+        p = create_test_proposal(item_id="z7", title=f"AIP: {kw}",
+                                 body=f"{kw} " * 30, status="active")
+        return RuleEngine("rulebook.yaml").evaluate_proposal(
+            p, evaluated_at=int(time.time()))
+
+    def test_slad_wymienia_zadane_dzialania(self):
+        wpisy = self._wynik().explain["audit"]
+        assert wpisy, "slad audytu pusty"
+        assert all("requested" in w for w in wpisy)
+
+    def test_slad_odroznia_zastosowane_od_pominietych(self):
+        wpisy = self._wynik().explain["audit"]
+        assert all("applied" in w and "skipped" in w for w in wpisy)
+
+    def test_kazdy_wpis_wskazuje_regule(self):
+        wpisy = self._wynik().explain["audit"]
+        assert all(w.get("rule") for w in wpisy)
