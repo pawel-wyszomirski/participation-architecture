@@ -1,6 +1,6 @@
 import os
 import sys
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
@@ -24,19 +24,23 @@ from app.services.fatigue_engine import FatigueEngine
 Base.metadata.create_all(bind=engine)
 
 # --- Singletons ---
+rule_engine_error: Optional[str] = None
 try:
     rule_engine = RuleEngine("rulebook.yaml")
     print(f"✅ Rule Engine initialized: v{rule_engine.version}, {len(rule_engine.rulebook['rules'])} rules")
 except Exception as e:
-    print(f"⚠️  Rule Engine initialization failed: {e}")
+    print(f"❌ Rule Engine initialization FAILED: {e}")
     rule_engine = None
+    rule_engine_error = str(e)
 
+fatigue_engine_error: Optional[str] = None
 try:
     fatigue_engine = FatigueEngine("fatigue_config.yaml")
     print(f"✅ Fatigue Engine initialized: v{fatigue_engine.version}")
 except Exception as e:
-    print(f"⚠️  Fatigue Engine initialization failed: {e}")
+    print(f"❌ Fatigue Engine initialization FAILED: {e}")
     fatigue_engine = None
+    fatigue_engine_error = str(e)
 
 app = FastAPI(
     title="Participation Architecture API",
@@ -61,6 +65,9 @@ def get_db():
 # ============================================================================
 
 class HealthCheck(BaseModel):
+    #: Z13: `ok` bylo wpisane na sztywno - odpowiedz brzmiala "ok" takze przy
+    #: odlaczonej bazie i obu silnikach nieuruchomionych. Sprawnosc byla
+    #: DEKLAROWANA, nie mierzona.
     status: str
     version: str
     database: str
@@ -185,16 +192,40 @@ async def root():
 
 
 @app.get("/health", response_model=HealthCheck, tags=["System"])
-async def health_check(db: Session = Depends(get_db)):
+async def health_check(response: Response, db: Session = Depends(get_db)):
+    """Stan uslugi liczony ze stanu, nie wpisany.
+
+    Z13: do v0.1.0 `status` bylo stala "ok". Odpowiedz brzmiala HTTP 200 i "ok"
+    przy `database: disconnected` i obu silnikach `not_initialized`. Monitoring
+    patrzacy na ten endpoint widzial usluge zdrowa, gdy nie mogla nic zrobic.
+
+    Z14: pusty korpus tez jest brakiem gotowosci. Kontener wstawal, API
+    odpowiadalo poprawnie, a triaz nie mial czego triazowac - `Dockerfile`
+    uruchamia sam serwer, bez kroku zasilenia bazy.
+    """
     try:
         count = db.query(Proposal).count()
         db_status = "connected"
-    except Exception:
+    except Exception as e:
         count = 0
-        db_status = "disconnected"
+        db_status = f"disconnected: {str(e)[:80]}"
+
+    powody = []
+    if db_status != "connected":
+        powody.append("database")
+    if rule_engine is None:
+        powody.append(f"rule_engine ({rule_engine_error or 'not initialized'})")
+    if fatigue_engine is None:
+        powody.append(f"fatigue_engine ({fatigue_engine_error or 'not initialized'})")
+    if count == 0:
+        powody.append("proposal corpus empty - nothing to triage")
+
+    stan = "ok" if not powody else "not_ready: " + "; ".join(powody)
+    if powody:
+        response.status_code = 503
 
     return HealthCheck(
-        status="ok",
+        status=stan,
         version="0.7.0",
         database=db_status,
         proposals_count=count,

@@ -133,15 +133,28 @@ class RuleEngine:
     
     def _load_rulebook(self) -> Dict:
         """Load YAML rulebook"""
+        # Z8: brak albo blad rulebooka konczy sie BLEDEM, nie pustym zestawem regul.
+        #
+        # Do v0.1.0 brakujacy plik zwracal {"rules": []}, silnik wstawal, a usluga
+        # zglaszala gotowosc. Kazda propozycja przechodzila wtedy przez ZERO regul
+        # i dostawala wynik domyslny - nie do odroznienia od propozycji, ktora
+        # faktycznie zadnej reguly nie spelnila. Triaz bez regul odpowiada tak samo
+        # jak triaz dzialajacy.
         if not self.rulebook_path.exists():
-            # Fallback check mainly for test environments if needed, but per request strictly checking for file
-            logger.error(f"Rulebook not found: {self.rulebook_path}")
-            # Return empty structure to prevent immediate crash init, but eval will fail
-            return {"rules": [], "keyword_groups": {}, "score_mapping": {}}
-        
+            raise FileNotFoundError(
+                f"Rulebook not found: {self.rulebook_path}. Refusing to start with "
+                "an empty rule set - a triage service without rules answers exactly "
+                "like a working one.")
+
         with open(self.rulebook_path, 'r') as f:
             rulebook = yaml.safe_load(f)
-        
+
+        if not isinstance(rulebook, dict):
+            raise ValueError(f"Rulebook {self.rulebook_path} is not a YAML mapping.")
+        if not rulebook.get("rules"):
+            raise ValueError(
+                f"Rulebook {self.rulebook_path} carries no rules. Refusing to start.")
+
         return rulebook
 
     def _compile_keyword_groups(self) -> Dict[str, re.Pattern]:

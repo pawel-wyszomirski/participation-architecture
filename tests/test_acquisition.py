@@ -372,3 +372,77 @@ class TestSladDecyzji:
     def test_kazdy_wpis_wskazuje_regule(self):
         wpisy = self._wynik().explain["audit"]
         assert all(w.get("rule") for w in wpisy)
+
+
+# ---------------------------------------------------------------------------
+# Z8: brak rulebooka nie moze konczyc sie pustym zestawem regul
+# ---------------------------------------------------------------------------
+
+class TestRulebookZamykaSie:
+    """Do v0.1.0 brakujacy plik zwracal {"rules": []}, silnik wstawal, a usluga
+    zglaszala gotowosc. Kazda propozycja przechodzila przez ZERO regul i dostawala
+    wynik domyslny - nie do odroznienia od propozycji, ktora zadnej reguly nie
+    spelnila. Triaz bez regul odpowiada tak samo jak triaz dzialajacy."""
+
+    def test_brak_pliku_rzuca(self, tmp_path):
+        from app.services.rule_engine import RuleEngine
+        with pytest.raises(FileNotFoundError):
+            RuleEngine(str(tmp_path / "nie-ma.yaml"))
+
+    def test_rulebook_bez_regul_rzuca(self, tmp_path):
+        from app.services.rule_engine import RuleEngine
+        pusty = tmp_path / "pusty.yaml"
+        pusty.write_text("version: '1.0'\nrules: []\n")
+        with pytest.raises(ValueError):
+            RuleEngine(str(pusty))
+
+    def test_rulebook_nie_bedacy_mapa_rzuca(self, tmp_path):
+        from app.services.rule_engine import RuleEngine
+        zly = tmp_path / "zly.yaml"
+        zly.write_text("- to\n- jest\n- lista\n")
+        with pytest.raises(ValueError):
+            RuleEngine(str(zly))
+
+
+# ---------------------------------------------------------------------------
+# Z13, Z14: sprawnosc mierzona, nie deklarowana
+# ---------------------------------------------------------------------------
+
+class TestHealthcheck:
+    """`status` bylo stala "ok". Odpowiedz brzmiala HTTP 200 i "ok" przy
+    `database: disconnected` i obu silnikach nieuruchomionych - monitoring
+    widzial usluge zdrowa, gdy nie mogla nic zrobic."""
+
+    def test_status_nie_jest_stala_w_kodzie(self):
+        import pathlib
+        zrodlo = pathlib.Path("app/main.py").read_text(encoding="utf-8")
+        assert 'status="ok",' not in zrodlo, "status wpisany na sztywno wrocil"
+
+    def test_pusty_korpus_to_brak_gotowosci(self):
+        """Z14: kontener wstawal na pustej bazie i odpowiadal poprawnie.
+        Triaz bez korpusu nie ma czego triazowac."""
+        import pathlib
+        zrodlo = pathlib.Path("app/main.py").read_text(encoding="utf-8")
+        assert "proposal corpus empty" in zrodlo
+
+    def test_odpowiedz_niesie_powod_braku_gotowosci(self):
+        import pathlib
+        zrodlo = pathlib.Path("app/main.py").read_text(encoding="utf-8")
+        assert "not_ready" in zrodlo and "503" in zrodlo
+
+
+class TestWdrozenie:
+    def test_sterownik_bazy_zadeklarowany(self):
+        """Z12: compose podaje URL z +asyncpg, session.py przepisuje go na
+        +psycopg2, a sterownik nie byl w requirements. Czysta instalacja nie
+        mogla polaczyc sie z PostgreSQL."""
+        import pathlib
+        assert "psycopg2" in pathlib.Path("requirements.txt").read_text()
+
+    def test_start_kontenera_zasila_korpus(self):
+        """Z14: CMD uruchamial sam serwer."""
+        import pathlib
+        assert "entrypoint.sh" in pathlib.Path("Dockerfile").read_text()
+        wejscie = pathlib.Path("entrypoint.sh").read_text()
+        assert "snapshot_client" in wejscie
+        assert "INGEST_ON_START" in wejscie

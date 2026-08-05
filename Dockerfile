@@ -35,4 +35,7 @@ USER appuser
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Z14: entrypoint zasila korpus przed startem serwera. Do v0.1.0 kontener
+# uruchamial sam uvicorn, wiec API wstawalo na pustej bazie i odpowiadalo "ok".
+COPY --chown=appuser:appuser entrypoint.sh /app/entrypoint.sh
+CMD ["/app/entrypoint.sh"]
