@@ -63,6 +63,26 @@ BLOCKS_PER_DAY = 4 * 60 * 60 * 24
 # Window size for a single getLogs call. Wider ranges get refused by public nodes.
 SCAN_WINDOW_BLOCKS = BLOCKS_PER_DAY * 3
 
+# `startBlock` and `endBlock` in ProposalCreated are ETHEREUM (L1) block numbers,
+# not Arbitrum ones - Arbitrum's `block.number` returns the L1 height. Measured on
+# this contract: an event emitted at L2 block 483_508_532 carries startBlock
+# 25_547_165, and the two orders of magnitude are the giveaway. Converting them
+# with an Arbitrum RPC would therefore read a completely unrelated block, so the
+# window is reconstructed arithmetically instead.
+#
+# 12 s is the post-merge Ethereum slot time. Confirmed twice against live data:
+# two proposals 13.86 days apart differ by 99_483 blocks (12.04 s/block), and
+# `endBlock - startBlock` equals `votingPeriod()` = 100_800 blocks = exactly
+# 14 days at 12 s. Drift over a full voting period is on the order of hours,
+# which concurrency - a count of overlapping decisions - tolerates.
+L1_BLOCK_SECONDS = 12
+
+# Function selectors on the standard OpenZeppelin Governor interface.
+SELECTOR_VOTING_DELAY = "0x3932abb1"   # votingDelay()
+# Fallback if the contract cannot be queried. Current on-chain value; governance
+# can change it, which is why the live call comes first and this is only a floor.
+DEFAULT_VOTING_DELAY_BLOCKS = 21_600
+
 
 def _word(data: str, index: int) -> int:
     """Read the n-th 32-byte word of an ABI payload as an integer."""
@@ -140,6 +160,24 @@ class GovernorClient:
         blk = (await self._call(client, "eth_getBlockByNumber", [block_hex, False]))["result"]
         return int(blk["timestamp"], 16)
 
+    async def _voting_delay(self, client: httpx.AsyncClient) -> int:
+        """Blocks between a proposal being created and voting opening.
+
+        Asked of the contract rather than hardcoded, because governance can change
+        it. A failure falls back to the current value instead of aborting - a
+        slightly wrong window beats no window at all, and no window means the
+        concurrency component silently scores zero for every on-chain vote.
+        """
+        try:
+            res = await self._call(client, "eth_call", [
+                {"to": self.address, "data": SELECTOR_VOTING_DELAY}, "latest"])
+            raw = res.get("result")
+            if raw and raw != "0x":
+                return int(raw, 16)
+        except Exception as e:  # noqa: BLE001
+            print(f"⚠ Governor votingDelay() unreadable, using default: {e}")
+        return DEFAULT_VOTING_DELAY_BLOCKS
+
     async def _logs(self, client: httpx.AsyncClient, topics: list,
                     from_block: int, to_block: int) -> List[dict]:
         """getLogs over a block range, split into windows the public nodes accept."""
@@ -195,33 +233,71 @@ class GovernorClient:
             # measured on 2026-08-03), which is what the reading_time component
             # needs. Without it that component silently scores zero for every
             # on-chain vote.
+            times: Dict[str, int] = {}
+            voting_delay = await self._voting_delay(client)
+
+            # The voting window comes from the event too. Words 6 and 7 hold
+            # startBlock and endBlock, and the creation timestamp anchors them:
+            #
+            #   opens  = created_at + votingDelay        * 12 s
+            #   closes = opens      + (endBlock - startBlock) * 12 s
+            #
+            # The duration is read per proposal rather than from votingPeriod(),
+            # so a proposal created under different governance parameters still
+            # reconstructs correctly; only the delay uses the current value.
             meta: Dict[int, tuple] = {}
             for log in created:
                 pid = _word(log["data"], 0)
-                if pid in voted_ids:
-                    description = _string_at(log["data"], 8)
-                    meta[pid] = (_title_from_description(description), description)
+                if pid not in voted_ids:
+                    continue
+                description = _string_at(log["data"], 8)
+                block_hex = log["blockNumber"]
+                if block_hex not in times:
+                    times[block_hex] = await self._block_time(client, block_hex)
+                created_at = times[block_hex]
+                span_blocks = _word(log["data"], 7) - _word(log["data"], 6)
+                opens = created_at + voting_delay * L1_BLOCK_SECONDS
+                closes = opens + max(span_blocks, 0) * L1_BLOCK_SECONDS
+                meta[pid] = (_title_from_description(description), description,
+                             opens, closes)
 
             out: List[Proposal] = []
-            times: Dict[str, int] = {}
+            without_window = 0
             for log in vote_logs:
                 pid = _word(log["data"], 0)
                 block_hex = log["blockNumber"]
                 if block_hex not in times:
                     times[block_hex] = await self._block_time(client, block_hex)
-                title, body = meta.get(
-                    pid, ("(proposal created before scan window)", ""))
+                voted_at = times[block_hex]
+                if pid in meta:
+                    title, body, opens, closes = meta[pid]
+                else:
+                    # ProposalCreated fell outside the scan window, so the real
+                    # voting period is unknown. The vote timestamp is NOT a
+                    # substitute: it would claim the proposal opened and closed
+                    # the instant this delegate voted, and a different delegate
+                    # voting on the same proposal would get a different window.
+                    # Left unset so concurrency skips it - counted and reported
+                    # below, because a silent skip reads as "nothing overlapped".
+                    title, body = "(proposal created before scan window)", ""
+                    opens, closes = voted_at, None
+                    without_window += 1
                 # Prefix keeps ids from colliding with Tally and Snapshot on merge.
                 prop = Proposal(
                     id=f"governor:{pid}",
                     title=title,
                     body=body,
                     state="closed",
-                    start=times[block_hex],
+                    start=opens,
                 )
-                prop.voted_at = times[block_hex]
+                prop.end = closes
+                prop.voted_at = voted_at
                 prop.source = "governor"
                 out.append(prop)
+            if without_window:
+                print(f"⚠ Governor: {without_window} of {len(out)} votes have no "
+                      f"known voting window (proposal created before the "
+                      f"{days}-day scan) - excluded from concurrency")
             out.sort(key=lambda p: p.voted_at or 0, reverse=True)
             return out
 

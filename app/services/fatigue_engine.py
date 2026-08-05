@@ -399,10 +399,18 @@ class FatigueEngine:
         proposals_7d  = sum(1 for p in proposals if cutoff_7d  <= window_ts(p) <= now_ts)
         proposals_30d = sum(1 for p in proposals if cutoff_30d <= window_ts(p) <= now_ts)
 
-        # Concurrent: proposals where start <= now <= end
+        # Concurrent: proposals where start <= now <= end.
+        #
+        # A proposal whose voting window is unknown is SKIPPED, deliberately.
+        # Sources differ in what they can supply (Tally omits the end timestamp;
+        # the on-chain client cannot reconstruct it when ProposalCreated falls
+        # outside its scan window), and an absent window must not be read as
+        # "did not overlap". Until 2026-08-05 this happened by accident - the
+        # `or 0` turned a missing end into the epoch, so the comparison was
+        # false and every on-chain vote scored zero concurrency in silence.
         concurrent_active = sum(
             1 for p in proposals
-            if (p.start or 0) <= now_ts <= (p.end or 0)
+            if getattr(p, "end", None) and (p.start or 0) <= now_ts <= p.end
         )
 
         # Average word count across 30d window

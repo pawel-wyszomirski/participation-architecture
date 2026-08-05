@@ -125,6 +125,69 @@ class TestOdpornoscRpc:
         assert odp["result"] == "0x20"
 
 
+class TestOknaGlosowania:
+    """Okres głosowania odtwarzany ze zdarzenia ProposalCreated.
+
+    Do 2026-08-05 klient wpisywał w `start` czas bloku GŁOSU i nie ustawiał
+    `end` wcale. Skutek: warunek współbieżności `start <= as_of <= end` nie
+    zachodził nigdy, więc ŻADEN głos on-chain nie wchodził do składnika o wadze
+    25% - a od czerwca to jedyna droga głosowania na Arbitrum. Cicha zera,
+    nie do odróżnienia od realnego braku nakładania się propozycji.
+
+    Druga pułapka: `startBlock` i `endBlock` to numery bloków ETHEREUM, nie
+    Arbitrum (Arbitrum zwraca w `block.number` wysokość L1). Przeliczenie ich
+    węzłem Arbitrum trafiłoby w blok bez związku ze sprawą.
+    """
+
+    @pytest.mark.asyncio
+    async def test_votingdelay_czytany_z_kontraktu(self):
+        class Klient:
+            async def post(self, url, json=None, **k):
+                class R:
+                    status_code = 200
+                    def json(self_inner):
+                        return {"result": _pad(21600)}
+                return R()
+
+        klient = GovernorClient(endpoints=["https://x"])
+        assert await klient._voting_delay(Klient()) == 21600
+
+    @pytest.mark.asyncio
+    async def test_awaria_odczytu_daje_wartosc_domyslna_nie_brak_okna(self):
+        """Nieodczytane opóźnienie nie może skasować okna - brak okna znaczy
+        zero współbieżności u wszystkich, czyli gorzej niż okno przybliżone."""
+        from app.services.governor_client import DEFAULT_VOTING_DELAY_BLOCKS
+
+        class Klient:
+            async def post(self, *a, **k):
+                class R:
+                    status_code = 500
+                    def json(self_inner): return {}
+                return R()
+
+        klient = GovernorClient(endpoints=["https://x"])
+        assert await klient._voting_delay(Klient()) == DEFAULT_VOTING_DELAY_BLOCKS
+
+    def test_dlugosc_okna_liczona_ze_zdarzenia_nie_ze_stalej(self):
+        """`endBlock - startBlock` bierzemy per propozycja, bo parametry
+        zarządzania bywają zmieniane, a stara propozycja ma odtworzyć się
+        według reguł, które obowiązywały przy jej tworzeniu."""
+        from app.services.governor_client import L1_BLOCK_SECONDS
+
+        start_block, end_block = 25_547_165, 25_647_965
+        span = end_block - start_block
+        assert span == 100_800                       # votingPeriod() kontraktu
+        assert span * L1_BLOCK_SECONDS == 14 * 86_400  # dokładnie 14 dni
+
+    def test_bloki_startu_sa_z_ethereum_nie_z_arbitrum(self):
+        """Kontrola rzędu wielkości - gdyby ktoś kiedyś przeliczał je węzłem
+        Arbitrum, ten test ma przypomnieć dlaczego nie wolno. Zdarzenie stoi
+        w bloku L2 rzędu 483 mln, a niesie startBlock rzędu 25 mln."""
+        blok_l2_zdarzenia = 483_508_532
+        start_block_l1 = 25_547_165
+        assert start_block_l1 * 10 < blok_l2_zdarzenia
+
+
 class TestOknaSkanowania:
     @pytest.mark.asyncio
     async def test_zakres_dzielony_na_okna(self):

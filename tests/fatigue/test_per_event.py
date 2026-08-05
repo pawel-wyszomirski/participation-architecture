@@ -210,6 +210,21 @@ def test_vote_after_target_is_excluded_from_every_window(engine, now):
     assert r.components.volume == 0.0
 
 
+def test_proposal_without_known_window_is_skipped_not_counted(engine, now):
+    """Źródło, które nie podaje końca propozycji, nie może uchodzić za źródło
+    mówiące „nic się nie nakładało". Do 2026-08-05 brak końca wypadał ze
+    współbieżności przez `or 0`, czyli przez przypadek, a nie z decyzji."""
+    bez_konca = cast(now, started_days_ago=1, voted_days_ago=1)
+    bez_konca.end = None
+    z_koncem = cast(now, started_days_ago=1, voted_days_ago=1, open_for_days=5)
+
+    tylko_bez = engine.compute_per_event("0xA", proposal(), [bez_konca], now=now)
+    z_oknem = engine.compute_per_event("0xA", proposal(), [z_koncem], now=now)
+
+    assert tylko_bez.metrics.concurrent_active == 0
+    assert z_oknem.metrics.concurrent_active == 1
+
+
 def test_concurrency_still_uses_proposal_timing(engine, now):
     """Concurrency is a proposal-time concept - how many decisions stood open
     around the delegate at the target moment. It keeps using start/end; only the
