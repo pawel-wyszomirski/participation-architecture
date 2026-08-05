@@ -20,7 +20,7 @@ from app.services.rule_engine import (
     TriageResult,
     proposal_from_db_model,
 )
-from app.services.fatigue_engine import FatigueEngine
+from app.services.fatigue_engine import FatigueEngine, merge_stages
 from app.services.governor_client import GovernorClient
 from app.services.snapshot_client import SnapshotClient
 from app.services.tally_client import TallyClient
@@ -546,10 +546,24 @@ async def get_per_event_fatigue(
     if not fatigue_engine:
         raise HTTPException(status_code=503, detail="Fatigue engine not initialized")
 
-    # Merge off-chain (Snapshot) and on-chain votes. Cognitive load is
-    # source-agnostic: every decision the delegate makes counts (dissertation
-    # 5.3.5a). Each source returns transient Proposals with .voted_at + .source;
-    # different systems -> different proposal ids, so this is a union, not a dedup.
+    # Merge off-chain (Snapshot) and on-chain votes, THEN collapse the stages of
+    # one decision into one event.
+    #
+    # This used to be a plain union, justified in a comment as deliberate:
+    # "cognitive load is source-agnostic, every decision the delegate makes
+    # counts". Two participants refuted the premise on 2026-08-05, independently
+    # and with the governance mechanism named.
+    #
+    #   P01: "mostly a quick review to make sure the text hasn't changed and my
+    #         opinion is still valid"
+    #   P03: "the workload is 1 time. Arbitrum works with temperature check and
+    #         then the real vote. temperature check is an offchain vote, then the
+    #         final is onchain"
+    #
+    # Snapshot is the temperature check and the contract carries the binding
+    # vote. They are two stages of one decision, not two decisions. Counting both
+    # inflated volume and burstiness for every delegate who goes through the full
+    # path - which is all three Phase A participants.
     #
     # Three sources, because on-chain needs two of them (2026-08-03):
     # Tally froze its Arbitrum index on 2026-06-08 while the Governor contract
@@ -561,7 +575,7 @@ async def get_per_event_fatigue(
     snap_votes = await SnapshotClient().fetch_voted_proposals(address, limit=200)
     tally_votes = await TallyClient().fetch_voted_proposals(address, limit=200)
     chain_votes = await GovernorClient().fetch_voted_proposals(address, limit=200)
-    voted = (snap_votes or []) + (tally_votes or []) + (chain_votes or [])
+    voted = merge_stages((snap_votes or []) + (tally_votes or []) + (chain_votes or []))
     if not voted:
         raise HTTPException(
             status_code=404,

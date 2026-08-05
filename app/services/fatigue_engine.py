@@ -42,6 +42,7 @@ Design Principles
   Address parameter is forward-compatible for future per-delegate personalization.
 """
 
+import re
 import yaml
 import logging
 from pathlib import Path
@@ -534,3 +535,62 @@ class FatigueEngine:
             "reference_values": self.config["reference_values"],
             "thresholds": self.config["thresholds"],
         }
+
+
+def _klucz_decyzji(p: Any) -> str:
+    r"""Tytuł sprowadzony do postaci porównywalnej między źródłami.
+
+    Snapshot i kontrakt zapisują ten sam tytuł inaczej: nawiasy kwadratowe,
+    przedrostek `Constitutional AIP:`, wielkość liter, znaki ucieczki w opisie
+    ze zdarzenia (`[Constitutional\] AIP:`). Porównanie znak w znak dałoby zero
+    trafień i cichy brak scalania - czyli stan sprzed poprawki, tylko z kodem,
+    który wygląda, jakby coś robił.
+    """
+    t = (getattr(p, "title", None) or "").lower()
+    t = re.sub(r"\\", "", t)
+    t = re.sub(r"[\[\]()]", " ", t)
+    t = re.sub(r"\b(constitutional|non-constitutional|aip|proposal)\b", " ", t)
+    t = re.sub(r"[^a-z0-9 ]", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def merge_stages(votes: List[Any]) -> List[Any]:
+    """Scala etapy JEDNEJ decyzji w jedno zdarzenie obciążenia.
+
+    Arbitrum prowadzi propozycję przez sondę nastrojów na Snapshocie, a potem
+    przez wiążący głos na kontrakcie. Do 2026-08-05 liczyliśmy to jako dwa
+    zdarzenia, z komentarzem w kodzie, że tak ma być, bo „obciążenie nie zależy
+    od tego, w którym systemie oddano głos". Dwaj uczestnicy obalili tę przesłankę
+    niezależnie i z nazwanym mechanizmem: P03 - „the workload is 1 time.
+    Arbitrum works with temperature check and then the real vote"; P01 - drugie
+    przejście to „quick review to make sure the text hasn't changed".
+
+    Zostaje zdarzenie o NAJWCZEŚNIEJSZYM głosie, bo tam odbyło się czytanie,
+    a późniejsze przejście jest sprawdzeniem. Treść bierzemy najdłuższą
+    z dostępnych - kontrakt niesie pełny opis, Snapshot bywa skrócony, a
+    `reading_time` ma opisywać to, co delegat naprawdę przeczytał.
+
+    Liczba etapów ląduje w `stages`. Informacja, że decyzja miała dwa przejścia,
+    jest wynikiem badawczym, nie śmieciem do wyrzucenia.
+    """
+    wg_decyzji: Dict[str, Any] = {}
+    for p in votes:
+        k = _klucz_decyzji(p)
+        if not k:
+            k = f"__bez_tytulu__{id(p)}"
+        obecny = wg_decyzji.get(k)
+        if obecny is None:
+            p.stages = 1
+            wg_decyzji[k] = p
+            continue
+        obecny.stages = getattr(obecny, "stages", 1) + 1
+        # dłuższa treść wygrywa - pełny opis nad skróconym
+        if len(getattr(p, "body", "") or "") > len(getattr(obecny, "body", "") or ""):
+            obecny.body = p.body
+        # wcześniejszy głos wyznacza moment zdarzenia
+        if (getattr(p, "voted_at", 0) or 0) < (getattr(obecny, "voted_at", 0) or 0):
+            obecny.voted_at = p.voted_at
+            obecny.start = getattr(p, "start", obecny.start)
+            if getattr(p, "end", None):
+                obecny.end = p.end
+    return list(wg_decyzji.values())
