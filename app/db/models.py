@@ -28,6 +28,12 @@ class Proposal(Base):
     # Odcisk tresci i moment jej ostatniej zmiany (v0.2.0). Do v0.1.0 ponowny
     # import nie odswiezal tytulu ani tresci, wiec nie dalo sie stwierdzic, czy
     # etykieta opisuje wersje, ktora klasyfikator faktycznie widzial.
+    # Kwota wnioskowana i jej waluta (v0.2.0). Do v0.1.0 modelu nie mial tego pola
+    # wcale, wiec proposal_from_db_model podstawial None i CALA warstwa progow
+    # finansowych nie odpalala sie nigdy poza testami syntetycznymi.
+    requested_amount = Column(Float, nullable=True)
+    requested_currency = Column(String, nullable=True)   # USD | USDC | DAI | ARB | ETH
+
     content_hash = Column(String, nullable=True)
     content_updated_at = Column(DateTime, nullable=True)
 

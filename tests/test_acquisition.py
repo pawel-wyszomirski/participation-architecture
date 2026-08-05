@@ -176,3 +176,79 @@ def test_odcisk_nie_zalezy_od_glosow():
     a = {"title": "T", "body": "x", "start": 1, "end": 2, "votes": 5}
     b = {"title": "T", "body": "x", "start": 1, "end": 2, "votes": 900}
     assert _odcisk_tresci(a) == _odcisk_tresci(b)
+
+
+# ---------------------------------------------------------------------------
+# Z4: kwota wnioskowana - warstwa progow finansowych byla nieosiagalna
+# ---------------------------------------------------------------------------
+
+from app.services.amount_extractor import wyciagnij, Kwota
+
+
+class TestKwota:
+    """Do v0.1.0 model nie mial pola z kwota, wiec `requested_amount_usd` bylo
+    ZAWSZE None, a `if amount is None: return` konczylo sprawe. Cala warstwa
+    progow finansowych nie odpalala sie nigdy poza testami syntetycznymi."""
+
+    def test_dolary_z_przecinkami(self):
+        assert wyciagnij("We request $1,500,000 for the program.").wartosc == 1_500_000
+
+    def test_skrot_mnoznika(self):
+        k = wyciagnij("Total budget: 2.5M ARB distributed over 6 months.")
+        assert (k.wartosc, k.waluta) == (2_500_000, "ARB")
+
+    def test_mnoznik_slowem(self):
+        """`$12.8 million USD` dawalo 12,8 - wynik milion razy za maly, wygladajacy
+        jak poprawna liczba. Na 200 propozycjach Arbitrum polowa kwot ponizej
+        tysiaca brala sie wlasnie stad."""
+        assert wyciagnij("$12.8 million USD of liquid assets").wartosc == 12_800_000
+        assert wyciagnij("requesting 1.5 billion ARB").wartosc == 1_500_000_000
+        assert wyciagnij("ask for 750 thousand USDC").wartosc == 750_000
+
+    def test_brak_kwoty_to_None(self):
+        assert wyciagnij("This proposal has no funding request.") is None
+
+    def test_stan_skarbca_to_nie_wniosek(self):
+        """Najwieksza liczba w tekscie zwykle opisuje tlo, nie wniosek."""
+        k = wyciagnij("The DAO holds $3.2B in treasury but we ask for 100,000 ARB.")
+        assert (k.wartosc, k.waluta) == (100_000, "ARB")
+
+    def test_zdanie_sasiednie_nie_uzasadnia_liczby(self):
+        """Kontekstem liczby jest JEJ zdanie. Wersja z oknem znakow brala slowo
+        prosby z nastepnego zdania, bo staly blizej niz slowo tla z tego samego."""
+        assert wyciagnij("Market cap is $5B. We are requesting 750,000 USDC."
+                         ).wartosc == 750_000
+
+    def test_zdanie_wylacznie_o_tle_odpada(self):
+        assert wyciagnij("Treasury balance: 200M ARB. No funds requested here."
+                         ) is None
+
+    def test_arb_nie_jest_porownywalne_z_progiem_dolarowym(self):
+        """Progi rulebooka sa w dolarach, a Arbitrum wnioskuje o ARB. Przeliczenie
+        wymaga kursu z konkretnej chwili - modul go nie zgaduje."""
+        assert wyciagnij("requesting 100,000 ARB").porownywalna_z_progiem_usd is False
+        assert wyciagnij("requesting 100,000 USDC").porownywalna_z_progiem_usd is True
+
+
+class TestProgFinansowyMowiOSobie:
+    """Brak kwoty i kwota ponizej progu dawaly do v0.1.0 ten sam wynik: nic."""
+
+    def _silnik(self):
+        from app.services.rule_engine import RuleEngine
+        return RuleEngine("rulebook.yaml")
+
+    def _stan(self, kwota=None, waluta=None):
+        from app.services.rule_engine import EvaluationState, create_test_proposal
+        p = create_test_proposal(requested_amount_usd=kwota, requested_currency=waluta)
+        return EvaluationState(proposal=p)
+
+    def test_brak_kwoty_zostawia_slad(self):
+        s = self._stan()
+        self._silnik()._apply_treasury_tiers(s, "TRE-001")
+        assert "TREASURY_AMOUNT_UNKNOWN" in s.labels
+
+    def test_waluta_nieprzeliczalna_zostawia_inny_slad(self):
+        s = self._stan(kwota=None, waluta="ARB")
+        self._silnik()._apply_treasury_tiers(s, "TRE-001")
+        assert "TREASURY_TIER_NOT_EVALUABLE" in s.labels
+        assert any("ARB" in r for r in s.reasons)

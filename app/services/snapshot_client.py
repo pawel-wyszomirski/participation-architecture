@@ -12,6 +12,7 @@ sys.path.append(os.getcwd())
 
 from app.db.session import SessionLocal, engine, Base
 from app.db.models import Proposal
+from app.services.amount_extractor import wyciagnij
 from sqlalchemy import func
 
 # Ensure tables exist
@@ -58,6 +59,13 @@ class AcquisitionReceipt:
         stan = "complete" if self.complete else "TRUNCATED by caller limit"
         return (f"{self.source}/{self.space} [{zakres}]: {self.fetched} proposals "
                 f"in {self.pages} page(s), {stan}")
+
+def _kwota_pola(p: Dict[str, Any]) -> Dict[str, Any]:
+    """Kwota wnioskowana wyciagnieta z tytulu i tresci."""
+    k = wyciagnij(f"{p.get('title','')}\n{p.get('body','')}")
+    return {"requested_amount": k.wartosc if k else None,
+            "requested_currency": k.waluta if k else None}
+
 
 def _odcisk_tresci(p: Dict[str, Any]) -> str:
     """Odcisk tresci propozycji - tytul, tresc i okno glosowania.
@@ -206,6 +214,9 @@ class SnapshotClient:
                         existing.end = p['end']
                         existing.content_hash = nowy_odcisk
                         existing.content_updated_at = datetime.now(timezone.utc)
+                        k = wyciagnij(f"{p.get('title','')}\n{p.get('body','')}")
+                        existing.requested_amount = k.wartosc if k else None
+                        existing.requested_currency = k.waluta if k else None
                         content_changed += 1
                     updated_count += 1
                 else:
@@ -221,6 +232,7 @@ class SnapshotClient:
                         end=p['end'],
                         content_hash=_odcisk_tresci(p),
                         content_updated_at=datetime.now(timezone.utc),
+                        **_kwota_pola(p),
                     )
                     session.add(new_proposal)
                     new_count += 1

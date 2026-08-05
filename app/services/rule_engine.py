@@ -43,6 +43,9 @@ class ProposalInput:
     item_type: str = "proposal"
     proposal_kind: Optional[str] = None  # constitutional|treasury|election|technical|ops|meta|unknown
     requested_amount_usd: Optional[float] = None
+    #: Waluta wniosku, gdy kwota jest, ale nieprzeliczalna na dolary (np. ARB).
+    #: Pozwala regule powiedziec "progu nie da sie ocenic" zamiast milczec.
+    requested_currency: Optional[str] = None
     requested_amount_arb: Optional[float] = None
     execution_type: Optional[str] = None
     affects_protocol_parameters: Optional[bool] = None
@@ -424,8 +427,23 @@ class RuleEngine:
 
     def _apply_treasury_tiers(self, state: EvaluationState, rule_id: str):
         amount = state.proposal.requested_amount_usd
-        if amount is None: return
-        
+        if amount is None:
+            # NIE cicha rezygnacja. Do v0.1.0 stalo tu `if amount is None: return`,
+            # a kwota byla ZAWSZE None, bo model nie mial takiego pola - cala
+            # warstwa progow finansowych nie odpalala sie nigdy i nikt tego nie
+            # widzial. Brak kwoty i kwota ponizej progu dawaly ten sam wynik.
+            #
+            # Teraz rozniemy trzy sytuacje: nie znaleziono kwoty, kwota jest
+            # w walucie nieprzeliczalnej na dolary (ARB, ETH), kwota jest znana.
+            waluta = getattr(state.proposal, "requested_currency", None)
+            if waluta:
+                state.labels.add("TREASURY_TIER_NOT_EVALUABLE")
+                state.reasons.append(f"{rule_id}:amount_in_{waluta}_no_usd_rate")
+            else:
+                state.labels.add("TREASURY_AMOUNT_UNKNOWN")
+                state.reasons.append(f"{rule_id}:no_amount_found_in_text")
+            return
+
         tiers = self.rulebook.get("treasury_tiers_usd", [])
         # Iterate tiers (assuming defined in order or we search for best match)
         for tier in tiers:
@@ -572,6 +590,24 @@ class RuleEngine:
 # HELPER FUNCTIONS
 # ============================================================================
 
+#: Waluty, w ktorych progi rulebooka (dolarowe) maja sens bez kursu.
+_STABILNE = {"USD", "USDC", "USDT", "DAI"}
+
+
+def _kwota_w_usd(db_proposal) -> Optional[float]:
+    """Kwota, jesli da sie ja porownac z progiem dolarowym.
+
+    Propozycje Arbitrum wnioskuja najczesciej o ARB, a przeliczenie wymaga kursu
+    z konkretnej chwili, ktorego nie mamy. Zwracamy None i ODNOTOWUJEMY walute -
+    regula ma wtedy powiedziec, ze progu nie da sie ocenic, zamiast przemilczec.
+    """
+    kwota = getattr(db_proposal, "requested_amount", None)
+    waluta = (getattr(db_proposal, "requested_currency", None) or "").upper()
+    if kwota is None or waluta not in _STABILNE:
+        return None
+    return float(kwota)
+
+
 def proposal_from_db_model(db_proposal) -> ProposalInput:
     """Convert database Proposal model to ProposalInput"""
     # Compute word count
@@ -601,7 +637,8 @@ def proposal_from_db_model(db_proposal) -> ProposalInput:
         status=getattr(db_proposal, 'state', 'unknown') or "unknown",
         word_count=word_count,
         # Map extra fields if they exist on the DB model
-        requested_amount_usd=getattr(db_proposal, 'requested_amount_usd', None),
+        requested_amount_usd=_kwota_w_usd(db_proposal),
+        requested_currency=getattr(db_proposal, 'requested_currency', None),
         proposal_kind=getattr(db_proposal, 'proposal_kind', None)
     )
 
