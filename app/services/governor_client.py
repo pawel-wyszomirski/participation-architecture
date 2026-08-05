@@ -236,6 +236,14 @@ class GovernorClient:
             times: Dict[str, int] = {}
             voting_delay = await self._voting_delay(client)
 
+            # Real windows from the DAO's own proposal registry, where it covers
+            # the proposal. The arithmetic below stays as the fallback: checked
+            # against ArbOS61 it ends the vote two days early, and concurrency
+            # counts overlaps, so two days move real numbers.
+            from app.services.arbdata_client import ArbdataClient
+            rejestr = ArbdataClient()
+            await rejestr.load()
+
             # The voting window comes from the event too. Words 6 and 7 hold
             # startBlock and endBlock, and the creation timestamp anchors them:
             #
@@ -255,9 +263,13 @@ class GovernorClient:
                 if block_hex not in times:
                     times[block_hex] = await self._block_time(client, block_hex)
                 created_at = times[block_hex]
-                span_blocks = _word(log["data"], 7) - _word(log["data"], 6)
-                opens = created_at + voting_delay * L1_BLOCK_SECONDS
-                closes = opens + max(span_blocks, 0) * L1_BLOCK_SECONDS
+                okno = rejestr.window(pid)
+                if okno:
+                    opens, closes = okno
+                else:
+                    span_blocks = _word(log["data"], 7) - _word(log["data"], 6)
+                    opens = created_at + voting_delay * L1_BLOCK_SECONDS
+                    closes = opens + max(span_blocks, 0) * L1_BLOCK_SECONDS
                 meta[pid] = (_title_from_description(description), description,
                              opens, closes)
 
