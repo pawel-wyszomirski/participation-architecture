@@ -21,6 +21,7 @@ from app.services.rule_engine import (
     proposal_from_db_model,
 )
 from app.services.fatigue_engine import FatigueEngine, merge_stages
+from app.services.arbdata_client import ArbdataClient
 from app.services.governor_client import GovernorClient
 from app.services.snapshot_client import SnapshotClient
 from app.services.tally_client import TallyClient
@@ -576,6 +577,14 @@ async def get_per_event_fatigue(
     tally_votes = await TallyClient().fetch_voted_proposals(address, limit=200)
     chain_votes = await GovernorClient().fetch_voted_proposals(address, limit=200)
     voted = merge_stages((snap_votes or []) + (tally_votes or []) + (chain_votes or []))
+
+    # Kategoria z taksonomii DAO dla wszystkiego, co jej jeszcze nie ma. Zdarzenia
+    # z kontraktu dostaja ja po identyfikatorze, Snapshot dopiero tutaj - po tytule,
+    # bo nadaje propozycjom wlasne identyfikatory. Bez tego `novelty` liczyloby sie
+    # z historii, w ktorej kategorie ma jedna pozycja na dwiescie.
+    _rejestr = ArbdataClient()
+    if await _rejestr.load():
+        _rejestr.przypisz_kategorie(voted)
     if not voted:
         raise HTTPException(
             status_code=404,

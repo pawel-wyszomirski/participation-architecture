@@ -341,6 +341,11 @@ class GovernorClient:
                 prop.end = closes
                 prop.voted_at = voted_at
                 prop.source = f"governor:{rola}"
+                # Kategoria z taksonomii DAO - podstawa skladnika `novelty`.
+                # Brak kategorii zostaje None, NIE pusty ciag: "nie wiemy, czego
+                # dotyczy" to inna rzecz niz "nie nalezy do zadnej kategorii".
+                przedmiot = rejestr.subject(pid)
+                prop.category = przedmiot[0] if przedmiot and przedmiot[0] else None
                 out.append(prop)
             if without_window:
                 print(f"⚠ Governor[{rola}]: {without_window} of {len(out)} votes have no "

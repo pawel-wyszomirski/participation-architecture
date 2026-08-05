@@ -291,7 +291,7 @@ class FatigueEngine:
         ref_words = max(ref.get("reading_words", 1500), 1)
         words = len((getattr(target_proposal, "body", None) or "").split())
         reading_time = round(min(min(words / ref_words, 2.0) / 2.0, 1.0), 4)
-        novelty = round(self._proposal_is_novel(target_proposal), 4)
+        novelty = round(self._novelty_per_event(target_proposal, frozen_history), 4)
 
         components = FatigueComponents(
             volume=ctx_components.volume,
@@ -332,11 +332,49 @@ class FatigueEngine:
             mode="per_event",
         )
 
+    def _novelty_per_event(self, target: Any, history: List[Any]) -> float:
+        """Na ile ten RODZAJ decyzji jest nowy DLA TEGO delegata.
+
+        Do 2026-08-05 składnik pytał o właściwość samej propozycji: czy w tytule
+        albo treści stoi słowo z naszej listy „nowych domen". Wychodziło 0,0
+        u wszystkich trzech uczestników Phase A, więc składnik nie różnicował
+        nikogo - a przy wadze 5% nikt tego nie zauważył.
+
+        Dwa powody zmiany. Po pierwsze, teoria: obciążenie poznawcze przy nowości
+        jest z definicji względne wobec doświadczenia osoby (CLT, Sweller 1988) -
+        propozycja o awarii jest nowa dla kogoś, kto pierwszy raz się z tym mierzy,
+        i rutynowa dla kogoś, kto przerabiał to pięć razy. Lista słów mierzyła
+        cechę tekstu, nie stan czytającego.
+
+        Po drugie, dane: DAO utrzymuje własną taksonomię propozycji (12 kategorii,
+        `arbdata`), wskazaną przez uczestnika badania jako źródło używane przez
+        społeczność. Klasyfikacja, którą prowadzi teren, broni się lepiej niż
+        słowa, które sami wybraliśmy - i sami przyznaliśmy, że nie działają.
+
+        Wynik: udział głosów TEGO delegata w TEJ kategorii wśród jego głosów
+        wcześniejszych, odjęty od jedynki. Pierwsze zetknięcie z kategorią daje
+        1,0, kategoria stanowiąca całość jego dorobku daje 0,0.
+
+        Bez znanej kategorii wracamy do dopasowania po słowach. Zamiana braku
+        klasyfikacji na zero byłaby twierdzeniem, że decyzja jest rutynowa - a to
+        inna rzecz niż „nie wiemy".
+        """
+        kat = (getattr(target, "category", None) or "").strip().lower()
+        if kat:
+            wczesniej = [p for p in history
+                         if (getattr(p, "category", None) or "").strip().lower()]
+            if wczesniej:
+                w_tej = sum(1 for p in wczesniej
+                            if (p.category or "").strip().lower() == kat)
+                return 1.0 - min(w_tej / len(wczesniej), 1.0)
+            return 1.0  # brak historii z kategoriami = wszystko jest nowe
+        return self._proposal_is_novel(target)
+
     def _proposal_is_novel(self, proposal: Any) -> float:
         """
-        Novelty of a single proposal for the per-event variant: 1.0 if it
-        contains a novel-domain keyword and no routine keyword, else 0.0.
-        Same keyword logic as the ecosystem novelty ratio, applied to one item.
+        Zapas, gdy kategoria nieznana: 1.0 gdy tytuł albo treść zawiera słowo
+        z listy nowych domen i żadnego z listy rutynowych, inaczej 0.0.
+        Ta sama logika co w wariancie ekosystemowym, zastosowana do jednej pozycji.
         """
         novel_kw = [k.lower() for k in self.config.get("novel_keywords", [])]
         routine_kw = [k.lower() for k in self.config.get("routine_keywords", [])]
@@ -587,6 +625,13 @@ def merge_stages(votes: List[Any]) -> List[Any]:
         # dłuższa treść wygrywa - pełny opis nad skróconym
         if len(getattr(p, "body", "") or "") > len(getattr(obecny, "body", "") or ""):
             obecny.body = p.body
+        # Kategoria przechodzi z tego etapu, który ją zna. Bez tego scalanie gubiło
+        # klasyfikację: rejestr DAO kluczuje po identyfikatorze on-chain, więc
+        # kategorię niesie wyłącznie zdarzenie z kontraktu, a scalenie zostawiało
+        # wcześniejszy obiekt ze Snapshota. Po pierwszym przebiegu kategorię miała
+        # jedna propozycja na 209 i składnik `novelty` wyszedł zerem u wszystkich.
+        if getattr(p, "category", None) and not getattr(obecny, "category", None):
+            obecny.category = p.category
         # wcześniejszy głos wyznacza moment zdarzenia
         if (getattr(p, "voted_at", 0) or 0) < (getattr(obecny, "voted_at", 0) or 0):
             obecny.voted_at = p.voted_at

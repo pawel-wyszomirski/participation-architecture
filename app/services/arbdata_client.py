@@ -38,11 +38,23 @@ response code.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from typing import Dict, Optional, Tuple
 
 import httpx
 
 ENDPOINT = "https://arbdata.com/api/governance-proposals"
+
+
+def _klucz(title: str) -> str:
+    """Tytul sprowadzony do postaci porownywalnej miedzy zrodlami - nawiasy,
+    przedrostek `Constitutional AIP:`, znaki ucieczki i wielkosc liter."""
+    t = (title or "").lower()
+    t = re.sub(r"\\\\", "", t)
+    t = re.sub(r"[\\[\\]()]", " ", t)
+    t = re.sub(r"\\b(constitutional|non-constitutional|aip|proposal)\\b", " ", t)
+    t = re.sub(r"[^a-z0-9 ]", " ", t)
+    return re.sub(r"\\s+", " ", t).strip()
 
 
 def _epoch(stamp: Optional[str]) -> Optional[int]:
@@ -64,6 +76,7 @@ class ArbdataClient:
     def __init__(self, endpoint: str = ENDPOINT):
         self.endpoint = endpoint
         self._rekordy: Dict[int, dict] = {}
+        self._po_tytule: Optional[Dict[str, str]] = None
 
     async def load(self) -> int:
         """Fetch the registry. Returns how many proposals were read.
@@ -133,6 +146,37 @@ class ArbdataClient:
         if not row:
             return None
         return (row.get("proposal_category") or "", row.get("proposal_theme") or "")
+
+    def kategoria_po_tytule(self, title: str) -> Optional[str]:
+        """Kategoria dopasowana po TYTULE, dla zrodel bez identyfikatora on-chain.
+
+        Snapshot nadaje propozycjom wlasne identyfikatory, wiec zlaczenie po
+        `proposal_id` obejmuje wylacznie zdarzenia z kontraktu. Bez dopasowania po
+        tytule kategorie mialaby garstka propozycji, a skladnik liczony z takiej
+        historii zwracalby zero i wygladalby na dzialajacy.
+        """
+        k = _klucz(title)
+        if not k:
+            return None
+        if self._po_tytule is None:
+            self._po_tytule = {}
+            for row in self._rekordy.values():
+                kk = _klucz(row.get("proposal_title") or "")
+                if kk and row.get("proposal_category"):
+                    self._po_tytule[kk] = row["proposal_category"]
+        return self._po_tytule.get(k)
+
+    def przypisz_kategorie(self, votes) -> int:
+        """Dokleja `category` tam, gdzie jej brak. Zwraca liczbe uzupelnien."""
+        ile = 0
+        for v in votes:
+            if getattr(v, "category", None):
+                continue
+            kat = self.kategoria_po_tytule(getattr(v, "title", "") or "")
+            if kat:
+                v.category = kat
+                ile += 1
+        return ile
 
     def governor(self, proposal_id: int) -> Optional[str]:
         """`core` or `treasury`. Lets a caller report how much of the DAO's
