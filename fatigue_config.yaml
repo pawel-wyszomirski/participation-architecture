@@ -40,11 +40,47 @@ reference_values:
 #   - volume/concurrency/burstiness: delegate's context around the vote
 # CALIBRATED 2026-06-02 on real Arbitrum data (Snapshot):
 #   proposal length median ~1404 words; votes/delegate median 2/30d, max 5/90d.
+# Reference values are the denominator of each context component, and the
+# component is clipped at 1.0. A reference set below ordinary activity therefore
+# pins the component at its ceiling for everyone and removes it from the scale.
+#
+# The previous set did exactly that. Measured on the field (arbdata + Snapshot,
+# 14 delegates, 2797 vote events, 2026-08-05): the MEDIAN delegate casts 3 votes
+# a week, so volume_7d = 1 saturated a component carrying 40% of the weight for
+# anyone at a third of median activity. Volume and reading_time sat at 1.0 for
+# all three Phase A participants, leaving half the scale constant and the whole
+# between-delegate spread at 8.1 points out of 100.
+#
+# These are the 75th percentile of the field's own distribution, produced by
+# pa/analiza/kalibracja-referencji.py. The percentile was picked by measurement,
+# not by taste - the criterion is that the MEDIAN delegate lands mid-range on
+# each component, leaving room in both directions:
+#   p90 (volume_7d = 17) puts the median at 3/17 = 0.18, so everyone crowds the
+#     floor. The three Phase A participants scored 18.9 / 18.1 / 22.0, spread 3.9.
+#   p75 (volume_7d = 7) puts the median at 3/7 = 0.43. Same participants:
+#     24.7 / 22.6 / 29.1, spread 6.5.
+#   the old set (volume_7d = 1) put the median at the ceiling, which is where the
+#     saturation came from in the first place.
+#
+# What no reference value can fix: the spread between delegates comes from the
+# delegates differing, not from the denominator. These three are similarly active
+# and rated the same proposal within one week, so a narrow spread here says more
+# about the sample than about the instrument. H_val needs N=50 with varied load.
+#
+# Re-run the script when the field site changes - these numbers describe
+# Arbitrum, and a constant tuned here would carry the same defect to the next DAO.
+#
+# Caveat recorded with the values: the calibration sample was drawn from recent
+# Snapshot voters, so it leans toward currently active delegates and does not yet
+# include the treasury governor votes that the engine reads since 2026-08-05.
+# Both biases understate activity, so these references are a floor, not a final
+# answer.
 reference_values_per_event:
-  volume_7d: 1        # votes/week considered normal (median 7d = 2, ref slightly below)
-  volume_30d: 3       # votes/month considered normal (median 30d ~2-3)
-  concurrent: 2       # voted proposals simultaneously active considered normal
-  reading_words: 1500 # median Arbitrum proposal length ~1404 words (~7 min @200wpm)
+  volume_7d: 7        # p75 of votes in 7 days (field median 3)
+  volume_30d: 18      # p75 of votes in 30 days (field median 9)
+  concurrent: 6       # p75 of proposals open at once (field median 2)
+  reading_words: 710  # p75 proposal length halved - the formula divides by 2
+                      # again (field median 730 words, not the assumed 1500)
 
 # Status thresholds (score 0-100)
 thresholds:
