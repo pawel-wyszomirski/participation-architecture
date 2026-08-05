@@ -109,6 +109,31 @@ class ArbdataClient:
             return None
         return opens, closes
 
+    def subject(self, proposal_id: int) -> Optional[Tuple[str, str]]:
+        """What the proposal is ABOUT: (category, theme) as the DAO classifies it.
+
+        The registry carries 12 categories - Grants 20, Network Changes 18, DAO
+        Operations 16, Incentives 7, DAO Amendments 6, Incident Response 1 among
+        them - plus a finer theme on part of the set.
+
+        Two uses, both open rather than wired in.
+
+        First, it answers a question the measurement could not: we read how long
+        a proposal is and how many arrived at once, and knew nothing about what
+        delegates were deciding. A workload claim that cannot say whether the
+        week held an emergency or four routine grant renewals is thin.
+
+        Second, `novelty` currently matches a keyword list of ours against the
+        title and body, and scores 0.0 for every Phase A participant. A taxonomy
+        the DAO maintains is a better basis for "is this a familiar kind of
+        decision" than words we picked ourselves - but swapping it changes the
+        instrument, so it needs a decision and a journal entry, not a quiet edit.
+        """
+        row = self._rekordy.get(proposal_id)
+        if not row:
+            return None
+        return (row.get("proposal_category") or "", row.get("proposal_theme") or "")
+
     def governor(self, proposal_id: int) -> Optional[str]:
         """`core` or `treasury`. Lets a caller report how much of the DAO's
         business its vote sources actually reach."""

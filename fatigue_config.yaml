@@ -82,12 +82,23 @@ reference_values_per_event:
   reading_words: 710  # p75 proposal length halved - the formula divides by 2
                       # again (field median 730 words, not the assumed 1500)
 
-# Status thresholds (score 0-100)
+# Status thresholds (score 0-100). These are WORKLOAD bands, nothing more.
+#
+# The top band used to read "burnout risk per SDT framework". Raised in the
+# source-level review on the forum (2026-08-03, cxclrfx) and correct: NASA-TLX
+# measures workload on a task, and this index estimates observable load around a
+# vote. Neither establishes burnout. That claim needs a longitudinal outcome and
+# its own measurement contract - in this work it is hypothesis H1 (need
+# frustration predicting a delegate going quiet for 60 days), which is
+# exploratory at N=50 and not something a threshold in a config file can assert.
+#
+# A band label is read as a finding by anyone who sees the panel, so it has to
+# stay inside what the instrument can support.
 thresholds:
   low: 30        # 0-29:  LOW      - manageable governance load
   moderate: 70   # 30-69: MODERATE - elevated but sustainable
   high: 85       # 70-84: HIGH     - significant cognitive burden
-                 # 85+:   CRITICAL - burnout risk per SDT framework
+                 # 85+:   CRITICAL - highest observed workload band
 
 # Keywords used to classify proposals as novel vs. routine for the novelty component.
 # Novel = genuinely new decision types requiring extra cognitive effort.
