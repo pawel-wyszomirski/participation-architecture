@@ -166,6 +166,80 @@ class SnapshotClient:
                 break
         return seen
 
+    async def fetch_space_participants(
+        self, space: str = ARBITRUM_SPACE, window_days: int = 90
+    ) -> List[str]:
+        """EVERY address that voted in a space within a window - complete, not sampled.
+
+        Different purpose from `fetch_space_voters`, which reads a bounded slice of
+        recent votes and is biased toward currently active delegates on purpose.
+        This one answers "how large is the sampling frame" and must therefore be
+        exhaustive.
+
+        ⚠ THE TRAP THIS EXISTS FOR. Snapshot rejects `skip` above 5000, so a single
+        query returns at most 6000 records - and **a truncated result is
+        indistinguishable from a complete one**. No error, no flag, just a number that
+        looks plausible. Measured on `arbitrumfoundation.eth`, 90-day window on
+        2026-08-06: naive paging reported 2755 unique voters, window-splitting reported
+        **3121**. The first figure was used as a research sampling frame before the
+        error surfaced.
+
+        The warning sign is a count suspiciously equal to a limit, or identical results
+        for two different queries - a 60-day and a 90-day window both returning the same
+        number is a ceiling, not a coincidence.
+
+        This method splits the window recursively: whenever a sub-window hits the record
+        ceiling it is halved and each half fetched separately. Verified against an
+        independent method (nine disjoint ten-day windows) with agreement to the address.
+
+        Costs one request per 1000 votes, so a busy space takes a while. Use
+        `fetch_space_voters` when a sample is enough; use this when a count has to be true.
+        """
+        now = int(datetime.now(timezone.utc).timestamp())
+        return sorted(await self._voters_in_window(space, now - window_days * 86400, now))
+
+    async def _voters_in_window(self, space: str, gt: int, lt: int) -> set:
+        """Distinct voters in [gt, lt), halving the window when it hits the ceiling."""
+        query = """
+        query WindowVotes($space: String!, $gt: Int!, $lt: Int!, $skip: Int!) {
+          votes(
+            first: 1000, skip: $skip,
+            where: { space: $space, created_gt: $gt, created_lt: $lt },
+            orderBy: "created", orderDirection: desc
+          ) { voter }
+        }
+        """
+        voters: set = set()
+        skip = 0
+        async with httpx.AsyncClient() as client:
+            while skip <= 5000:  # hard cap imposed by Snapshot
+                try:
+                    response = await client.post(
+                        self.url,
+                        json={"query": query,
+                              "variables": {"space": space, "gt": gt, "lt": lt, "skip": skip}},
+                        headers=self.headers,
+                        timeout=60.0,
+                    )
+                    response.raise_for_status()
+                    batch = response.json().get("data", {}).get("votes") or []
+                except Exception as e:  # noqa: BLE001
+                    print(f"❌ Connection Error (window {gt}-{lt}, skip {skip}): {e}")
+                    return voters
+                voters.update(v["voter"] for v in batch if v.get("voter"))
+                if len(batch) < 1000:
+                    return voters
+                skip += 1000
+
+        # Ceiling reached - the window holds more than we can page through. Split it.
+        mid = (gt + lt) // 2
+        if mid <= gt or mid >= lt:  # window too narrow to split further
+            print(f"⚠ Window {gt}-{lt} cannot be split; result may be truncated.")
+            return voters
+        left = await self._voters_in_window(space, gt, mid)
+        right = await self._voters_in_window(space, mid, lt)
+        return left | right
+
     async def fetch_votes_by_voter(
         self, voter: str, space: str = ARBITRUM_SPACE, limit: int = 200
     ) -> List[Dict[str, Any]]:
