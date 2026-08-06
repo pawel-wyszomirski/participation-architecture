@@ -576,7 +576,12 @@ async def get_per_event_fatigue(
     snap_votes = await SnapshotClient().fetch_voted_proposals(address, limit=200)
     tally_votes = await TallyClient().fetch_voted_proposals(address, limit=200)
     chain_votes = await GovernorClient().fetch_voted_proposals(address, limit=200)
-    voted = merge_stages((snap_votes or []) + (tally_votes or []) + (chain_votes or []))
+    # Okno scalania etapow z konfiguracji - powtarzalny tytul procesu nie moze
+    # laczyc dwoch cykli w jedno zdarzenie (uzasadnienie przy kluczu w YAML).
+    voted = merge_stages(
+        (snap_votes or []) + (tally_votes or []) + (chain_votes or []),
+        okno_dni=fatigue_engine.config.get("stage_merge_window_days", 45),
+    )
 
     # Kategoria z taksonomii DAO dla wszystkiego, co jej jeszcze nie ma. Zdarzenia
     # z kontraktu dostaja ja po identyfikatorze, Snapshot dopiero tutaj - po tytule,

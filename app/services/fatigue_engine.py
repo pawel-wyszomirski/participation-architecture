@@ -592,7 +592,13 @@ def _klucz_decyzji(p: Any) -> str:
     return re.sub(r"\s+", " ", t).strip()
 
 
-def merge_stages(votes: List[Any]) -> List[Any]:
+def _czas_glosu(p: Any) -> float:
+    """Moment głosu w sekundach. Gdy brak `voted_at` - start propozycji."""
+    v = getattr(p, "voted_at", None) or getattr(p, "start", None) or 0
+    return v if isinstance(v, (int, float)) else 0
+
+
+def merge_stages(votes: List[Any], okno_dni: int = 45) -> List[Any]:
     """Scala etapy JEDNEJ decyzji w jedno zdarzenie obciążenia.
 
     Arbitrum prowadzi propozycję przez sondę nastrojów na Snapshocie, a potem
@@ -610,16 +616,49 @@ def merge_stages(votes: List[Any]) -> List[Any]:
 
     Liczba etapów ląduje w `stages`. Informacja, że decyzja miała dwa przejścia,
     jest wynikiem badawczym, nie śmieciem do wyrzucenia.
+
+    OKNO CZASOWE (od 2026-08-06). Sam tytuł nie wystarczy do orzeczenia, że dwa
+    głosy są etapami tej samej decyzji. Governance powtarza procesy cyklicznie
+    pod niezmienioną nazwą - „Security Council Election Process Improvements"
+    wraca co roku. Bez ograniczenia czasowego wybory z 2025 i z 2026 lądowały
+    w jednym zdarzeniu, a ono dziedziczyło znacznik starszego etapu. Zmierzone
+    na dwóch uczestnikach Phase A: głos P02 z 2026-07-30 wchłonięty przez głos
+    z 2025-09-10 (odstęp 323 dni), głos P01 z 2026-08-03 przez 2025-09-08
+    (329 dni). W obu wypadkach zniknął NAJNOWSZY głos uczestnika, więc endpoint
+    bez `proposal_id` wskazywał zdarzenie sprzed tygodnia, a zapytanie o właściwy
+    identyfikator on-chain zwracało 404.
+
+    Próg wzięty z rozkładu odstępów, nie z wyczucia. U obu uczestników odstępy
+    układają się w skupisko do 33 dni (najdłuższy wiarygodny: 32,2), a następna
+    wartość to dopiero 65,7 dnia. 45 dni leży w tej przerwie: mieści pełną drogę
+    sonda-głos wiążący razem z zapasem i odcina powtórzenia cyklu.
+
+    Ograniczeniem jest to, że odstępy 65-112 dni też przestają się scalać.
+    Nie wiem, czy któreś z nich było prawdziwym dwuetapowym przejściem - przy
+    takim odstępie „szybkie sprawdzenie, czy tekst się nie zmienił" przestaje
+    być wiarygodnym opisem pracy delegata.
     """
-    wg_decyzji: Dict[str, Any] = {}
-    for p in votes:
+    okno = okno_dni * 86_400
+    kubelki: Dict[str, List[Any]] = {}
+    # Sortowanie po momencie głosu, a przy remisie po identyfikatorze. Bez tego
+    # wynik zależałby od kolejności, w jakiej odpowiedziały trzy źródła - a
+    # niezmiennik z 05.08 mówi: ten sam cel i te same dowody dają ten sam pomiar.
+    for p in sorted(votes, key=lambda x: (_czas_glosu(x), str(getattr(x, "id", "") or ""))):
         k = _klucz_decyzji(p)
         if not k:
             k = f"__bez_tytulu__{id(p)}"
-        obecny = wg_decyzji.get(k)
+        czas = _czas_glosu(p)
+        obecny = None
+        # Od najnowszego zdarzenia w tej rodzinie - etap dokleja się do cyklu,
+        # który trwa, nie do zamkniętego sprzed roku.
+        for kandydat in reversed(kubelki.setdefault(k, [])):
+            odstep = czas - _czas_glosu(kandydat)
+            if czas and _czas_glosu(kandydat) and odstep <= okno:
+                obecny = kandydat
+                break
         if obecny is None:
             p.stages = 1
-            wg_decyzji[k] = p
+            kubelki[k].append(p)
             continue
         obecny.stages = getattr(obecny, "stages", 1) + 1
         # dłuższa treść wygrywa - pełny opis nad skróconym
@@ -632,10 +671,12 @@ def merge_stages(votes: List[Any]) -> List[Any]:
         # jedna propozycja na 209 i składnik `novelty` wyszedł zerem u wszystkich.
         if getattr(p, "category", None) and not getattr(obecny, "category", None):
             obecny.category = p.category
-        # wcześniejszy głos wyznacza moment zdarzenia
+        # Wcześniejszy głos wyznacza moment zdarzenia. Po sortowaniu wejścia
+        # kubełek trzyma już najwcześniejszy etap, więc warunek jest bezpiecznikiem
+        # na wypadek zmiany kolejności, nie ścieżką roboczą.
         if (getattr(p, "voted_at", 0) or 0) < (getattr(obecny, "voted_at", 0) or 0):
             obecny.voted_at = p.voted_at
             obecny.start = getattr(p, "start", obecny.start)
             if getattr(p, "end", None):
                 obecny.end = p.end
-    return list(wg_decyzji.values())
+    return [p for rodzina in kubelki.values() for p in rodzina]

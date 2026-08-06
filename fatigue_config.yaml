@@ -82,6 +82,30 @@ reference_values_per_event:
   reading_words: 710  # p75 proposal length halved - the formula divides by 2
                       # again (field median 730 words, not the assumed 1500)
 
+# How far apart two votes may sit and still count as stages of ONE decision.
+#
+# Arbitrum runs a proposal through a Snapshot temperature check and then a binding
+# on-chain vote, and merge_stages collapses the pair into a single workload event.
+# Matching on the title alone is not enough: governance repeats processes under an
+# unchanged name. "Security Council Election Process Improvements" comes back every
+# year, so the 2025 and the 2026 election merged into one event, and that event
+# inherited the older timestamp.
+#
+# Measured on two Phase A participants (2026-08-06): P02's vote of 2026-07-30 was
+# absorbed by one from 2025-09-10 (323 days apart), P01's of 2026-08-03 by
+# 2025-09-08 (329 days). Each participant lost their MOST RECENT vote - the
+# endpoint pointed a week back and asking for the real on-chain id returned 404.
+#
+# The threshold comes from the distribution of observed gaps, not from taste. Both
+# participants show a cluster up to 33 days (longest credible: 32.2) and then
+# nothing until 65.7. 45 days sits in that gap: wide enough for the full
+# check-then-binding path, narrow enough to cut a repeat of the cycle.
+#
+# Limitation: gaps of 65-112 days stop merging as well. Whether any of those were
+# genuine two-stage passes is unknown - at that distance "a quick review to make
+# sure the text hasn't changed" stops describing the delegate's work.
+stage_merge_window_days: 45
+
 # Status thresholds (score 0-100). These are WORKLOAD bands, nothing more.
 #
 # The top band used to read "burnout risk per SDT framework". Raised in the
