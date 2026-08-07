@@ -554,6 +554,18 @@ function renderBreakdown(components, metrics) {
 }
 
 /* ---------- how calculated ---------- */
+
+/* The API sends the formula with internal keys (`burstiness`), while the table right
+   below it uses reader-facing names ("Activity spike"). A pilot participant had to guess
+   they were the same thing (P04, 2026-08-07: "which here is the weight for burstiness.
+   Is this the activity spike?"). One name on the page; keys stay in the API, the config
+   and the database column, where a rename would cost a migration and buy nothing. */
+function formulaWithLabels(formula) {
+  return WEIGHT_ROWS.reduce(function (txt, row) {
+    return txt.split(row[0]).join(row[1]);
+  }, formula || "");
+}
+
 function renderHowCalculated(formula, weights) {
   const tbody = el("tbody", {}, WEIGHT_ROWS.map(function (r) {
     return el("tr", {}, [
@@ -572,7 +584,7 @@ function renderHowCalculated(formula, weights) {
   return el("details", { class: "dfi-details" }, [
     summary,
     el("div", { class: "dfi-details-body" }, [
-      el("div", { class: "dfi-formula", text: formula }),
+      el("div", { class: "dfi-formula", text: formulaWithLabels(formula) }),
       table,
       el("p", { class: "dfi-audit-note", text: "Where the data comes from: your votes are read from three public sources — the Arbitrum Governor contract on-chain, Tally, and Snapshot for off-chain votes. Proposal text is read from the proposal itself. No private or self-reported data is used." }),
       el("p", { class: "dfi-audit-note", text: "The scoring rules are open and auditable. Weights and thresholds are published in the project configuration." }),
