@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 # revision identifiers
 revision = "001"
-down_revision = None
+down_revision = "943231068777"
 branch_labels = None
 depends_on = None
 

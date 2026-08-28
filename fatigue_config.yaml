@@ -12,7 +12,7 @@
 #   DFI = (w_volume×volume + w_concurrency×concurrency + w_burstiness×burstiness
 #          + w_reading_time×reading_time + w_novelty×novelty) × 100
 
-version: "1.0.0"
+version: "1.1.0"
 
 # Component weights (must sum to 1.0)
 weights:
@@ -78,7 +78,19 @@ reference_values:
 reference_values_per_event:
   volume_7d: 7        # p75 of votes in 7 days (field median 3)
   volume_30d: 18      # p75 of votes in 30 days (field median 9)
-  concurrent: 6       # p75 of proposals open at once (field median 2)
+  # concurrent was recalibrated on 2026-08-28 when the component's construction
+  # changed (grant review point 3, /t/30604 post 18): it now measures ECOSYSTEM
+  # governance load - all proposals open in the space at the vote moment - not
+  # the delegate's own voted slice. The old reference (6) was the p75 of the
+  # voted-slice distribution; the ecosystem distribution on the Snapshot layer
+  # is 1-2 open proposals (239 corpus moments: 122x1, 117x2; median 1, p75 2),
+  # because since June the binding votes sit in the Governor contract. p75 = 2
+  # puts the median moment at 0.25 and the busy moment at 0.5, with the ceiling
+  # (at 2x reference = 4) unreachable in the observed data - the component's
+  # resolution is limited by the source, not by this constant, and that limit
+  # is recorded in the measurement registry, not hidden in a denominator.
+  concurrent: 2       # p75 of proposals open in the SPACE at vote moments
+                      # (ecosystem corpus 2026-08-28; field median 1)
   reading_words: 710  # p75 proposal length halved - the formula divides by 2
                       # again (field median 730 words, not the assumed 1500)
 

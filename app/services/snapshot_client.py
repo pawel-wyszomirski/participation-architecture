@@ -3,7 +3,7 @@ import asyncio
 import os
 import sys
 import json
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta, timezone
 
 # Add project root to sys.path
@@ -165,6 +165,68 @@ class SnapshotClient:
             if len(seen) >= limit:
                 break
         return seen
+
+    async def fetch_proposals_active_at(
+        self, at_ts: int, space: str = ARBITRUM_SPACE
+    ) -> Optional[List["Proposal"]]:
+        """ALL proposals of the space whose voting window covers `at_ts` -
+        ecosystem governance load at that moment, not the delegate's slice of it
+        (grant review point 3, /t/30604 post 18).
+
+        Returns transient Proposal instances (not persisted). A verified filter:
+        start_lte + end_gte on hub.snapshot.org narrows to proposals open at the
+        moment (checked live 2026-08-28: moment inside a known window returns
+        the proposal, moment in a gap returns none).
+
+        Returns None on connection failure - an empty LIST is a real measurement
+        (nothing was open at t), None means the source did not answer. Callers
+        must keep the two apart; collapsing failure into zero is how the
+        concurrency component died silently before 2026-08-05.
+        """
+        query = """
+        query ActiveAt($space: String!, $ts: Int!) {
+          proposals(
+            first: 100,
+            where: { space_in: [$space], start_lte: $ts, end_gte: $ts }
+          ) {
+            id
+            title
+            start
+            end
+            state
+          }
+        }
+        """
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    self.url,
+                    json={"query": query,
+                          "variables": {"space": space, "ts": int(at_ts)}},
+                    headers=self.headers,
+                    timeout=60.0,
+                )
+                response.raise_for_status()
+                raw = response.json().get("data", {}).get("proposals")
+                if raw is None:
+                    return None
+            except Exception as e:  # noqa: BLE001
+                print(f"❌ Connection Error (active at): {e}")
+                return None
+
+        out = []
+        for p in raw:
+            prop = Proposal(
+                id=p.get("id"),
+                title=p.get("title") or "",
+                body="",
+                state=p.get("state") or "closed",
+                start=p.get("start"),
+                end=p.get("end"),
+            )
+            prop.source = "snapshot"
+            out.append(prop)
+        return out
 
     async def fetch_space_participants(
         self, space: str = ARBITRUM_SPACE, window_days: int = 90

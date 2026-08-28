@@ -91,3 +91,11 @@ class FatigueSnapshot(Base):
     metric_avg_word_count = Column(Float, nullable=False)
     metric_weekly_avg = Column(Float, nullable=False)
     metric_novelty_ratio = Column(Float, nullable=False)
+
+    # Measurement identity (grant review point 4, /t/30604 post 18): each
+    # persisted result binds the unique vote-event, the code commit and the
+    # source-capability state (JSON). Nullable - ecosystem-variant rows and
+    # rows older than 2026-08-28 carry none.
+    vote_event_id = Column(String, nullable=True, index=True)
+    code_commit = Column(String, nullable=True)
+    source_state = Column(String, nullable=True)  # JSON text

@@ -256,3 +256,192 @@ def test_ecosystem_variant_unchanged(engine, now):
     b = engine.compute("0xBBB", props, now=now)
     assert a.fatigue_score == b.fatigue_score
     assert a.mode == "ecosystem"
+
+
+# ---------------------------------------------------------------------------
+# Point 3 of the grant review (Arb_Junior, /t/30604 post 18, 2026-08-27):
+# separate ECOSYSTEM GOVERNANCE LOAD (all proposals open at time t) from the
+# delegate's REVEALED ENGAGEMENT (votes actually cast by that address).
+#
+# Until 2026-08-28 concurrency counted only proposals the delegate voted on,
+# so it measured a slice of the delegate's own activity and called it parallel
+# decision pressure. The corpus diagnostic showed the symptom: the component
+# moved in a band of 1-2 proposals (0.083-0.167) across 239 events.
+# ---------------------------------------------------------------------------
+
+def eco(now: datetime, started_days_ago: float, open_for_days: float = 7.0) -> MockProposal:
+    """A proposal open in the space around the target moment - the delegate may
+    never have voted on it. That is the point."""
+    start = now - timedelta(days=started_days_ago)
+    return MockProposal(
+        start=int(start.timestamp()),
+        end=int((start + timedelta(days=open_for_days)).timestamp()),
+    )
+
+
+def test_ecosystem_proposals_drive_concurrency(engine, now):
+    """With the ecosystem list supplied, concurrency counts ALL proposals open
+    at t - including ones the delegate never touched."""
+    voted = [cast(now, started_days_ago=2, voted_days_ago=2)]
+    ecosystem = [eco(now, 1), eco(now, 3), eco(now, 5), eco(now, 40, open_for_days=2)]
+
+    r = engine.compute_per_event("0xA", proposal(), voted, now=now,
+                                 ecosystem_proposals=ecosystem)
+
+    assert r.metrics.concurrent_active == 3   # the 40-days-ago one is closed
+    assert r.metrics.concurrency_source == "ecosystem:snapshot"
+
+
+def test_without_ecosystem_list_old_behaviour_and_source_named(engine, now):
+    """No ecosystem list = the pre-2026-08-28 construction, and the result SAYS
+    so instead of passing the narrower number off as ecosystem load."""
+    voted = [cast(now, started_days_ago=1, voted_days_ago=1, open_for_days=5)]
+
+    r = engine.compute_per_event("0xA", proposal(), voted, now=now)
+
+    assert r.metrics.concurrent_active == 1
+    assert r.metrics.concurrency_source == "voted_only"
+
+
+def test_revealed_engagement_reported_alongside_ecosystem_load(engine, now):
+    """The two quantities the reviewer asks to separate are BOTH in the result:
+    concurrent_active carries the ecosystem load, voted_concurrent carries what
+    the delegate's own votes show at t."""
+    voted = [cast(now, started_days_ago=1, voted_days_ago=1, open_for_days=5)]
+    ecosystem = [eco(now, 1), eco(now, 2), eco(now, 3)]
+
+    r = engine.compute_per_event("0xA", proposal(), voted, now=now,
+                                 ecosystem_proposals=ecosystem)
+
+    assert r.metrics.concurrent_active == 3
+    assert r.metrics.voted_concurrent == 1
+
+
+def test_ecosystem_proposal_without_end_is_skipped(engine, now):
+    """An ecosystem proposal with an unknown window must not be counted - the
+    same rule the voted history already follows."""
+    bez_konca = eco(now, 1)
+    bez_konca.end = None
+
+    r = engine.compute_per_event("0xA", proposal(),
+                                 [cast(now, started_days_ago=2, voted_days_ago=2)],
+                                 now=now, ecosystem_proposals=[bez_konca, eco(now, 2)])
+
+    assert r.metrics.concurrent_active == 1
+
+
+def test_empty_ecosystem_list_is_a_measurement_not_a_fallback(engine, now):
+    """An empty list is a real answer (nothing was open at t) and keeps the
+    ecosystem source label. Only None means 'source unavailable'."""
+    voted = [cast(now, started_days_ago=1, voted_days_ago=1, open_for_days=5)]
+
+    r = engine.compute_per_event("0xA", proposal(), voted, now=now,
+                                 ecosystem_proposals=[])
+
+    assert r.metrics.concurrent_active == 0
+    assert r.metrics.concurrency_source == "ecosystem:snapshot"
+
+
+def test_ecosystem_list_does_not_touch_volume_or_burstiness(engine, now):
+    """Volume and burstiness stay on the delegate's own votes - that is the
+    revealed-engagement side of the separation."""
+    voted = [cast(now, started_days_ago=2, voted_days_ago=2),
+             cast(now, started_days_ago=9, voted_days_ago=8)]
+    bez = engine.compute_per_event("0xA", proposal(), voted, now=now)
+    z_eco = engine.compute_per_event("0xA", proposal(), voted, now=now,
+                                     ecosystem_proposals=[eco(now, 1), eco(now, 2)])
+
+    assert z_eco.metrics.proposals_7d == bez.metrics.proposals_7d
+    assert z_eco.metrics.proposals_30d == bez.metrics.proposals_30d
+    assert z_eco.components.volume == bez.components.volume
+    assert z_eco.components.burstiness == bez.components.burstiness
+
+
+# ---------------------------------------------------------------------------
+# Point 4 of the grant review (/t/30604 post 18): each result must bind a
+# unique vote-event identity (not only the proposal id), plus instrument
+# version, code commit, and source-capability state including unknown windows.
+# ---------------------------------------------------------------------------
+
+def test_identity_present_and_deterministic(engine, now):
+    voted = [cast(now, started_days_ago=2, voted_days_ago=2)]
+    a = engine.compute_per_event("0xA", proposal(), voted, now=now)
+    b = engine.compute_per_event("0xA", proposal(), voted, now=now)
+
+    assert a.identity is not None
+    assert a.identity.vote_event_id
+    assert a.identity.vote_event_id == b.identity.vote_event_id
+    assert a.identity.instrument_version == engine.version
+
+
+def test_identity_differs_between_events_and_addresses(engine, now):
+    voted = [cast(now, started_days_ago=2, voted_days_ago=2)]
+    t1 = proposal(words=100, title="Alpha")
+    t2 = proposal(words=100, title="Beta")
+    t2.start = t1.start - 86_400  # inny moment
+
+    a = engine.compute_per_event("0xA", t1, voted, now=now)
+    b = engine.compute_per_event("0xA", t2, voted, now=now)
+    c = engine.compute_per_event("0xB", t1, voted, now=now)
+
+    assert a.identity.vote_event_id != b.identity.vote_event_id
+    assert a.identity.vote_event_id != c.identity.vote_event_id
+
+
+def test_identity_uses_stage_ids_not_only_proposal_id(engine, now):
+    """A merged two-stage event carries the ids of BOTH stages - the identity
+    must not collapse to whichever stage survived the merge."""
+    t = MockVote(start=int((now - timedelta(days=2)).timestamp()),
+                 end=int((now - timedelta(days=1)).timestamp()),
+                 voted_at=int((now - timedelta(days=2)).timestamp()))
+    t.id = "snap-1"
+    t.stage_ids = ["snap-1", "chain-7"]
+    samotny = MockVote(start=t.start, end=t.end, voted_at=t.voted_at)
+    samotny.id = "snap-1"
+
+    z_etapami = engine.compute_per_event("0xA", t, [t], now=now)
+    bez = engine.compute_per_event("0xA", samotny, [samotny], now=now)
+
+    assert z_etapami.identity.vote_event_id != bez.identity.vote_event_id
+    assert "chain-7" in z_etapami.identity.stage_ids
+
+
+def test_source_state_counts_unknown_windows(engine, now):
+    bez_okna = cast(now, started_days_ago=3, voted_days_ago=3)
+    bez_okna.end = None
+    pelne = cast(now, started_days_ago=2, voted_days_ago=2)
+
+    r = engine.compute_per_event("0xA", proposal(), [bez_okna, pelne], now=now)
+
+    assert r.identity.source_state["history_events"] == 2
+    assert r.identity.source_state["events_unknown_window"] == 1
+    assert r.identity.source_state["concurrency_source"] == "voted_only"
+
+
+def test_source_state_passes_endpoint_supplied_sources(engine, now):
+    voted = [cast(now, started_days_ago=2, voted_days_ago=2)]
+    r = engine.compute_per_event(
+        "0xA", proposal(), voted, now=now,
+        source_counts={"snapshot": 5, "tally": 0, "governor": 2},
+    )
+    assert r.identity.source_state["sources"] == {"snapshot": 5, "tally": 0, "governor": 2}
+
+
+def test_merge_stages_collects_stage_ids(now):
+    from app.services.fatigue_engine import merge_stages
+    a = MockVote(start=int((now - timedelta(days=10)).timestamp()),
+                 end=int((now - timedelta(days=7)).timestamp()),
+                 voted_at=int((now - timedelta(days=10)).timestamp()),
+                 title="Same Decision")
+    a.id = "snap-A"
+    b = MockVote(start=int((now - timedelta(days=8)).timestamp()),
+                 end=int((now - timedelta(days=5)).timestamp()),
+                 voted_at=int((now - timedelta(days=8)).timestamp()),
+                 title="Same Decision")
+    b.id = "chain-B"
+
+    scalone = merge_stages([a, b])
+
+    assert len(scalone) == 1
+    assert sorted(scalone[0].stage_ids) == ["chain-B", "snap-A"]
+    assert scalone[0].stages == 2

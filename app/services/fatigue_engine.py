@@ -42,7 +42,10 @@ Design Principles
   Address parameter is forward-compatible for future per-delegate personalization.
 """
 
+import hashlib
+import os
 import re
+import subprocess
 import yaml
 import logging
 from pathlib import Path
@@ -77,6 +80,37 @@ class FatigueMetrics:
     avg_word_count: float      # mean word count across 30d window
     weekly_avg: float          # proposals_30d / 4.33 (4-week rolling avg)
     novelty_ratio: float       # novel proposals / total in 30d window
+    # Separation required by the grant review (point 3, /t/30604 post 18):
+    # ecosystem governance load vs the delegate's revealed engagement.
+    # concurrency_source names what concurrent_active was counted from -
+    # "ecosystem:snapshot" (all proposals open in the space at t, Snapshot
+    # layer) or "voted_only" (only proposals this delegate voted on; the
+    # pre-2026-08-28 construction, kept as the explicit fallback when the
+    # ecosystem source is unavailable). voted_concurrent always carries the
+    # revealed-engagement count, whichever source drove the component.
+    concurrency_source: str = "voted_only"
+    voted_concurrent: int = 0
+
+
+@dataclass
+class MeasurementIdentity:
+    """What binds one per-event result to the exact circumstances it was
+    computed under (grant review point 4, /t/30604 post 18): the unique
+    vote-event - not only the proposal id - plus instrument version, code
+    commit, and the source-capability state including unknown windows.
+
+    vote_event_id is a deterministic digest of (address, every stage id of the
+    merged event, vote timestamp). Two results with the same id measured the
+    same event; a re-run after a source or instrument change keeps the same id
+    and differs in instrument_version/code_commit/source_state - which is the
+    point: the registry can tell WHAT changed between two numbers."""
+    vote_event_id: str
+    stage_ids: List[str]           # ids of every merged stage of the event
+    voted_at: int                  # vote timestamp bound into the identity
+    instrument_version: str        # fatigue_config.yaml version
+    code_commit: str               # git HEAD at compute time, or "unknown"
+    source_state: Dict[str, Any]   # sources + history_events +
+                                   # events_unknown_window + concurrency_source
 
 
 @dataclass
@@ -92,6 +126,7 @@ class FatigueResult:
     config_version: str            # config version for reproducibility
     computed_at: datetime          # UTC timestamp of computation
     mode: str = "ecosystem"        # "ecosystem" (shared burden) | "per_delegate" (revealed activity)
+    identity: Optional[MeasurementIdentity] = None  # per-event only (review point 4)
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +150,29 @@ class FatigueEngine:
         self.config_path = Path(config_path)
         self.config = self._load_config()
         self.version = self.config.get("version", "unknown")
+        self.code_commit = self._read_code_commit()
         logger.info(f"FatigueEngine initialized v{self.version}")
+
+    @staticmethod
+    def _read_code_commit() -> str:
+        """Git HEAD of the running code, for the measurement identity (review
+        point 4). Containers built without .git fall back to the GIT_COMMIT
+        env var; when neither answers, the honest value is "unknown" - a
+        missing capability is reported, never guessed."""
+        env = os.environ.get("GIT_COMMIT")
+        if env:
+            return env.strip()
+        try:
+            out = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=Path(__file__).resolve().parent,
+                capture_output=True, text=True, timeout=5,
+            )
+            if out.returncode == 0 and out.stdout.strip():
+                return out.stdout.strip()
+        except Exception:  # noqa: BLE001
+            pass
+        return "unknown"
 
     # ------------------------------------------------------------------
     # Config loading
@@ -231,6 +288,8 @@ class FatigueEngine:
         target_proposal: Any,
         voted_history: List[Any],
         now: Optional[datetime] = None,
+        ecosystem_proposals: Optional[List[Any]] = None,
+        source_counts: Optional[Dict[str, int]] = None,
     ) -> FatigueResult:
         """
         Per-event Delegate Fatigue Index (dissertation 5.3.5a; per-event pivot
@@ -259,6 +318,17 @@ class FatigueEngine:
                              components. Should cover >=30 days before `now`.
             now:             Vote timestamp (as_of). Defaults to now(UTC).
                              Pass explicitly in tests for deterministic results.
+            ecosystem_proposals:
+                             ALL proposals of the space whose voting window may
+                             cover `now` - not just the ones this delegate voted
+                             on. When given (an empty list is a real answer:
+                             nothing was open), concurrency measures ECOSYSTEM
+                             governance load, per point 3 of the grant review
+                             (/t/30604 post 18). When None, the source is
+                             unavailable and concurrency falls back to the
+                             delegate's own voted proposals - the result then
+                             says so in metrics.concurrency_source instead of
+                             passing the narrower number off as ecosystem load.
 
         Returns:
             FatigueResult with mode="per_event".
@@ -285,6 +355,22 @@ class FatigueEngine:
 
         # Context components from the delegate's history around the vote.
         ctx = self._compute_metrics(frozen_history, now_ts, by_vote_time=True)
+
+        # Separation of the two quantities (grant review point 3): what the
+        # delegate's own votes show at t is REVEALED ENGAGEMENT and is always
+        # kept; ECOSYSTEM LOAD replaces it as the concurrency driver whenever
+        # the space-wide proposal list is available. The same unknown-window
+        # rule applies: a proposal without `end` is skipped, not counted.
+        voted_concurrent = ctx.concurrent_active
+        if ecosystem_proposals is not None:
+            ctx.concurrent_active = sum(
+                1 for p in ecosystem_proposals
+                if getattr(p, "end", None) and (p.start or 0) <= now_ts <= p.end
+            )
+            concurrency_source = "ecosystem:snapshot"
+        else:
+            concurrency_source = "voted_only"
+
         ctx_components = self._compute_components(ctx, ref)
 
         # Intrinsic components from THE voted proposal (per-event).
@@ -304,6 +390,35 @@ class FatigueEngine:
         fatigue_score = self._aggregate_score(components, weights)
         status = self._determine_status(fatigue_score)
 
+        # Measurement identity (review point 4): the unique vote-event - every
+        # stage id of the merged event plus the vote timestamp - bound to the
+        # instrument version, the code commit and the source-capability state.
+        stage_ids = [str(s) for s in
+                     (getattr(target_proposal, "stage_ids", None)
+                      or [getattr(target_proposal, "id", "") or ""])
+                     if str(s)]
+        if not stage_ids:
+            # A source that carries no event id must not collapse two different
+            # events into one identity - fall back to the decision key + start,
+            # both deterministic properties of the proposal itself.
+            stage_ids = [f"~{_klucz_decyzji(target_proposal)}"
+                         f"@{getattr(target_proposal, 'start', 0) or 0}"]
+        identity_raw = f"{address.lower()}|{'|'.join(sorted(stage_ids))}|{now_ts}"
+        identity = MeasurementIdentity(
+            vote_event_id=hashlib.sha256(identity_raw.encode()).hexdigest()[:16],
+            stage_ids=stage_ids,
+            voted_at=now_ts,
+            instrument_version=self.version,
+            code_commit=self.code_commit,
+            source_state={
+                "sources": source_counts or {},
+                "history_events": len(frozen_history),
+                "events_unknown_window": sum(
+                    1 for p in frozen_history if not getattr(p, "end", None)),
+                "concurrency_source": concurrency_source,
+            },
+        )
+
         # Metrics reflect the per-event view: context counts + THIS proposal's length.
         metrics = FatigueMetrics(
             proposals_7d=ctx.proposals_7d,
@@ -312,6 +427,8 @@ class FatigueEngine:
             avg_word_count=float(words),
             weekly_avg=ctx.weekly_avg,
             novelty_ratio=novelty,
+            concurrency_source=concurrency_source,
+            voted_concurrent=voted_concurrent,
         )
 
         logger.info(
@@ -330,6 +447,7 @@ class FatigueEngine:
             config_version=self.version,
             computed_at=now,
             mode="per_event",
+            identity=identity,
         )
 
     def _novelty_per_event(self, target: Any, history: List[Any]) -> float:
@@ -658,9 +776,13 @@ def merge_stages(votes: List[Any], okno_dni: int = 45) -> List[Any]:
                 break
         if obecny is None:
             p.stages = 1
+            # Tożsamość zdarzenia (punkt 4 recenzji) niesie identyfikatory
+            # WSZYSTKICH etapów - scalenie nie może gubić id etapu wchłoniętego.
+            p.stage_ids = [str(getattr(p, "id", "") or "")]
             kubelki[k].append(p)
             continue
         obecny.stages = getattr(obecny, "stages", 1) + 1
+        obecny.stage_ids = getattr(obecny, "stage_ids", []) + [str(getattr(p, "id", "") or "")]
         # dłuższa treść wygrywa - pełny opis nad skróconym
         if len(getattr(p, "body", "") or "") > len(getattr(obecny, "body", "") or ""):
             obecny.body = p.body

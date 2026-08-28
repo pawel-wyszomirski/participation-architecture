@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import pathlib
@@ -5,7 +6,7 @@ from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -168,6 +169,23 @@ class FatigueMetricsResponse(BaseModel):
     avg_word_count: float = Field(..., description="Mean word count across 30d proposal window")
     weekly_avg: float = Field(..., description="proposals_30d / 4.33 — rolling weekly average")
     novelty_ratio: float = Field(..., description="Fraction of 30d proposals classified as novel")
+    concurrency_source: str = Field(
+        default="voted_only",
+        description=(
+            "What concurrent_active was counted from: 'ecosystem:snapshot' = all "
+            "proposals open in the space at t (ecosystem governance load, grant "
+            "review point 3); 'voted_only' = only proposals this delegate voted "
+            "on (fallback when the ecosystem source is unavailable)"
+        ),
+    )
+    voted_concurrent: int = Field(
+        default=0,
+        description=(
+            "Revealed engagement at t: proposals THIS delegate voted on whose "
+            "window covered the moment - reported alongside ecosystem load, "
+            "never mixed with it"
+        ),
+    )
 
 
 class FatigueWeightsResponse(BaseModel):
@@ -196,6 +214,22 @@ class FatigueResponse(BaseModel):
     )
 
 
+class MeasurementIdentityResponse(BaseModel):
+    """Grant review point 4: what binds this result to the exact circumstances
+    it was computed under."""
+    vote_event_id: str = Field(..., description=(
+        "Deterministic digest of (address, every stage id of the merged "
+        "vote-event, vote timestamp) - the unique vote-event, not only the "
+        "proposal id"))
+    stage_ids: List[str] = Field(..., description="Ids of every merged stage of the event")
+    voted_at: int = Field(..., description="Vote timestamp bound into the identity")
+    instrument_version: str = Field(..., description="fatigue_config.yaml version")
+    code_commit: str = Field(..., description="Git HEAD of the running code, or 'unknown'")
+    source_state: Dict[str, Any] = Field(..., description=(
+        "Source-capability state: events per source, history size, events "
+        "with unknown voting window, and what concurrency was counted from"))
+
+
 class PerEventFatigueResponse(FatigueResponse):
     """
     Per-event DFI: the Delegate Fatigue Index for ONE vote (dissertation 5.3.5a,
@@ -209,6 +243,8 @@ class PerEventFatigueResponse(FatigueResponse):
     target_proposal_id: str = Field(..., description="Snapshot id of the rated proposal")
     target_proposal_title: str = Field(..., description="Title of the rated proposal")
     as_of: datetime = Field(..., description="Vote timestamp used as the DFI reference point")
+    identity: Optional[MeasurementIdentityResponse] = Field(
+        None, description="Measurement identity (grant review point 4)")
 
 
 # ============================================================================
@@ -612,8 +648,26 @@ async def get_per_event_fatigue(
     # proposal start. The delegate rated THIS vote, cast at this moment.
     _vote_ts = getattr(target, "voted_at", None) or target.start or 0
     ref_time = datetime.fromtimestamp(_vote_ts, tz=timezone.utc)
+
+    # Ecosystem governance load at the vote moment (grant review point 3):
+    # every proposal open in the space at t, not just the delegate's slice.
+    # None = the source did not answer; the engine then falls back to the
+    # voted-only construction and NAMES it in metrics.concurrency_source -
+    # a failed source must not read as "nothing was open".
+    ecosystem = await SnapshotClient().fetch_proposals_active_at(_vote_ts)
+
     result = fatigue_engine.compute_per_event(
-        address=address, target_proposal=target, voted_history=voted, now=ref_time
+        address=address, target_proposal=target, voted_history=voted, now=ref_time,
+        ecosystem_proposals=ecosystem,
+        # Source-capability state (review point 4): how many events each source
+        # returned for THIS measurement. The old clients collapse a connection
+        # failure into an empty list, so a zero here means "nothing came from
+        # this source", not "the source is healthy and empty" - recorded as-is.
+        source_counts={
+            "snapshot": len(snap_votes or []),
+            "tally": len(tally_votes or []),
+            "governor": len(chain_votes or []),
+        },
     )
 
     # Persist snapshot for reproducibility (same table as ecosystem variant).
@@ -634,6 +688,10 @@ async def get_per_event_fatigue(
         metric_avg_word_count=result.metrics.avg_word_count,
         metric_weekly_avg=result.metrics.weekly_avg,
         metric_novelty_ratio=result.metrics.novelty_ratio,
+        vote_event_id=result.identity.vote_event_id if result.identity else None,
+        code_commit=result.identity.code_commit if result.identity else None,
+        source_state=(json.dumps(result.identity.source_state)
+                      if result.identity else None),
     )
     db.add(snapshot)
     db.commit()
@@ -656,6 +714,8 @@ async def get_per_event_fatigue(
             avg_word_count=result.metrics.avg_word_count,
             weekly_avg=result.metrics.weekly_avg,
             novelty_ratio=result.metrics.novelty_ratio,
+            concurrency_source=result.metrics.concurrency_source,
+            voted_concurrent=result.metrics.voted_concurrent,
         ),
         weights=FatigueWeightsResponse(**result.weights),
         config_version=result.config_version,
@@ -665,6 +725,14 @@ async def get_per_event_fatigue(
         target_proposal_id=target.id,
         target_proposal_title=(getattr(target, "title", None) or ""),
         as_of=ref_time,
+        identity=(MeasurementIdentityResponse(
+            vote_event_id=result.identity.vote_event_id,
+            stage_ids=result.identity.stage_ids,
+            voted_at=result.identity.voted_at,
+            instrument_version=result.identity.instrument_version,
+            code_commit=result.identity.code_commit,
+            source_state=result.identity.source_state,
+        ) if result.identity else None),
     )
 
 
