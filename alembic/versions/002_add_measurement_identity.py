@@ -9,7 +9,6 @@ bind a unique vote-event identity (not only the proposal id), the code commit,
 and the source-capability state including unknown windows. Columns are nullable
 because ecosystem-variant rows and rows written before this revision carry none.
 """
-# <!-- catalog-read -->
 from alembic import op
 import sqlalchemy as sa
 
