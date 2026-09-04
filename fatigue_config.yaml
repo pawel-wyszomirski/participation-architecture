@@ -12,7 +12,7 @@
 #   DFI = (w_volume×volume + w_concurrency×concurrency + w_burstiness×burstiness
 #          + w_reading_time×reading_time + w_novelty×novelty) × 100
 
-version: "1.1.0"
+version: "1.2.0"
 
 # Component weights (must sum to 1.0)
 weights:
@@ -117,6 +117,33 @@ reference_values_per_event:
 # genuine two-stage passes is unknown - at that distance "a quick review to make
 # sure the text hasn't changed" stops describing the delegate's work.
 stage_merge_window_days: 45
+
+# When a per-event measurement may enter the PRIMARY (confirmatory) analysis.
+#
+# Closure review (/t/30604, 2026-09-03, point 2): a count cannot prove source
+# health, and a semantic fallback is not the same instrument. Every source now
+# returns a capability receipt (HEALTHY_COMPLETE, HEALTHY_EMPTY, PARTIAL,
+# TRUNCATED, UNAVAILABLE, AUTH_MISSING, ERROR); the engine applies THESE rules
+# and stamps the result PRIMARY_ELIGIBLE or NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS.
+# The number is still computed and shown, with the stamp and its reasons - it
+# is never silently promoted.
+#
+# required_sources: what the frozen instrument cannot do without.
+#   snapshot  - off-chain stages (temperature checks) of the delegate's history
+#   governor  - binding on-chain votes, read from the contract (authoritative
+#               for Arbitrum since Tally froze its index on 2026-06-08)
+#   ecosystem - all proposals open in the space at t (concurrency construct);
+#               without it concurrency falls back to voted_only, which is a
+#               different construct and disqualifies on its own
+#   tally is NOT required: it covers nothing the governor scan does not, and its
+#   index is frozen; its receipt is still recorded.
+# eligible_states: PARTIAL is allowed - it means some history records lack a
+#   voting window, which only affects voted_concurrent (reported, not the
+#   concurrency driver) and is counted in the manifest. TRUNCATED is not: a
+#   history cut at the page limit cannot prove the 30-day window is complete.
+eligibility:
+  required_sources: [snapshot, governor, ecosystem]
+  eligible_states: [HEALTHY_COMPLETE, HEALTHY_EMPTY, PARTIAL]
 
 # Status thresholds (score 0-100). These are WORKLOAD bands, nothing more.
 #

@@ -388,22 +388,27 @@ def test_identity_differs_between_events_and_addresses(engine, now):
     assert a.identity.vote_event_id != c.identity.vote_event_id
 
 
-def test_identity_uses_stage_ids_not_only_proposal_id(engine, now):
-    """A merged two-stage event carries the ids of BOTH stages - the identity
-    must not collapse to whichever stage survived the merge."""
+def test_identity_names_one_vote_and_links_its_lifecycle(engine, now):
+    """Closure review 2026-09-03, point 1: the identity is ONE concrete vote.
+    Other stages of the same decision are linked through the lifecycle, never
+    bound into the id - so the same vote keeps the same id whether or not a
+    later stage has been observed yet."""
     t = MockVote(start=int((now - timedelta(days=2)).timestamp()),
                  end=int((now - timedelta(days=1)).timestamp()),
                  voted_at=int((now - timedelta(days=2)).timestamp()))
     t.id = "snap-1"
-    t.stage_ids = ["snap-1", "chain-7"]
+    t.lifecycle_id = "lc:abc"
+    t.lifecycle_stage_ids = ["snap-1", "chain-7"]
     samotny = MockVote(start=t.start, end=t.end, voted_at=t.voted_at)
     samotny.id = "snap-1"
 
-    z_etapami = engine.compute_per_event("0xA", t, [t], now=now)
+    z_cyklem = engine.compute_per_event("0xA", t, [t], now=now)
     bez = engine.compute_per_event("0xA", samotny, [samotny], now=now)
 
-    assert z_etapami.identity.vote_event_id != bez.identity.vote_event_id
-    assert "chain-7" in z_etapami.identity.stage_ids
+    assert z_cyklem.identity.vote_event_id == bez.identity.vote_event_id
+    assert z_cyklem.identity.stage_ids == ["snap-1"]
+    assert z_cyklem.identity.lifecycle_id == "lc:abc"
+    assert "chain-7" in z_cyklem.identity.lifecycle_stage_ids
 
 
 def test_source_state_counts_unknown_windows(engine, now):
@@ -440,8 +445,10 @@ def test_merge_stages_collects_stage_ids(now):
                  title="Same Decision")
     b.id = "chain-B"
 
-    scalone = merge_stages([a, b])
+    etapy = merge_stages([a, b])
 
-    assert len(scalone) == 1
-    assert sorted(scalone[0].stage_ids) == ["chain-B", "snap-A"]
-    assert scalone[0].stages == 2
+    assert len(etapy) == 2, "each stage stays a frozen observation"
+    assert {e.lifecycle_id for e in etapy} == {etapy[0].lifecycle_id}
+    assert sorted(etapy[0].lifecycle_stage_ids) == ["chain-B", "snap-A"]
+    assert all(e.stages == 2 for e in etapy)
+    assert all(e.stage_ids == [e.id] for e in etapy)

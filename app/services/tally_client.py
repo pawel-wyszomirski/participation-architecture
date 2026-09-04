@@ -24,6 +24,10 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 
 from app.db.models import Proposal
+from app.services.fatigue_engine import (
+    SourceReceipt, HEALTHY_COMPLETE, HEALTHY_EMPTY, TRUNCATED, UNAVAILABLE,
+    AUTH_MISSING, ERROR,
+)
 
 TALLY_URL = "https://api.tally.xyz/query"
 ARBITRUM_ORG_ID = "2206072050315953936"   # Tally organization id for "Arbitrum"
@@ -133,43 +137,86 @@ class TallyClient:
     async def fetch_voted_proposals(
         self, voter: str, limit: int = 200
     ) -> List["Proposal"]:
+        """List-only wrapper around `fetch_voted_observations`."""
+        out, _ = await self.fetch_voted_observations(voter, limit=limit)
+        return out
+
+    async def fetch_voted_observations(
+        self, voter: str, limit: int = 200
+    ) -> "tuple[List[Proposal], SourceReceipt]":
         """
         On-chain proposals the delegate voted on, as transient Proposal
-        instances with .voted_at (vote time) and .source="tally". Empty list
-        if no API key or no votes - never raises.
+        instances with .voted_at (vote time) and .source="tally", plus a
+        capability receipt (closure review point 2). Never raises: AUTH_MISSING
+        without a key, UNAVAILABLE/ERROR when Tally does not answer or answers
+        with errors, TRUNCATED when a page limit was hit.
+
+        Native identity (point 3): `source_vote_id` = Tally vote id,
+        `native_proposal_id` = Tally proposal id. No dedup here.
         """
         if not self.key:
             print("⚠️  Tally API key missing - skipping on-chain votes")
-            return []
+            return [], SourceReceipt("tally", AUTH_MISSING, detail="TALLY_API_KEY missing")
 
-        props = await self.fetch_arbitrum_proposals()
+        try:
+            data = await self._post(
+                _PROPOSALS_QUERY,
+                {"in": {"filters": {"organizationId": ARBITRUM_ORG_ID},
+                        "page": {"limit": 100}}},
+            )
+        except httpx.HTTPStatusError as e:
+            print(f"❌ Tally proposals HTTP: {e}")
+            return [], SourceReceipt("tally", ERROR, detail=f"HTTP {e.response.status_code}")
+        except Exception as e:  # noqa: BLE001
+            print(f"❌ Tally proposals error: {e}")
+            return [], SourceReceipt("tally", UNAVAILABLE, detail=f"{type(e).__name__}: {e}"[:200])
+        if data.get("errors"):
+            msg = str(data["errors"][0].get("message", ""))[:200]
+            print(f"❌ Tally proposals GraphQL: {msg}")
+            return [], SourceReceipt("tally", ERROR, detail=msg)
+        nodes = (data.get("data", {}).get("proposals", {}) or {}).get("nodes") or []
+        props: Dict[str, Dict[str, Any]] = {}
+        for p in nodes:
+            m = p.get("metadata") or {}
+            st = p.get("start") or {}
+            props[p["id"]] = {
+                "title": m.get("title") or "",
+                "body": m.get("description") or "",
+                "start": _iso_to_epoch(st.get("timestamp")),
+            }
+        proposals_truncated = len(nodes) >= 100
         if not props:
-            return []
-        proposal_ids = list(props.keys())
+            return [], SourceReceipt("tally", HEALTHY_EMPTY, detail="no proposals indexed")
 
         try:
             data = await self._post(
                 _VOTES_QUERY,
-                {"in": {"filters": {"voter": voter, "proposalIds": proposal_ids},
+                {"in": {"filters": {"voter": voter, "proposalIds": list(props.keys())},
                         "page": {"limit": limit}}},
             )
+        except httpx.HTTPStatusError as e:
+            print(f"❌ Tally votes HTTP: {e}")
+            return [], SourceReceipt("tally", ERROR, limit=limit,
+                                     detail=f"HTTP {e.response.status_code}")
         except Exception as e:  # noqa: BLE001
             print(f"❌ Tally votes error: {e}")
-            return []
+            return [], SourceReceipt("tally", UNAVAILABLE, limit=limit,
+                                     detail=f"{type(e).__name__}: {e}"[:200])
         if data.get("errors"):
-            print(f"❌ Tally votes GraphQL: {data['errors'][0].get('message')}")
-            return []
+            msg = str(data["errors"][0].get("message", ""))[:200]
+            print(f"❌ Tally votes GraphQL: {msg}")
+            return [], SourceReceipt("tally", ERROR, limit=limit, detail=msg)
 
-        nodes = (data.get("data", {}).get("votes", {}) or {}).get("nodes") or []
+        vote_nodes = (data.get("data", {}).get("votes", {}) or {}).get("nodes") or []
         out: List[Proposal] = []
-        seen = set()
-        for v in nodes:
+        unknown = 0
+        for v in vote_nodes:
             p = v.get("proposal") or {}
             pid = p.get("id")
             meta = props.get(pid)
-            if not pid or pid in seen or not meta:
+            if not pid or not meta:
+                unknown += 1
                 continue
-            seen.add(pid)
             # Prefix id so on-chain (Tally) and off-chain (Snapshot) proposals
             # never collide when the two sources are merged.
             prop = Proposal(
@@ -182,5 +229,21 @@ class TallyClient:
             block = v.get("block") or {}
             prop.voted_at = _iso_to_epoch(block.get("timestamp"))
             prop.source = "tally"
+            prop.source_domain = "tally"
+            prop.source_vote_id = str(v.get("id") or "")
+            prop.native_proposal_id = str(pid)
+            prop.voter = voter
+            prop.cast_at = prop.voted_at
             out.append(prop)
-        return out
+        if not vote_nodes:
+            state = HEALTHY_EMPTY
+        elif len(vote_nodes) >= limit or proposals_truncated:
+            state = TRUNCATED
+        else:
+            state = HEALTHY_COMPLETE
+        detail = "; ".join(x for x in (
+            f"{unknown} votes on proposals outside the fetched page" if unknown else "",
+            "proposal page full (100)" if proposals_truncated else "",
+            "index frozen since 2026-06-08 (known)",
+        ) if x)
+        return out, SourceReceipt("tally", state, events=len(out), limit=limit, detail=detail)

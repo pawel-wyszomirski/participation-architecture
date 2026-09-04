@@ -11,6 +11,9 @@ sys.path.append(os.getcwd())
 
 from app.db.session import SessionLocal, engine, Base
 from app.db.models import Proposal, Vote
+from app.services.fatigue_engine import (
+    SourceReceipt, HEALTHY_COMPLETE, HEALTHY_EMPTY, TRUNCATED, UNAVAILABLE, ERROR,
+)
 from sqlalchemy import func
 
 # Ensure tables exist
@@ -165,6 +168,68 @@ class SnapshotClient:
             if len(seen) >= limit:
                 break
         return seen
+
+    async def fetch_ecosystem_exposure(
+        self, at_ts: int, space: str = ARBITRUM_SPACE
+    ) -> "tuple[Optional[List[Proposal]], SourceReceipt]":
+        """`fetch_proposals_active_at` plus a capability receipt (closure
+        review point 2). None + UNAVAILABLE/ERROR when the source did not
+        answer; a list with HEALTHY_EMPTY / HEALTHY_COMPLETE / TRUNCATED
+        (page of 100 full - the exposure set may be incomplete)."""
+        query = """
+        query ActiveAt($space: String!, $ts: Int!) {
+          proposals(
+            first: 100,
+            where: { space_in: [$space], start_lte: $ts, end_gte: $ts }
+          ) {
+            id
+            title
+            start
+            end
+            state
+          }
+        }
+        """
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    self.url,
+                    json={"query": query,
+                          "variables": {"space": space, "ts": int(at_ts)}},
+                    headers=self.headers,
+                    timeout=60.0,
+                )
+                response.raise_for_status()
+                payload = response.json()
+            except httpx.HTTPStatusError as e:
+                return None, SourceReceipt("ecosystem", ERROR, detail=f"HTTP {e.response.status_code}")
+            except Exception as e:  # noqa: BLE001
+                return None, SourceReceipt("ecosystem", UNAVAILABLE, detail=f"{type(e).__name__}: {e}")
+        if payload.get("errors"):
+            return None, SourceReceipt("ecosystem", ERROR,
+                                       detail=str(payload["errors"][0].get("message", ""))[:200])
+        raw = payload.get("data", {}).get("proposals")
+        if raw is None:
+            return None, SourceReceipt("ecosystem", ERROR, detail="no proposals field in answer")
+        out = []
+        for p in raw:
+            prop = Proposal(
+                id=p.get("id"),
+                title=p.get("title") or "",
+                body="",
+                state=p.get("state") or "closed",
+                start=p.get("start"),
+                end=p.get("end"),
+            )
+            prop.source = "snapshot"
+            out.append(prop)
+        if not out:
+            state = HEALTHY_EMPTY
+        elif len(raw) >= 100:
+            state = TRUNCATED
+        else:
+            state = HEALTHY_COMPLETE
+        return out, SourceReceipt("ecosystem", state, events=len(out), limit=100)
 
     async def fetch_proposals_active_at(
         self, at_ts: int, space: str = ARBITRUM_SPACE
@@ -398,14 +463,30 @@ class SnapshotClient:
     async def fetch_voted_proposals(
         self, voter: str, space: str = ARBITRUM_SPACE, limit: int = 200
     ) -> List["Proposal"]:
+        """List-only wrapper around `fetch_voted_observations` for callers that
+        do not read receipts (offline scripts). The endpoint uses the full form."""
+        out, _ = await self.fetch_voted_observations(voter, space=space, limit=limit)
+        return out
+
+    async def fetch_voted_observations(
+        self, voter: str, space: str = ARBITRUM_SPACE, limit: int = 200
+    ) -> "tuple[List[Proposal], SourceReceipt]":
         """
         Fetch the proposals a delegate voted on, WITH the full proposal fields
-        (start, end, body, title) needed by compute_per_delegate().
+        (start, end, body, title) needed by compute_per_event(), plus a
+        capability receipt (closure review point 2).
 
         Self-contained: extends the Snapshot `votes` query with the nested
         proposal payload, so it does not depend on the `proposals` table being
-        populated. Returns transient Proposal instances (NOT persisted), ready
-        to pass straight into FatigueEngine.compute_per_delegate().
+        populated. Returns transient Proposal instances (NOT persisted).
+
+        Native identity (closure review point 3): every observation carries
+        the Snapshot vote id (`source_vote_id`), the proposal id as Snapshot
+        knows it (`native_proposal_id`), `source_domain`, `voter` and
+        `cast_at`. NO deduplication happens here - until 2026-09-04 a second
+        record on the same proposal was dropped before any event identity
+        existed. Reconciliation is now an explicit, logged step in the engine
+        (`reconcile_observations`).
         """
         query = """
         query Votes($voter: String!, $space: String!, $first: Int!) {
@@ -433,19 +514,31 @@ class SnapshotClient:
                 )
                 response.raise_for_status()
                 data = response.json()
-                raw = data.get("data", {}).get("votes") or []
-            except Exception as e:
+            except httpx.HTTPStatusError as e:
+                print(f"❌ Snapshot HTTP error (voted proposals): {e}")
+                return [], SourceReceipt("snapshot", ERROR, limit=limit,
+                                         detail=f"HTTP {e.response.status_code}")
+            except Exception as e:  # noqa: BLE001
                 print(f"❌ Connection Error (voted proposals): {str(e)}")
-                return []
+                return [], SourceReceipt("snapshot", UNAVAILABLE, limit=limit,
+                                         detail=f"{type(e).__name__}: {e}"[:200])
+        if data.get("errors"):
+            msg = str(data["errors"][0].get("message", ""))[:200]
+            print(f"❌ Snapshot GraphQL error (voted proposals): {msg}")
+            return [], SourceReceipt("snapshot", ERROR, limit=limit, detail=msg)
+        raw = data.get("data", {}).get("votes")
+        if raw is None:
+            return [], SourceReceipt("snapshot", ERROR, limit=limit,
+                                     detail="no votes field in answer")
 
         out = []
-        seen = set()
+        orphaned = 0
         for v in raw:
             p = v.get("proposal") or {}
             pid = p.get("id")
-            if not pid or pid in seen:
+            if not pid:
+                orphaned += 1   # vote on a deleted proposal - nothing to rate
                 continue
-            seen.add(pid)
             prop = Proposal(
                 id=pid,
                 title=p.get("title") or "",
@@ -459,8 +552,20 @@ class SnapshotClient:
             # attribute on the non-persisted Proposal instance.
             prop.voted_at = v.get("created")
             prop.source = "snapshot"
+            prop.source_domain = "snapshot"
+            prop.source_vote_id = str(v.get("id") or "")
+            prop.native_proposal_id = str(pid)
+            prop.voter = voter
+            prop.cast_at = v.get("created")
             out.append(prop)
-        return out
+        if not raw:
+            state = HEALTHY_EMPTY
+        elif len(raw) >= limit:
+            state = TRUNCATED
+        else:
+            state = HEALTHY_COMPLETE
+        detail = f"{orphaned} votes on deleted proposals skipped" if orphaned else ""
+        return out, SourceReceipt("snapshot", state, events=len(out), limit=limit, detail=detail)
 
 class FatigueEngine:
     """Core logic for calculating Delegate Fatigue Index"""

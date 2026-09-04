@@ -41,6 +41,10 @@ from typing import Dict, List, Optional
 import httpx
 
 from app.services.snapshot_client import Proposal
+from app.services.fatigue_engine import (
+    SourceReceipt, HEALTHY_COMPLETE, HEALTHY_EMPTY, PARTIAL, TRUNCATED,
+    UNAVAILABLE, ERROR,
+)
 
 # Arbitrum One runs TWO governors and a delegate's workload spans both.
 #
@@ -224,25 +228,66 @@ class GovernorClient:
         live on the treasury governor, and a workload measure that reads one
         contract reports a delegate as idle while they were voting.
         """
+        out, _ = await self.fetch_voted_observations(address, days=days, limit=limit)
+        return out
+
+    async def fetch_voted_observations(self, address: str, days: int = 120,
+                                       limit: int = 200
+                                       ) -> "tuple[List[Proposal], SourceReceipt]":
+        """`fetch_voted_proposals` plus ONE capability receipt for both
+        governors (closure review point 2). The worst state wins: an RPC that
+        does not answer for either contract makes the whole source
+        UNAVAILABLE, because a delegate's on-chain history is the union of both
+        and half of it cannot be called complete.
+
+            UNAVAILABLE  - RPC unreachable for a contract
+            ERROR        - VoteCast scan refused (getLogs error)
+            TRUNCATED    - more VoteCast logs than `limit`; oldest dropped
+            PARTIAL      - some votes lack a voting window (ProposalCreated
+                           outside the scan, or the ProposalCreated scan failed)
+            HEALTHY_*    - everything asked for came back
+
+        Native identity (point 3): `source_vote_id` = transaction hash + log
+        index of the VoteCast event, `native_proposal_id` = the uint256
+        proposal id as the contract emitted it.
+        """
         wszystkie: List[Proposal] = []
+        stany: List[str] = []
+        szczegoly: List[str] = []
+        unknown_total = 0
         for rola, adres in GOVERNORS.items():
             klient = GovernorClient(address=adres, endpoints=self.endpoints)
             klient._endpoint = self._endpoint
-            wszystkie.extend(await klient._votes_on_one_governor(address, days, limit, rola))
+            glosy, stan, szczegol, unknown = await klient._votes_on_one_governor(
+                address, days, limit, rola)
+            wszystkie.extend(glosy)
+            stany.append(stan)
+            unknown_total += unknown
+            if szczegol:
+                szczegoly.append(f"{rola}: {szczegol}")
         wszystkie.sort(key=lambda p: p.voted_at or 0, reverse=True)
-        return wszystkie
+        # Severity order: the worst state of the two contracts describes the source.
+        ranking = [UNAVAILABLE, ERROR, TRUNCATED, PARTIAL, HEALTHY_COMPLETE, HEALTHY_EMPTY]
+        stan = next((s for s in ranking if s in stany), HEALTHY_EMPTY)
+        if stan == HEALTHY_EMPTY and wszystkie:
+            stan = HEALTHY_COMPLETE
+        return wszystkie, SourceReceipt("governor", stan, events=len(wszystkie),
+                                        unknown_window=unknown_total, limit=limit,
+                                        detail="; ".join(szczegoly))
 
     async def _votes_on_one_governor(self, address: str, days: int, limit: int,
-                                     rola: str) -> List[Proposal]:
+                                     rola: str) -> "tuple[List[Proposal], str, str, int]":
         """Jeden kontrakt. Wydzielone z `fetch_voted_proposals`, bo skan chodzi
-        teraz po dwóch, a każdy ma własne `votingDelay()` i własny zbiór zdarzeń."""
+        teraz po dwóch, a każdy ma własne `votingDelay()` i własny zbiór zdarzeń.
+
+        Zwraca (obserwacje, stan źródła, szczegół, liczba bez okna)."""
         voter_topic = "0x" + "0" * 24 + address[2:].lower()
         async with httpx.AsyncClient() as client:
             try:
                 head = await self._block_number(client)
             except Exception as e:  # noqa: BLE001
                 print(f"❌ Governor RPC unreachable: {e}")
-                return []
+                return [], UNAVAILABLE, f"RPC unreachable: {e}"[:200], 0
             first = max(0, head - days * BLOCKS_PER_DAY)
 
             try:
@@ -250,18 +295,21 @@ class GovernorClient:
                     client, [TOPIC_VOTE_CAST, voter_topic], first, head)
             except Exception as e:  # noqa: BLE001
                 print(f"❌ Governor VoteCast scan failed: {e}")
-                return []
+                return [], ERROR, f"VoteCast scan failed: {e}"[:200], 0
             if not vote_logs:
-                return []
+                return [], HEALTHY_EMPTY, "", 0
+            truncated = len(vote_logs) > limit
             vote_logs = vote_logs[-limit:]
 
             voted_ids = {_word(log["data"], 0) for log in vote_logs}
+            created_scan_failed = ""
             try:
                 created = await self._logs(
                     client, [TOPIC_PROPOSAL_CREATED], first, head)
             except Exception as e:  # noqa: BLE001
                 print(f"⚠ Governor ProposalCreated scan failed: {e}")
                 created = []
+                created_scan_failed = f"ProposalCreated scan failed: {e}"[:200]
             # Keep the full description, not just the title: the contract event
             # carries the complete proposal text (13k-21k characters for the AIPs
             # measured on 2026-08-03), which is what the reading_time component
@@ -341,6 +389,11 @@ class GovernorClient:
                 prop.end = closes
                 prop.voted_at = voted_at
                 prop.source = f"governor:{rola}"
+                prop.source_domain = f"governor:{rola}"
+                prop.source_vote_id = f"{log.get('transactionHash', '')}:{log.get('logIndex', '')}"
+                prop.native_proposal_id = str(pid)
+                prop.voter = address
+                prop.cast_at = voted_at
                 # Kategoria z taksonomii DAO - podstawa skladnika `novelty`.
                 # Brak kategorii zostaje None, NIE pusty ciag: "nie wiemy, czego
                 # dotyczy" to inna rzecz niz "nie nalezy do zadnej kategorii".
@@ -352,7 +405,15 @@ class GovernorClient:
                       f"known voting window (proposal created before the "
                       f"{days}-day scan) - excluded from concurrency")
             out.sort(key=lambda p: p.voted_at or 0, reverse=True)
-            return out
+            if truncated:
+                stan, szczegol = TRUNCATED, f"more than {limit} VoteCast logs, oldest dropped"
+            elif without_window or created_scan_failed:
+                stan = PARTIAL
+                szczegol = created_scan_failed or (
+                    f"{without_window} of {len(out)} votes without a known voting window")
+            else:
+                stan, szczegol = HEALTHY_COMPLETE, ""
+            return out, stan, szczegol, without_window
 
 
 async def _demo(address: str) -> None:

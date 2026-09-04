@@ -80,7 +80,7 @@ def now() -> datetime:
 
 def test_engine_loads_config(engine):
     info = engine.get_config_info()
-    assert info["version"] == "1.1.0"
+    assert info["version"] == "1.2.0"
     weights = info["weights"]
     assert abs(sum(weights.values()) - 1.0) < 0.01, "Weights must sum to 1.0"
 
@@ -334,7 +334,7 @@ def test_result_contains_all_fields(engine, now):
     assert isinstance(result.fatigue_score, float)
     assert 0.0 <= result.fatigue_score <= 100.0
     assert result.status in ("LOW", "MODERATE", "HIGH", "CRITICAL")
-    assert result.config_version == "1.1.0"
+    assert result.config_version == "1.2.0"
     assert result.computed_at == now
     assert result.address == "0xtest"
     assert all(

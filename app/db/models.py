@@ -58,11 +58,17 @@ class FatigueSnapshot(Base):
     Persisted result of a Delegate Fatigue Index computation.
 
     Purpose: fulfil the grant KPI "reproducible computation stored in DB".
-    Each call to GET /delegates/{address}/fatigue creates one row, allowing
-    historical tracking of governance workload over time.
+    Each call to GET /delegates/{address}/fatigue (ecosystem variant) creates
+    one row, allowing historical tracking of governance workload over time.
+
+    Per-event rows are different (closure review 2026-09-03, point 5): a GET
+    never writes one. They are registered by POST, idempotently on
+    `measurement_id` - the digest of the complete measurement identity - so a
+    browser refresh cannot manufacture measurement history.
 
     All raw metrics and component scores are stored so that any past result
-    can be fully reproduced and audited without re-running the engine.
+    can be fully reproduced and audited without re-running the engine; the
+    per-event manifest (point 4) additionally names every input set.
     """
     __tablename__ = "fatigue_snapshots"
 
@@ -99,3 +105,12 @@ class FatigueSnapshot(Base):
     vote_event_id = Column(String, nullable=True, index=True)
     code_commit = Column(String, nullable=True)
     source_state = Column(String, nullable=True)  # JSON text
+
+    # Complete measurement identity (closure review 2026-09-03, points 4-5).
+    # measurement_id is UNIQUE: the same vote-event measured on the same
+    # instrument, code and input sets is one row, however many times it is
+    # requested. manifest holds the reconstructable input object as JSON.
+    measurement_id = Column(String, nullable=True, unique=True, index=True)
+    instrument_hash = Column(String, nullable=True)
+    eligibility = Column(String, nullable=True)   # PRIMARY_ELIGIBLE | NOT_ELIGIBLE_...
+    manifest = Column(Text, nullable=True)        # JSON text

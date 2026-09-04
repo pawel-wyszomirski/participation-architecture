@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 
 sys.path.append(os.getcwd())
 
@@ -21,7 +22,9 @@ from app.services.rule_engine import (
     TriageResult,
     proposal_from_db_model,
 )
-from app.services.fatigue_engine import FatigueEngine, merge_stages
+from app.services.fatigue_engine import (
+    FatigueEngine, InstrumentInvalid, merge_stages, reconcile_observations,
+)
 from app.services.arbdata_client import ArbdataClient
 from app.services.governor_client import GovernorClient
 from app.services.snapshot_client import SnapshotClient
@@ -38,12 +41,21 @@ except Exception as e:
     print(f"⚠️  Rule Engine initialization failed: {e}")
     rule_engine = None
 
+fatigue_engine_error: Optional[str] = None
 try:
     fatigue_engine = FatigueEngine("fatigue_config.yaml")
-    print(f"✅ Fatigue Engine initialized: v{fatigue_engine.version}")
+    print(f"✅ Fatigue Engine initialized: v{fatigue_engine.version} "
+          f"instrument={fatigue_engine.instrument_hash[:12]}")
+except InstrumentInvalid as e:
+    # Fail closed (closure review point 6): the instrument is INVALID, the
+    # per-event endpoint answers 503 INSTRUMENT_INVALID, nothing is computed.
+    print(f"⛔ Fatigue Engine: {e}")
+    fatigue_engine = None
+    fatigue_engine_error = str(e)
 except Exception as e:
     print(f"⚠️  Fatigue Engine initialization failed: {e}")
     fatigue_engine = None
+    fatigue_engine_error = f"INSTRUMENT_INVALID: {e}"
 
 app = FastAPI(
     title="Participation Architecture API",
@@ -228,6 +240,26 @@ class MeasurementIdentityResponse(BaseModel):
     source_state: Dict[str, Any] = Field(..., description=(
         "Source-capability state: events per source, history size, events "
         "with unknown voting window, and what concurrency was counted from"))
+    # Closure review (2026-09-03) points 1-4
+    lifecycle_id: str = Field("", description="DecisionLifecycleId linking the stages of one decision")
+    lifecycle_stage_ids: List[str] = Field(default_factory=list)
+    source_vote_id: str = Field("", description="Native vote id from the source")
+    source_domain: str = Field("", description="snapshot | tally | governor:core | governor:treasury")
+    native_proposal_id: str = Field("", description="Proposal id as the source knows it")
+    target_content_hash: str = Field("", description="sha256 of the rated title + body")
+    context_stage_ids: List[str] = Field(default_factory=list)
+    context_set_hash: str = Field("")
+    ecosystem_ids: List[str] = Field(default_factory=list)
+    ecosystem_set_hash: str = Field("")
+    source_receipts: List[Dict[str, Any]] = Field(default_factory=list, description=(
+        "One capability receipt per source: HEALTHY_COMPLETE | HEALTHY_EMPTY | "
+        "PARTIAL | TRUNCATED | UNAVAILABLE | AUTH_MISSING | ERROR"))
+    instrument_hash: str = Field("", description="sha256 of fatigue_config.yaml bytes")
+    eligibility: str = Field("", description=(
+        "PRIMARY_ELIGIBLE | NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS - fail-closed verdict"))
+    eligibility_reasons: List[str] = Field(default_factory=list)
+    measurement_id: str = Field("", description=(
+        "Digest of the complete measurement identity; persistence is idempotent on it"))
 
 
 class PerEventFatigueResponse(FatigueResponse):
@@ -245,6 +277,12 @@ class PerEventFatigueResponse(FatigueResponse):
     as_of: datetime = Field(..., description="Vote timestamp used as the DFI reference point")
     identity: Optional[MeasurementIdentityResponse] = Field(
         None, description="Measurement identity (grant review point 4)")
+    eligibility: str = Field("", description=(
+        "PRIMARY_ELIGIBLE | NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS (closure review point 2)"))
+    measurement_id: str = Field("", description="Digest of the complete measurement identity")
+    persisted: Optional[bool] = Field(None, description=(
+        "POST only: true when this call registered a new row, false when a row "
+        "with the same measurement_id already existed. GET never persists."))
 
 
 # ============================================================================
@@ -547,44 +585,29 @@ async def get_fatigue_history(
     ]
 
 
-@app.get(
-    "/delegates/{address}/per-event-fatigue",
-    response_model=PerEventFatigueResponse,
-    tags=["Delegates"],
-)
-async def get_per_event_fatigue(
-    address: str,
-    proposal_id: Optional[str] = Query(
-        None,
-        description=(
-            "Snapshot id of the proposal to rate. If omitted, the delegate's "
-            "most recent vote is used."
-        ),
+_PER_EVENT_PROPOSAL_QUERY = Query(
+    None,
+    description=(
+        "Id of the vote-stage to rate (Snapshot proposal id, `tally:<id>` or "
+        "`governor:<core|treasury>:<id>`). If omitted, the delegate's most "
+        "recent vote is used."
     ),
-    db: Session = Depends(get_db),
-):
-    """
-    Per-event Delegate Fatigue Index (dissertation 5.3.5a; per-event pivot).
+)
 
-    Computes DFI for a SINGLE vote by the delegate, matched to the vote time
-    (as_of). The unit is one vote, not a 30-day aggregate - this is what aligns
-    DFI with the task-specific NASA-TLX (validated to ~24h, Hernandez 2021).
 
-    Flow: fetch the delegate's voted proposals from Snapshot -> pick the target
-    (given proposal_id, else the most recent vote) -> compute_per_event with
-    as_of = the proposal's start time.
+async def _measure_per_event(address: str, proposal_id: Optional[str]):
+    """Compute the per-event DFI for one vote. Shared by GET (read) and POST
+    (register): closure review point 5 separates compute/persist from read.
 
-    reading_time/novelty come from the rated proposal (intrinsic load);
-    volume/concurrency/burstiness from the delegate's voting context.
-
-    UI note (anti-anchoring, decision D8): the survey must collect NASA-TLX
-    BEFORE this score is shown to the delegate.
-    """
+    Returns (result, target, ref_time)."""
     if not fatigue_engine:
-        raise HTTPException(status_code=503, detail="Fatigue engine not initialized")
+        raise HTTPException(
+            status_code=503,
+            detail=fatigue_engine_error or "INSTRUMENT_INVALID: fatigue engine not initialized",
+        )
 
-    # Merge off-chain (Snapshot) and on-chain votes, THEN collapse the stages of
-    # one decision into one event.
+    # Merge off-chain (Snapshot) and on-chain votes, THEN link the stages of
+    # one decision into a lifecycle.
     #
     # This used to be a plain union, justified in a comment as deliberate:
     # "cognitive load is source-agnostic, every decision the delegate makes
@@ -609,13 +632,23 @@ async def get_per_event_fatigue(
     # directly and is authoritative for Arbitrum; Tally stays for coverage of
     # anything it still indexes, and duplicate ids cannot collide because each
     # client prefixes its own.
-    snap_votes = await SnapshotClient().fetch_voted_proposals(address, limit=200)
-    tally_votes = await TallyClient().fetch_voted_proposals(address, limit=200)
-    chain_votes = await GovernorClient().fetch_voted_proposals(address, limit=200)
-    # Okno scalania etapow z konfiguracji - powtarzalny tytul procesu nie moze
-    # laczyc dwoch cykli w jedno zdarzenie (uzasadnienie przy kluczu w YAML).
+    #
+    # Every source answers with a capability receipt (closure review point 2):
+    # a zero here is no longer ambiguous between "healthy and empty" and
+    # "did not answer" - the receipt says which, and eligibility depends on it.
+    snap_votes, snap_receipt = await SnapshotClient().fetch_voted_observations(address, limit=200)
+    tally_votes, tally_receipt = await TallyClient().fetch_voted_observations(address, limit=200)
+    chain_votes, chain_receipt = await GovernorClient().fetch_voted_observations(address, limit=200)
+    # Reconciliation is explicit and logged (point 3): only records proven to be
+    # the same observation (same voter, source, native proposal id) collapse,
+    # and the superseded native ids go into the manifest.
+    observations, reconciliations = reconcile_observations(
+        (snap_votes or []) + (tally_votes or []) + (chain_votes or []))
+    # Okno wiazania etapow z konfiguracji - powtarzalny tytul procesu nie moze
+    # laczyc dwoch cykli w jeden (uzasadnienie przy kluczu w YAML). Etapy zostaja
+    # osobnymi, zamrozonymi obserwacjami (point 1).
     voted = merge_stages(
-        (snap_votes or []) + (tally_votes or []) + (chain_votes or []),
+        observations,
         okno_dni=fatigue_engine.config.get("stage_merge_window_days", 45),
     )
 
@@ -652,50 +685,26 @@ async def get_per_event_fatigue(
     # Ecosystem governance load at the vote moment (grant review point 3):
     # every proposal open in the space at t, not just the delegate's slice.
     # None = the source did not answer; the engine then falls back to the
-    # voted-only construction and NAMES it in metrics.concurrency_source -
-    # a failed source must not read as "nothing was open".
-    ecosystem = await SnapshotClient().fetch_proposals_active_at(_vote_ts)
+    # voted-only construction, NAMES it in metrics.concurrency_source AND
+    # marks the result NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS - a different
+    # construct is not the frozen instrument (closure review point 2).
+    ecosystem, eco_receipt = await SnapshotClient().fetch_ecosystem_exposure(_vote_ts)
 
     result = fatigue_engine.compute_per_event(
         address=address, target_proposal=target, voted_history=voted, now=ref_time,
         ecosystem_proposals=ecosystem,
-        # Source-capability state (review point 4): how many events each source
-        # returned for THIS measurement. The old clients collapse a connection
-        # failure into an empty list, so a zero here means "nothing came from
-        # this source", not "the source is healthy and empty" - recorded as-is.
         source_counts={
             "snapshot": len(snap_votes or []),
             "tally": len(tally_votes or []),
             "governor": len(chain_votes or []),
         },
+        source_receipts=[snap_receipt, tally_receipt, chain_receipt, eco_receipt],
+        reconciliations=reconciliations,
     )
+    return result, target, ref_time
 
-    # Persist snapshot for reproducibility (same table as ecosystem variant).
-    snapshot = FatigueSnapshot(
-        address=result.address,
-        computed_at=result.computed_at,
-        fatigue_score=result.fatigue_score,
-        status=result.status,
-        config_version=result.config_version,
-        comp_volume=result.components.volume,
-        comp_concurrency=result.components.concurrency,
-        comp_burstiness=result.components.burstiness,
-        comp_reading_time=result.components.reading_time,
-        comp_novelty=result.components.novelty,
-        metric_proposals_7d=result.metrics.proposals_7d,
-        metric_proposals_30d=result.metrics.proposals_30d,
-        metric_concurrent_active=result.metrics.concurrent_active,
-        metric_avg_word_count=result.metrics.avg_word_count,
-        metric_weekly_avg=result.metrics.weekly_avg,
-        metric_novelty_ratio=result.metrics.novelty_ratio,
-        vote_event_id=result.identity.vote_event_id if result.identity else None,
-        code_commit=result.identity.code_commit if result.identity else None,
-        source_state=(json.dumps(result.identity.source_state)
-                      if result.identity else None),
-    )
-    db.add(snapshot)
-    db.commit()
 
+def _per_event_response(result, target, ref_time, persisted: Optional[bool]) -> "PerEventFatigueResponse":
     return PerEventFatigueResponse(
         address=result.address,
         fatigue_score=result.fatigue_score,
@@ -725,15 +734,109 @@ async def get_per_event_fatigue(
         target_proposal_id=target.id,
         target_proposal_title=(getattr(target, "title", None) or ""),
         as_of=ref_time,
-        identity=(MeasurementIdentityResponse(
-            vote_event_id=result.identity.vote_event_id,
-            stage_ids=result.identity.stage_ids,
-            voted_at=result.identity.voted_at,
-            instrument_version=result.identity.instrument_version,
-            code_commit=result.identity.code_commit,
-            source_state=result.identity.source_state,
-        ) if result.identity else None),
+        identity=(MeasurementIdentityResponse(**result.identity.manifest())
+                  if result.identity else None),
+        eligibility=result.identity.eligibility if result.identity else "",
+        measurement_id=result.identity.measurement_id if result.identity else "",
+        persisted=persisted,
     )
+
+
+@app.get(
+    "/delegates/{address}/per-event-fatigue",
+    response_model=PerEventFatigueResponse,
+    tags=["Delegates"],
+)
+async def get_per_event_fatigue(
+    address: str,
+    proposal_id: Optional[str] = _PER_EVENT_PROPOSAL_QUERY,
+):
+    """
+    Per-event Delegate Fatigue Index (dissertation 5.3.5a; per-event pivot).
+
+    Computes DFI for a SINGLE vote by the delegate, matched to the vote time
+    (as_of). The unit is one vote, not a 30-day aggregate - this is what aligns
+    DFI with the task-specific NASA-TLX (validated to ~24h, Hernandez 2021).
+
+    Flow: fetch the delegate's votes from Snapshot, Tally and the Governor
+    contracts (each with a capability receipt) -> reconcile -> link stages into
+    lifecycles -> pick the target (given proposal_id, else the most recent
+    vote) -> compute_per_event with as_of = the vote timestamp.
+
+    reading_time/novelty come from the rated vote-stage (intrinsic load);
+    volume/concurrency/burstiness from the delegate's voting context.
+
+    READ ONLY (closure review point 5): this never writes a row. A browser
+    refresh is HTTP traffic, not a measurement. To register a measurement in
+    the scientific registry use POST on the same path.
+
+    UI note (anti-anchoring, decision D8): the survey must collect NASA-TLX
+    BEFORE this score is shown to the delegate.
+    """
+    result, target, ref_time = await _measure_per_event(address, proposal_id)
+    return _per_event_response(result, target, ref_time, persisted=None)
+
+
+@app.post(
+    "/delegates/{address}/per-event-fatigue",
+    response_model=PerEventFatigueResponse,
+    tags=["Delegates"],
+)
+async def register_per_event_fatigue(
+    address: str,
+    proposal_id: Optional[str] = _PER_EVENT_PROPOSAL_QUERY,
+    db: Session = Depends(get_db),
+):
+    """
+    Compute AND register the per-event measurement (closure review point 5).
+
+    Idempotent on the complete measurement identity: the same vote-event on
+    the same instrument, code and input sets is ONE row in fatigue_snapshots,
+    however many times this is called. `persisted` in the response says
+    whether this call created the row (true) or found it (false). A changed
+    input set - a new stage observed, a source answering differently - is a
+    different measurement and gets its own row, with its own manifest.
+    """
+    result, target, ref_time = await _measure_per_event(address, proposal_id)
+    mid = result.identity.measurement_id
+    existing = db.query(FatigueSnapshot).filter(FatigueSnapshot.measurement_id == mid).first()
+    if existing is not None:
+        return _per_event_response(result, target, ref_time, persisted=False)
+
+    snapshot = FatigueSnapshot(
+        address=result.address,
+        computed_at=result.computed_at,
+        fatigue_score=result.fatigue_score,
+        status=result.status,
+        config_version=result.config_version,
+        comp_volume=result.components.volume,
+        comp_concurrency=result.components.concurrency,
+        comp_burstiness=result.components.burstiness,
+        comp_reading_time=result.components.reading_time,
+        comp_novelty=result.components.novelty,
+        metric_proposals_7d=result.metrics.proposals_7d,
+        metric_proposals_30d=result.metrics.proposals_30d,
+        metric_concurrent_active=result.metrics.concurrent_active,
+        metric_avg_word_count=result.metrics.avg_word_count,
+        metric_weekly_avg=result.metrics.weekly_avg,
+        metric_novelty_ratio=result.metrics.novelty_ratio,
+        vote_event_id=result.identity.vote_event_id,
+        code_commit=result.identity.code_commit,
+        source_state=json.dumps(result.identity.source_state),
+        measurement_id=mid,
+        instrument_hash=result.identity.instrument_hash,
+        eligibility=result.identity.eligibility,
+        manifest=json.dumps(result.identity.manifest(), sort_keys=True),
+    )
+    db.add(snapshot)
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two concurrent registrations of the same measurement: the unique
+        # index decides, this call reports the row as already present.
+        db.rollback()
+        return _per_event_response(result, target, ref_time, persisted=False)
+    return _per_event_response(result, target, ref_time, persisted=True)
 
 
 # ============================================================================
