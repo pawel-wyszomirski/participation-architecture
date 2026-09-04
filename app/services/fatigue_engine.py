@@ -106,6 +106,9 @@ class SourceReceipt:
     detail: str = ""                  # human-readable cause (error text, limit)
     unknown_window: int = 0           # records without a usable voting window
     limit: Optional[int] = None       # page/scan limit the query ran with
+    oldest_cast_at: Optional[int] = None  # oldest record delivered (epoch) - lets
+                                          # eligibility tell whether a TRUNCATED
+                                          # history still covers the context window
 
     def __post_init__(self) -> None:
         if self.state not in SOURCE_STATES:
@@ -192,7 +195,8 @@ class MeasurementIdentity:
     source_receipts: List[Dict[str, Any]] = field(default_factory=list)
     instrument_hash: str = ""                    # sha256 of fatigue_config.yaml bytes
     eligibility: str = ELIGIBLE                  # PRIMARY_ELIGIBLE | NOT_ELIGIBLE_...
-    eligibility_reasons: List[str] = field(default_factory=list)
+    eligibility_reasons: List[str] = field(default_factory=list)   # disqualifying
+    eligibility_notes: List[str] = field(default_factory=list)     # recorded, not disqualifying
     measurement_id: str = ""                     # digest of the whole manifest
 
     def manifest(self) -> Dict[str, Any]:
@@ -537,7 +541,7 @@ class FatigueEngine:
 
         receipts = [r.to_dict() if isinstance(r, SourceReceipt) else dict(r)
                     for r in (source_receipts or [])]
-        eligibility, reasons = self._eligibility(receipts, concurrency_source)
+        eligibility, reasons, notes = self._eligibility(receipts, concurrency_source, now_ts)
 
         title = getattr(target_proposal, "title", None) or ""
         body = getattr(target_proposal, "body", None) or ""
@@ -588,6 +592,7 @@ class FatigueEngine:
             instrument_hash=self.instrument_hash,
             eligibility=eligibility,
             eligibility_reasons=reasons,
+            eligibility_notes=notes,
             measurement_id=_sha(json.dumps(manifest_core, sort_keys=True))[:32],
         )
 
@@ -633,17 +638,28 @@ class FatigueEngine:
                 pierwsze[k] = p
         return list(pierwsze.values())
 
-    def _eligibility(self, receipts: List[Dict[str, Any]],
-                     concurrency_source: str) -> Tuple[str, List[str]]:
+    def _eligibility(self, receipts: List[Dict[str, Any]], concurrency_source: str,
+                     now_ts: int) -> Tuple[str, List[str], List[str]]:
         """Fail closed (closure review points 2 and 6): a confirmatory
         measurement is PRIMARY_ELIGIBLE only when every required source
         answered in an eligible state and concurrency was measured on the
         construct the instrument declares (ecosystem exposure). Rules live in
-        fatigue_config.yaml#eligibility; this method only applies them."""
+        fatigue_config.yaml#eligibility; this method only applies them.
+
+        TRUNCATED is judged against the context window, not on its own: a
+        history cut at the page limit still measures volume/burstiness
+        completely when its OLDEST delivered record predates the window
+        (`context_window_days` before the vote). That case passes with a note -
+        the novelty denominator is then bounded to the delivered records, which
+        the manifest states. A truncation that reaches INTO the window fails.
+
+        Returns (verdict, disqualifying reasons, non-disqualifying notes)."""
         rules = self.config.get("eligibility") or {}
         required = list(rules.get("required_sources") or [])
         ok_states = set(rules.get("eligible_states") or [HEALTHY_COMPLETE, HEALTHY_EMPTY])
+        window = int(rules.get("context_window_days") or 30) * 86_400
         reasons: List[str] = []
+        notes: List[str] = []
         if not receipts:
             reasons.append("no source receipts supplied - completeness of inputs unproven")
         by_source = {r.get("source"): r for r in receipts}
@@ -651,13 +667,24 @@ class FatigueEngine:
             r = by_source.get(name)
             if r is None:
                 reasons.append(f"required source {name}: no receipt")
-            elif r.get("state") not in ok_states:
-                reasons.append(f"required source {name}: {r.get('state')}"
-                               + (f" ({r.get('detail')})" if r.get("detail") else ""))
+                continue
+            state = r.get("state")
+            if state in ok_states:
+                if state == PARTIAL and r.get("detail"):
+                    notes.append(f"{name}: PARTIAL ({r['detail']})")
+                continue
+            if state == TRUNCATED and r.get("oldest_cast_at") is not None \
+                    and int(r["oldest_cast_at"]) <= now_ts - window:
+                notes.append(f"{name}: TRUNCATED beyond the {window // 86_400}-day context "
+                             f"window ({r.get('events')} records delivered) - context "
+                             "complete, novelty denominator bounded to delivered records")
+                continue
+            reasons.append(f"required source {name}: {state}"
+                           + (f" ({r.get('detail')})" if r.get("detail") else ""))
         if concurrency_source != "ecosystem:snapshot":
             reasons.append(f"concurrency measured as {concurrency_source}, not ecosystem "
                            "exposure - a different construct than the frozen instrument")
-        return (ELIGIBLE if not reasons else NOT_ELIGIBLE), reasons
+        return (ELIGIBLE if not reasons else NOT_ELIGIBLE), reasons, notes
 
     def _novelty_per_event(self, target: Any, history: List[Any]) -> float:
         """Na ile ten RODZAJ decyzji jest nowy DLA TEGO delegata.

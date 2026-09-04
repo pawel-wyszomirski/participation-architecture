@@ -32,7 +32,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 import app.main as main  # noqa: E402
 from app.db.models import FatigueSnapshot, Proposal  # noqa: E402
 from app.services.fatigue_engine import (  # noqa: E402
-    SourceReceipt, HEALTHY_COMPLETE, AUTH_MISSING, ELIGIBLE, NOT_ELIGIBLE, UNAVAILABLE,
+    SourceReceipt, HEALTHY_COMPLETE, AUTH_MISSING, ELIGIBLE, NOT_ELIGIBLE, UNAVAILABLE, ERROR,
 )
 
 NOW = datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
@@ -56,6 +56,7 @@ class _Fakes:
     """Mutable so a test can flip a source into failure."""
     snapshot_state = HEALTHY_COMPLETE
     eco_state = HEALTHY_COMPLETE
+    taxonomy_state = HEALTHY_COMPLETE
 
 
 async def _snap(self, address, limit=200, **kw):
@@ -80,19 +81,24 @@ async def _eco(self, at_ts, space=None):
     return [_obs("eco-1", 1)], SourceReceipt("ecosystem", HEALTHY_COMPLETE, events=1)
 
 
-async def _no_registry(self):
-    return False
+async def _registry(self):
+    """The DAO registry is a source with a receipt too (production 2026-09-04:
+    it answered 403 and the verdict stayed clean)."""
+    self.receipt = SourceReceipt("taxonomy", _Fakes.taxonomy_state,
+                                 detail="fake" if _Fakes.taxonomy_state != HEALTHY_COMPLETE else "")
+    return 0
 
 
 @pytest.fixture(autouse=True)
 def fakes(monkeypatch):
     _Fakes.snapshot_state = HEALTHY_COMPLETE
     _Fakes.eco_state = HEALTHY_COMPLETE
+    _Fakes.taxonomy_state = HEALTHY_COMPLETE
     monkeypatch.setattr(main.SnapshotClient, "fetch_voted_observations", _snap)
     monkeypatch.setattr(main.SnapshotClient, "fetch_ecosystem_exposure", _eco)
     monkeypatch.setattr(main.TallyClient, "fetch_voted_observations", _tally)
     monkeypatch.setattr(main.GovernorClient, "fetch_voted_observations", _gov)
-    monkeypatch.setattr(main.ArbdataClient, "load", _no_registry)
+    monkeypatch.setattr(main.ArbdataClient, "load", _registry)
     yield
 
 
@@ -158,7 +164,7 @@ def test_target_by_stage_id_and_identity_fields(client):
     assert ident["stage_ids"] == ["governor:core:9"]
     assert ident["source_domain"] == "governor:core"
     assert ident["source_vote_id"] == "v-governor:core:9"
-    assert {x["source"] for x in ident["source_receipts"]} == {"snapshot", "tally", "governor", "ecosystem"}
+    assert {x["source"] for x in ident["source_receipts"]} == {"snapshot", "tally", "governor", "ecosystem", "taxonomy"}
 
 
 def test_required_source_failure_is_visible_and_disqualifies(client):
@@ -178,3 +184,14 @@ def test_invalid_instrument_answers_503_instrument_invalid(client, monkeypatch):
     assert "INSTRUMENT_INVALID" in r.json()["detail"]
     p = client.post(f"/delegates/{ADDR}/per-event-fatigue")
     assert p.status_code == 503
+
+
+def test_taxonomy_registry_failure_is_visible_and_disqualifies(client):
+    """Production 2026-09-04: arbdata answered 403, novelty 0.0, verdict clean.
+    The registry's receipt must reach the verdict."""
+    _Fakes.taxonomy_state = ERROR
+    r = client.get(f"/delegates/{ADDR}/per-event-fatigue")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["eligibility"] == NOT_ELIGIBLE
+    assert any("taxonomy" in x for x in body["identity"]["eligibility_reasons"])

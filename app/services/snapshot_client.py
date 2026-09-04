@@ -565,7 +565,9 @@ class SnapshotClient:
         else:
             state = HEALTHY_COMPLETE
         detail = f"{orphaned} votes on deleted proposals skipped" if orphaned else ""
-        return out, SourceReceipt("snapshot", state, events=len(out), limit=limit, detail=detail)
+        oldest = min((p.cast_at for p in out if p.cast_at), default=None)
+        return out, SourceReceipt("snapshot", state, events=len(out), limit=limit, detail=detail,
+                                  oldest_cast_at=oldest)
 
 class FatigueEngine:
     """Core logic for calculating Delegate Fatigue Index"""

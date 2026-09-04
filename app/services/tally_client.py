@@ -246,4 +246,6 @@ class TallyClient:
             "proposal page full (100)" if proposals_truncated else "",
             "index frozen since 2026-06-08 (known)",
         ) if x)
-        return out, SourceReceipt("tally", state, events=len(out), limit=limit, detail=detail)
+        oldest = min((p.cast_at for p in out if p.cast_at), default=None)
+        return out, SourceReceipt("tally", state, events=len(out), limit=limit, detail=detail,
+                                  oldest_cast_at=oldest)

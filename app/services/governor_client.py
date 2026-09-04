@@ -271,9 +271,10 @@ class GovernorClient:
         stan = next((s for s in ranking if s in stany), HEALTHY_EMPTY)
         if stan == HEALTHY_EMPTY and wszystkie:
             stan = HEALTHY_COMPLETE
+        oldest = min((p.cast_at for p in wszystkie if p.cast_at), default=None)
         return wszystkie, SourceReceipt("governor", stan, events=len(wszystkie),
                                         unknown_window=unknown_total, limit=limit,
-                                        detail="; ".join(szczegoly))
+                                        detail="; ".join(szczegoly), oldest_cast_at=oldest)
 
     async def _votes_on_one_governor(self, address: str, days: int, limit: int,
                                      rola: str) -> "tuple[List[Proposal], str, str, int]":

@@ -38,12 +38,25 @@ response code.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import re
+from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 import httpx
 
+from app.services.fatigue_engine import (
+    SourceReceipt, HEALTHY_COMPLETE, HEALTHY_EMPTY, PARTIAL, UNAVAILABLE, ERROR,
+)
+
 ENDPOINT = "https://arbdata.com/api/governance-proposals"
+
+# Last good copy of the registry. Taxonomy does not change for past proposals,
+# so a cached registry answers correctly for everything it covers and is
+# reported PARTIAL (dated) rather than pretending to be live. Found necessary
+# on 2026-09-04: the endpoint started answering 403 {"error":"Forbidden"} and
+# the novelty component silently fell back to the keyword list for everyone.
+CACHE_PATH = Path(__file__).resolve().parents[2] / "data" / "cache" / "arbdata-registry.json"
 
 
 def _klucz(title: str) -> str:
@@ -73,38 +86,90 @@ def _epoch(stamp: Optional[str]) -> Optional[int]:
 class ArbdataClient:
     """Proposal registry keyed by the on-chain proposal id."""
 
-    def __init__(self, endpoint: str = ENDPOINT):
+    def __init__(self, endpoint: str = ENDPOINT, cache_path: Path = CACHE_PATH):
         self.endpoint = endpoint
+        self.cache_path = Path(cache_path)
         self._rekordy: Dict[int, dict] = {}
         self._po_tytule: Optional[Dict[str, str]] = None
+        # Capability receipt of the last load() (closure review point 2). The
+        # registry is a SOURCE the instrument depends on - novelty is defined on
+        # the DAO's taxonomy - so its failure has to reach the eligibility
+        # verdict, not just stdout.
+        self.receipt: SourceReceipt = SourceReceipt("taxonomy", UNAVAILABLE, detail="not loaded")
 
     async def load(self) -> int:
-        """Fetch the registry. Returns how many proposals were read.
+        """Fetch the registry. Returns how many proposals were read and sets
+        `self.receipt`.
 
-        A failure returns 0 and leaves the index empty, so callers fall back to
-        whatever they had. Silence here must not look like "no proposals exist" -
-        that confusion is what let a frozen Tally hide six real votes.
+        Live answer -> HEALTHY_COMPLETE (or HEALTHY_EMPTY), and the rows are
+        written to the cache. No live answer -> the cached copy, if any, with
+        PARTIAL and the cache date in the detail; without a cache the receipt is
+        ERROR (HTTP status / bad shape) or UNAVAILABLE (transport). The index is
+        left empty in that last case, so callers fall back to whatever they had -
+        and the verdict says so. Silence here must not look like "no proposals
+        exist"; that confusion is what let a frozen Tally hide six real votes.
         """
+        failure: Optional[SourceReceipt] = None
+        rows = None
         try:
             async with httpx.AsyncClient() as client:
                 r = await client.get(self.endpoint, timeout=45.0)
                 r.raise_for_status()
                 rows = r.json()
+        except httpx.HTTPStatusError as e:
+            print(f"❌ arbdata HTTP {e.response.status_code}: {e}")
+            failure = SourceReceipt("taxonomy", ERROR, detail=f"HTTP {e.response.status_code}")
         except Exception as e:  # noqa: BLE001
             print(f"❌ arbdata unreachable: {e}")
-            return 0
-
-        if not isinstance(rows, list):
+            failure = SourceReceipt("taxonomy", UNAVAILABLE, detail=f"{type(e).__name__}: {e}"[:200])
+        if failure is None and not isinstance(rows, list):
             print("❌ arbdata returned an unexpected shape - index left empty")
-            return 0
+            failure = SourceReceipt("taxonomy", ERROR, detail="unexpected shape")
 
+        if failure is None:
+            self._index(rows)
+            self._write_cache(rows)
+            self.receipt = SourceReceipt(
+                "taxonomy", HEALTHY_COMPLETE if self._rekordy else HEALTHY_EMPTY,
+                events=len(self._rekordy))
+            return len(self._rekordy)
+
+        cached, stamp = self._read_cache()
+        if cached is not None:
+            self._index(cached)
+            self.receipt = SourceReceipt(
+                "taxonomy", PARTIAL, events=len(self._rekordy),
+                detail=f"live: {failure.detail}; cached copy from {stamp}")
+            print(f"⚠ arbdata: using cached registry from {stamp} ({len(self._rekordy)} rows)")
+            return len(self._rekordy)
+        self.receipt = failure
+        return 0
+
+    def _index(self, rows) -> None:
         for row in rows:
             try:
                 pid = int(str(row.get("proposal_id")))
             except (TypeError, ValueError):
                 continue
             self._rekordy[pid] = row
-        return len(self._rekordy)
+
+    def _write_cache(self, rows) -> None:
+        try:
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+            self.cache_path.write_text(json.dumps({
+                "fetched_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+                "endpoint": self.endpoint,
+                "rows": rows,
+            }))
+        except OSError as e:
+            print(f"⚠ arbdata cache not written: {e}")
+
+    def _read_cache(self):
+        try:
+            data = json.loads(self.cache_path.read_text())
+            return data.get("rows") or [], (data.get("fetched_at") or "?")[:10]
+        except (OSError, ValueError):
+            return None, None
 
     def window(self, proposal_id: int) -> Optional[Tuple[int, int]]:
         """Real (opens, closes) for a proposal, or None when unknown.

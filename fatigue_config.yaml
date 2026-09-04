@@ -135,15 +135,26 @@ stage_merge_window_days: 45
 #   ecosystem - all proposals open in the space at t (concurrency construct);
 #               without it concurrency falls back to voted_only, which is a
 #               different construct and disqualifies on its own
+#   taxonomy  - the DAO's proposal registry (arbdata): novelty is DEFINED on its
+#               categories, and the governor voting windows come from it. Without
+#               it novelty falls back to a keyword list, which is a different
+#               construct. Found 2026-09-04: the endpoint answered 403 and every
+#               result carried novelty 0.0 with a clean verdict. A cached copy
+#               of the registry passes as PARTIAL (dated).
 #   tally is NOT required: it covers nothing the governor scan does not, and its
 #   index is frozen; its receipt is still recorded.
 # eligible_states: PARTIAL is allowed - it means some history records lack a
 #   voting window, which only affects voted_concurrent (reported, not the
-#   concurrency driver) and is counted in the manifest. TRUNCATED is not: a
-#   history cut at the page limit cannot prove the 30-day window is complete.
+#   concurrency driver) and is counted in the manifest.
+# TRUNCATED is judged against context_window_days: a history cut at the page
+#   limit still measures volume/burstiness completely when its oldest delivered
+#   record predates the window before the vote - that passes with a note (the
+#   novelty denominator is then bounded to the delivered records). A truncation
+#   reaching into the window fails.
 eligibility:
-  required_sources: [snapshot, governor, ecosystem]
+  required_sources: [snapshot, governor, ecosystem, taxonomy]
   eligible_states: [HEALTHY_COMPLETE, HEALTHY_EMPTY, PARTIAL]
+  context_window_days: 30
 
 # Status thresholds (score 0-100). These are WORKLOAD bands, nothing more.
 #

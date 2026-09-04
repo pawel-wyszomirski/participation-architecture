@@ -257,7 +257,9 @@ class MeasurementIdentityResponse(BaseModel):
     instrument_hash: str = Field("", description="sha256 of fatigue_config.yaml bytes")
     eligibility: str = Field("", description=(
         "PRIMARY_ELIGIBLE | NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS - fail-closed verdict"))
-    eligibility_reasons: List[str] = Field(default_factory=list)
+    eligibility_reasons: List[str] = Field(default_factory=list, description="Disqualifying")
+    eligibility_notes: List[str] = Field(default_factory=list, description=(
+        "Recorded limits that do not disqualify (e.g. history truncated beyond the context window)"))
     measurement_id: str = Field("", description=(
         "Digest of the complete measurement identity; persistence is idempotent on it"))
 
@@ -636,7 +638,10 @@ async def _measure_per_event(address: str, proposal_id: Optional[str]):
     # Every source answers with a capability receipt (closure review point 2):
     # a zero here is no longer ambiguous between "healthy and empty" and
     # "did not answer" - the receipt says which, and eligibility depends on it.
-    snap_votes, snap_receipt = await SnapshotClient().fetch_voted_observations(address, limit=200)
+    # 1000 is Snapshot's page ceiling. 200 cut an active delegate's history at
+    # the limit (P02: 408 votes) and disqualified the measurement on 2026-09-04;
+    # a truncation beyond the 30-day window is judged by the engine, not here.
+    snap_votes, snap_receipt = await SnapshotClient().fetch_voted_observations(address, limit=1000)
     tally_votes, tally_receipt = await TallyClient().fetch_voted_observations(address, limit=200)
     chain_votes, chain_receipt = await GovernorClient().fetch_voted_observations(address, limit=200)
     # Reconciliation is explicit and logged (point 3): only records proven to be
@@ -656,9 +661,13 @@ async def _measure_per_event(address: str, proposal_id: Optional[str]):
     # z kontraktu dostaja ja po identyfikatorze, Snapshot dopiero tutaj - po tytule,
     # bo nadaje propozycjom wlasne identyfikatory. Bez tego `novelty` liczyloby sie
     # z historii, w ktorej kategorie ma jedna pozycja na dwiescie.
+    # The registry is a source with a receipt (found 2026-09-04: it answered 403
+    # and novelty fell back to the keyword list for everyone, with a clean
+    # verdict). Its receipt goes to the engine like the vote sources' do.
     _rejestr = ArbdataClient()
     if await _rejestr.load():
         _rejestr.przypisz_kategorie(voted)
+    taxonomy_receipt = _rejestr.receipt
     if not voted:
         raise HTTPException(
             status_code=404,
@@ -698,7 +707,7 @@ async def _measure_per_event(address: str, proposal_id: Optional[str]):
             "tally": len(tally_votes or []),
             "governor": len(chain_votes or []),
         },
-        source_receipts=[snap_receipt, tally_receipt, chain_receipt, eco_receipt],
+        source_receipts=[snap_receipt, tally_receipt, chain_receipt, eco_receipt, taxonomy_receipt],
         reconciliations=reconciliations,
     )
     return result, target, ref_time

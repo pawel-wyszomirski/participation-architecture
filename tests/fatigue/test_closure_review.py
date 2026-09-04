@@ -75,6 +75,7 @@ def healthy_receipts():
         SourceReceipt("tally", AUTH_MISSING, detail="no key"),
         SourceReceipt("governor", HEALTHY_COMPLETE, events=2),
         SourceReceipt("ecosystem", HEALTHY_COMPLETE, events=2),
+        SourceReceipt("taxonomy", HEALTHY_COMPLETE, events=89),
     ]
 
 
@@ -391,3 +392,76 @@ def test_target_content_hash_tracks_the_rated_text(engine, now):
     a = engine.compute_per_event("0xA", t1, [t1], now=now, ecosystem_proposals=[])
     b = engine.compute_per_event("0xA", t2, [t2], now=now, ecosystem_proposals=[])
     assert a.identity.target_content_hash != b.identity.target_content_hash
+
+
+# ---------------------------------------------------------------------------
+# 2b. Taxonomy is a source; TRUNCATED is judged against the context window
+# (both found on production 2026-09-04, after the first deploy of v-2026-09-04)
+# ---------------------------------------------------------------------------
+
+def test_taxonomy_failure_disqualifies(engine, now):
+    """arbdata answered 403 and novelty fell back to the keyword list for
+    everyone - with a clean verdict. The registry is a source like the others."""
+    receipts = healthy_receipts()
+    receipts[4] = SourceReceipt("taxonomy", ERROR, detail="HTTP 403")
+    target = obs("0xt", 0, now)
+    r = engine.compute_per_event("0xA", target, [target], now=now,
+                                 ecosystem_proposals=[], source_receipts=receipts)
+    assert r.identity.eligibility == NOT_ELIGIBLE
+    assert any("taxonomy" in x and "403" in x for x in r.identity.eligibility_reasons)
+
+
+def test_cached_taxonomy_is_partial_and_eligible(engine, now):
+    receipts = healthy_receipts()
+    receipts[4] = SourceReceipt("taxonomy", PARTIAL, events=89,
+                                detail="live: HTTP 403; cached copy from 2026-08-28")
+    target = obs("0xt", 0, now)
+    r = engine.compute_per_event("0xA", target, [target], now=now,
+                                 ecosystem_proposals=[], source_receipts=receipts)
+    assert r.identity.eligibility == ELIGIBLE
+    assert any("cached copy" in x for x in r.identity.eligibility_notes)
+
+
+def test_truncated_beyond_window_is_eligible_with_note(engine, now):
+    """P02 has 408 Snapshot votes; a page of 200 newest is TRUNCATED but its
+    oldest record predates the 30-day window, so volume/burstiness are complete."""
+    receipts = healthy_receipts()
+    receipts[0] = SourceReceipt("snapshot", TRUNCATED, events=200, limit=200,
+                                oldest_cast_at=int((now - timedelta(days=400)).timestamp()))
+    target = obs("0xt", 0, now)
+    r = engine.compute_per_event("0xA", target, [target], now=now,
+                                 ecosystem_proposals=[], source_receipts=receipts)
+    assert r.identity.eligibility == ELIGIBLE
+    assert any("TRUNCATED beyond" in x for x in r.identity.eligibility_notes)
+
+
+def test_truncated_inside_window_is_not_eligible(engine, now):
+    receipts = healthy_receipts()
+    receipts[0] = SourceReceipt("snapshot", TRUNCATED, events=200, limit=200,
+                                oldest_cast_at=int((now - timedelta(days=10)).timestamp()))
+    target = obs("0xt", 0, now)
+    r = engine.compute_per_event("0xA", target, [target], now=now,
+                                 ecosystem_proposals=[], source_receipts=receipts)
+    assert r.identity.eligibility == NOT_ELIGIBLE
+    assert any("snapshot" in x and "TRUNCATED" in x for x in r.identity.eligibility_reasons)
+
+
+def test_truncated_without_oldest_is_not_eligible(engine, now):
+    """No oldest_cast_at = nothing proves the window is covered."""
+    receipts = healthy_receipts()
+    receipts[0] = SourceReceipt("snapshot", TRUNCATED, events=200, limit=200)
+    target = obs("0xt", 0, now)
+    r = engine.compute_per_event("0xA", target, [target], now=now,
+                                 ecosystem_proposals=[], source_receipts=receipts)
+    assert r.identity.eligibility == NOT_ELIGIBLE
+
+
+def test_context_window_comes_from_config(engine, now):
+    engine.config["eligibility"]["context_window_days"] = 500
+    receipts = healthy_receipts()
+    receipts[0] = SourceReceipt("snapshot", TRUNCATED, events=200, limit=200,
+                                oldest_cast_at=int((now - timedelta(days=400)).timestamp()))
+    target = obs("0xt", 0, now)
+    r = engine.compute_per_event("0xA", target, [target], now=now,
+                                 ecosystem_proposals=[], source_receipts=receipts)
+    assert r.identity.eligibility == NOT_ELIGIBLE
