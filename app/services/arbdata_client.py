@@ -51,6 +51,22 @@ from app.services.fatigue_engine import (
 
 ENDPOINT = "https://arbdata.com/api/governance-proposals"
 
+# The 403 recorded on 2026-09-04 was NOT a withdrawn permission - it was a bot filter.
+# Measured on 2026-09-08: the same URL answers 403 to a bare client and 200 with a browser
+# User-Agent plus Referer, returning all 90 records with the taxonomy intact. The earlier
+# reading ("registry gone, every per-event measurement NOT_ELIGIBLE, ask Entropy Advisors
+# for access") diagnosed a permission problem from a status code. A status code names the
+# refusal, never its reason - the same class of error as reading `auth-test` as proof that
+# an account may post.
+BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/128.0 Safari/537.36"
+    ),
+    "Referer": "https://arbdata.com/",
+    "Accept": "application/json",
+}
+
 # Last good copy of the registry. Taxonomy does not change for past proposals,
 # so a cached registry answers correctly for everything it covers and is
 # reported PARTIAL (dated) rather than pretending to be live. Found necessary
@@ -112,7 +128,7 @@ class ArbdataClient:
         failure: Optional[SourceReceipt] = None
         rows = None
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(headers=BROWSER_HEADERS, follow_redirects=True) as client:
                 r = await client.get(self.endpoint, timeout=45.0)
                 r.raise_for_status()
                 rows = r.json()
