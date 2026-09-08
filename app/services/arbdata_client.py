@@ -78,12 +78,18 @@ CACHE_PATH = Path(__file__).resolve().parents[2] / "data" / "cache" / "arbdata-r
 def _klucz(title: str) -> str:
     """Tytul sprowadzony do postaci porownywalnej miedzy zrodlami - nawiasy,
     przedrostek `Constitutional AIP:`, znaki ucieczki i wielkosc liter."""
+    # UWAGA: te wzorce mialy podwojne ukosniki (r"\\b" zamiast r"\b"), przez co w raw
+    # stringu znaczyly literalny backslash plus litere - czyli nie pasowaly do niczego.
+    # Skutek byl CICHY: `_klucz` zwracalo tytul z przedrostkiem i niezwinietymi spacjami,
+    # dopasowanie po tytule trafialo wylacznie przy znaku w znak identycznym zapisie,
+    # a `novelty` liczylo sie z historii bez kategorii przy czystym pokwitowaniu.
+    # Wykryte 2026-09-08 w przegladzie kodu.
     t = (title or "").lower()
-    t = re.sub(r"\\\\", "", t)
-    t = re.sub(r"[\\[\\]()]", " ", t)
-    t = re.sub(r"\\b(constitutional|non-constitutional|aip|proposal)\\b", " ", t)
+    t = t.replace("\\", "")
+    t = re.sub(r"[\[\]()]", " ", t)
+    t = re.sub(r"\b(constitutional|non-constitutional|aip|proposal)\b", " ", t)
     t = re.sub(r"[^a-z0-9 ]", " ", t)
-    return re.sub(r"\\s+", " ", t).strip()
+    return re.sub(r"\s+", " ", t).strip()
 
 
 def _epoch(stamp: Optional[str]) -> Optional[int]:
