@@ -85,6 +85,10 @@ BLOCKS_PER_DAY = 4 * 60 * 60 * 24
 # Window size for a single getLogs call. Wider ranges get refused by public nodes.
 SCAN_WINDOW_BLOCKS = BLOCKS_PER_DAY * 3
 
+# Windows in flight at once. Eight keeps the 120-day scan near 3.5 s and stays
+# under the burst limit of the public endpoints; higher values start drawing 403.
+SCAN_CONCURRENCY = 8
+
 # `startBlock` and `endBlock` in ProposalCreated are ETHEREUM (L1) block numbers,
 # not Arbitrum ones - Arbitrum's `block.number` returns the L1 height. Measured on
 # this contract: an event emitted at L2 block 483_508_532 carries startBlock
@@ -202,19 +206,43 @@ class GovernorClient:
 
     async def _logs(self, client: httpx.AsyncClient, topics: list,
                     from_block: int, to_block: int) -> List[dict]:
-        """getLogs over a block range, split into windows the public nodes accept."""
-        out: List[dict] = []
+        """getLogs over a block range, split into windows the public nodes accept.
+
+        The windows are INDEPENDENT of one another, so they go out concurrently.
+        Measured 2026-09-08: Arbitrum produces 345,600 blocks a day, a window covers
+        three days and the scan reaches back 120 - that is 40 calls per contract and
+        two contracts, so 80 sequential calls at ~331 ms each. Governor alone took
+        26.5 s of a 30 s measurement while Snapshot, Tally and arbdata together took 2.8 s.
+
+        Concurrency is capped: public nodes answer 403 to a burst, and a refused
+        window would silently shrink the vote history rather than fail loudly.
+        Windows are gathered in order, so the caller still sees a deterministic
+        sequence regardless of which response lands first.
+        """
+        okna = []
         start = from_block
         while start <= to_block:
             end = min(start + SCAN_WINDOW_BLOCKS, to_block)
-            res = await self._call(client, "eth_getLogs", [{
-                "address": self.address,
-                "topics": topics,
-                "fromBlock": hex(start),
-                "toBlock": hex(end),
-            }])
-            out.extend(res.get("result") or [])
+            okna.append((start, end))
             start = end + 1
+
+        brama = asyncio.Semaphore(SCAN_CONCURRENCY)
+
+        async def jedno(zakres: "tuple[int, int]") -> List[dict]:
+            poczatek, koniec = zakres
+            async with brama:
+                res = await self._call(client, "eth_getLogs", [{
+                    "address": self.address,
+                    "topics": topics,
+                    "fromBlock": hex(poczatek),
+                    "toBlock": hex(koniec),
+                }])
+            return res.get("result") or []
+
+        wyniki = await asyncio.gather(*(jedno(z) for z in okna))
+        out: List[dict] = []
+        for czesc in wyniki:
+            out.extend(czesc)
         return out
 
     async def fetch_voted_proposals(self, address: str, days: int = 120,
