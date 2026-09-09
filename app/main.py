@@ -22,7 +22,8 @@ from app.services.rule_engine import (
     TriageResult,
     proposal_from_db_model,
 )
-from app.services.fatigue_engine import (
+from app.services.fatigue_engine import (  # noqa: F401
+    _klucz_decyzji,
     FatigueEngine, InstrumentInvalid, merge_stages, reconcile_observations,
 )
 from app.services.arbdata_client import ArbdataClient
@@ -260,6 +261,14 @@ class MeasurementIdentityResponse(BaseModel):
     eligibility_reasons: List[str] = Field(default_factory=list, description="Disqualifying")
     eligibility_notes: List[str] = Field(default_factory=list, description=(
         "Recorded limits that do not disqualify (e.g. history truncated beyond the context window)"))
+    canonical_input_digest: str = Field("", description=(
+        "sha256 of CanonicalMeasurementInput - the VALUES the score is a function of "
+        "(target, history, ecosystem, instrument, receipts), not the ids of the records "
+        "they came from"))
+    identity_schema_version: str = Field("", description=(
+        "Rule that produced measurement_id. '1' bound id sets and could give one identity "
+        "to two different scores; '2' (from 2026-09-09) binds the canonical input. Empty "
+        "means a measurement taken before the field existed"))
     measurement_id: str = Field("", description=(
         "Digest of the complete measurement identity; persistence is idempotent on it"))
 
@@ -697,7 +706,16 @@ async def _measure_per_event(address: str, proposal_id: Optional[str]):
     # voted-only construction, NAMES it in metrics.concurrency_source AND
     # marks the result NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS - a different
     # construct is not the frozen instrument (closure review point 2).
-    ecosystem, eco_receipt = await SnapshotClient().fetch_ecosystem_exposure(_vote_ts)
+    # Ekspozycja z OBU warstw (I3, 2026-09-09). Do 09.09 czytana była wyłącznie ze
+    # Snapshota, więc każdy głos kontraktowy po 27.08 miał `concurrency` = 0 przy zdrowym
+    # pokwitowaniu - opis w ANALIZA-2026-09-09, sekcja 8b.
+    #
+    # NIE przez sumę list: jedna decyzja bywa etapem na Snapshocie i później na kontrakcie,
+    # a suma policzyłaby dwa obciążenia tam, gdzie było jedno. Scalanie idzie przez tożsamość
+    # decyzji - tę samą, której silnik używa do etapów od 04.09.
+    eco_snap, eco_receipt = await SnapshotClient().fetch_ecosystem_exposure(_vote_ts)
+    eco_gov, eco_gov_receipt = await GovernorClient().fetch_ecosystem_exposure(_vote_ts)
+    ecosystem = _scal_ekspozycje(eco_snap, eco_gov)
 
     result = fatigue_engine.compute_per_event(
         address=address, target_proposal=target, voted_history=voted, now=ref_time,
@@ -707,10 +725,89 @@ async def _measure_per_event(address: str, proposal_id: Optional[str]):
             "tally": len(tally_votes or []),
             "governor": len(chain_votes or []),
         },
-        source_receipts=[snap_receipt, tally_receipt, chain_receipt, eco_receipt, taxonomy_receipt],
+        source_receipts=[snap_receipt, tally_receipt, chain_receipt, eco_receipt,
+                         eco_gov_receipt, taxonomy_receipt],
         reconciliations=reconciliations,
     )
     return result, target, ref_time
+
+
+def _scal_ekspozycje(snap, gov):
+    """Ekspozycja ekosystemu z dwóch warstw, jedna decyzja liczona RAZ (I3, 2026-09-09).
+
+    Prosta suma byłaby błędem odwrotnym do dzisiejszego: ta sama decyzja bywa etapem na
+    Snapshocie i później na kontrakcie, więc podwójne zliczenie zawyżałoby współbieżność
+    dokładnie tam, gdzie dziś ją zeruje. Klucz scalania to `_klucz_decyzji` z silnika -
+    tytuł sprowadzony do postaci porównywalnej między źródłami, ten sam, którym silnik
+    łączy etapy w cykl od 04.09.
+
+    `None` z obu źródeł zostaje `None`: brak odpowiedzi nie jest pustym ekosystemem, a
+    `compute_per_event` odróżnia te przypadki (`None` schodzi na `voted_only` i dyskwalifikuje,
+    pusta lista znaczy „nic nie było otwarte").
+    """
+    # Awaria KTÓREJKOLWIEK warstwy znaczy, że pełnej ekspozycji nie znamy - a nie, że
+    # znamy ją w części. Zwrócenie tego, co odpowiedziało, podałoby stan zdegradowany jako
+    # pomiar ekosystemu: dokładnie to, przed czym ostrzega recenzja („a degraded state must
+    # never cross as a valid, qualified result"). `None` schodzi na `voted_only`, co silnik
+    # dyskwalifikuje, a pokwitowania obu warstw zostają w manifeście, więc widać, która padła.
+    if snap is None or gov is None:
+        return None
+    scalone = {}
+    for p in list(snap or []) + list(gov or []):
+        klucz = _klucz_decyzji(p) or str(getattr(p, "id", "") or id(p))
+        # Przy tej samej decyzji zostaje etap kontraktowy: od czerwca 2026 to on jest
+        # wiążący, więc jego okno opisuje realny czas trwania obciążenia.
+        if klucz not in scalone or str(getattr(p, "source_domain", "")).startswith("governor"):
+            scalone[klucz] = p
+    return list(scalone.values())
+
+
+def _per_event_response_z_wiersza(row, result, target, ref_time) -> "PerEventFatigueResponse":
+    """Odpowiedź złożona z ZAPISANEGO wiersza rejestru (I2, 2026-09-09).
+
+    Wołana wyłącznie wtedy, gdy wiersz o tym `measurement_id` już istnieje i jego wynik zgadza
+    się z przeliczonym (rozbieżność kończy się kodem 409 u wołającego). Liczby, składniki,
+    metryki i manifest idą z bazy - to jest kanoniczny pomiar. Z bieżącego obliczenia biorą się
+    wyłącznie rzeczy nienależące do pomiaru: wagi i wzór z instrumentu oraz tytuł propozycji,
+    czyli dane opisowe, których wiersz nie przechowuje.
+    """
+    manifest = json.loads(row.manifest) if row.manifest else result.identity.manifest()
+    return PerEventFatigueResponse(
+        address=row.address,
+        fatigue_score=row.fatigue_score,
+        status=row.status,
+        components=FatigueComponentsResponse(
+            volume=row.comp_volume, concurrency=row.comp_concurrency,
+            burstiness=row.comp_burstiness, reading_time=row.comp_reading_time,
+            novelty=row.comp_novelty,
+        ),
+        metrics=FatigueMetricsResponse(
+            proposals_7d=row.metric_proposals_7d,
+            proposals_30d=row.metric_proposals_30d,
+            concurrent_active=row.metric_concurrent_active,
+            avg_word_count=row.metric_avg_word_count,
+            weekly_avg=row.metric_weekly_avg,
+            novelty_ratio=row.metric_novelty_ratio,
+            # Źródło współbieżności i ujawnione zaangażowanie nie mają własnych kolumn -
+            # stoją w manifeście, który jest zapisany w całości.
+            concurrency_source=(manifest.get("source_state") or {}).get(
+                "concurrency_source", result.metrics.concurrency_source),
+            voted_concurrent=(manifest.get("source_state") or {}).get(
+                "voted_concurrent", result.metrics.voted_concurrent),
+        ),
+        weights=FatigueWeightsResponse(**result.weights),
+        config_version=row.config_version,
+        computed_at=row.computed_at,
+        formula=FatigueEngine.FORMULA,
+        mode=result.mode,
+        target_proposal_id=target.id,
+        target_proposal_title=(getattr(target, "title", None) or ""),
+        as_of=ref_time,
+        identity=MeasurementIdentityResponse(**manifest),
+        eligibility=row.eligibility or "",
+        measurement_id=row.measurement_id or "",
+        persisted=False,
+    )
 
 
 def _per_event_response(result, target, ref_time, persisted: Optional[bool]) -> "PerEventFatigueResponse":
@@ -810,7 +907,27 @@ async def register_per_event_fatigue(
     mid = result.identity.measurement_id
     existing = db.query(FatigueSnapshot).filter(FatigueSnapshot.measurement_id == mid).first()
     if existing is not None:
-        return _per_event_response(result, target, ref_time, persisted=False)
+        # I2 (2026-09-09): przy istniejącym wierszu oddajemy ZAPISANY pomiar, nigdy wyniku
+        # przeliczonego przed chwilą. Do 09.09 zwracany był świeży `result`, więc rejestr mógł
+        # trzymać jedną liczbę, a wołający dostawał inną - obie pod jednym identyfikatorem.
+        #
+        # Rozbieżność między zapisanym a świeżym wynikiem NIE jest tu wygładzana. Ta sama
+        # tożsamość przy innym wyniku znaczy, że kontrakt tożsamości jest naruszony, i musi to
+        # być widoczne, a nie schowane za cichym zwrotem starego wiersza.
+        if abs((existing.fatigue_score or 0.0) - result.fatigue_score) > 1e-9:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "MEASUREMENT_IDENTITY_CONFLICT",
+                    "measurement_id": mid,
+                    "persisted_score": existing.fatigue_score,
+                    "recomputed_score": result.fatigue_score,
+                    "identity_schema_version": getattr(
+                        result.identity, "identity_schema_version", ""),
+                    "message": ("stored and recomputed results differ under one identity - "
+                                "the identity does not bind everything the score depends on"),
+                })
+        return _per_event_response_z_wiersza(existing, result, target, ref_time)
 
     snapshot = FatigueSnapshot(
         address=result.address,

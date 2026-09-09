@@ -182,6 +182,102 @@ class GovernorClient:
     async def _block_number(self, client: httpx.AsyncClient) -> int:
         return int((await self._call(client, "eth_blockNumber", []))["result"], 16)
 
+    async def fetch_ecosystem_exposure(
+        self, at_ts: int, days_back: int = 120
+    ) -> "tuple[Optional[List[Proposal]], SourceReceipt]":
+        """Propozycje KONTRAKTOWE otwarte w chwili `at_ts` - ekspozycja ekosystemu.
+
+        Powstało 2026-09-09 po znalezisku z sekcji 8b analizy: do tego dnia ekspozycja
+        pochodziła wyłącznie z warstwy Snapshot (`main.py:700`), a od czerwca 2026 wiążące
+        głosowania odbywają się na kontrakcie. Skutek: dla każdego głosu kontraktowego po
+        27.08 - dnia, w którym zamknęła się ostatnia propozycja Snapshot - składnik
+        `concurrency` o wadze 0,25 wynosił zero przy pokwitowaniu `HEALTHY_EMPTY`
+        i werdykcie `PRIMARY_ELIGIBLE`. „Nic nie było otwarte" było nieodróżnialne od
+        „pytamy warstwę, w której się nie głosuje".
+
+        Różnica wobec `fetch_voted_observations`: tam okna budowane są WYŁĄCZNIE dla
+        propozycji, na które delegat głosował (`if pid not in voted_ids: continue`).
+        Ekspozycja pyta o wszystkie, bo mierzy obciążenie ekosystemu, nie ujawnione
+        zaangażowanie jednej osoby.
+
+        Węzeł archiwalny nie jest potrzebny: `getLogs` czyta ZDARZENIA, nie stan przy bloku.
+        Zmierzone 09.09 na publicznych węzłach - okno czterech tygodni (9,7 mln bloków)
+        przechodzi.
+
+        Zwraca `(None, receipt)` przy awarii - cisza źródła nie ma prawa wyglądać jak pusty
+        ekosystem; to samo rozróżnienie, które `snapshot_client` stosuje od 04.09.
+        """
+        from app.services.arbdata_client import ArbdataClient
+
+        otwarte: List[Proposal] = []
+        stany: List[str] = []
+        szczegoly: List[str] = []
+        rejestr = ArbdataClient()
+        try:
+            await rejestr.load()
+        except Exception:  # noqa: BLE001 - rejestr ma własne pokwitowanie u wołającego
+            pass
+
+        async with httpx.AsyncClient() as client:
+            try:
+                # `_call` oddaje pełną odpowiedź JSON-RPC; numer bloku siedzi w `result`.
+                # Bez tego każde wywołanie kończyło się UNAVAILABLE, czyli awarią
+                # nieodróżnialną od niedostępnego węzła - dokładnie ta klasa błędu,
+                # którą ten moduł ma wykrywać.
+                head = await self._block_number(client)
+            except Exception as e:  # noqa: BLE001
+                return None, SourceReceipt("ecosystem_governor", UNAVAILABLE,
+                                           detail=f"blockNumber: {e}"[:200])
+            first = max(0, head - days_back * BLOCKS_PER_DAY)
+            voting_delay = await self._voting_delay(client)
+            czasy: Dict[str, int] = {}
+
+            for rola, adres in GOVERNORS.items():
+                klient = GovernorClient(address=adres, endpoints=self.endpoints)
+                klient._endpoint = self._endpoint
+                try:
+                    created = await klient._logs(client, [TOPIC_PROPOSAL_CREATED], first, head)
+                except Exception as e:  # noqa: BLE001
+                    stany.append(ERROR)
+                    szczegoly.append(f"{rola}: ProposalCreated scan: {e}"[:200])
+                    continue
+                stany.append(HEALTHY_COMPLETE if created else HEALTHY_EMPTY)
+                for log in created:
+                    pid = _word(log["data"], 0)
+                    block_hex = log["blockNumber"]
+                    if block_hex not in czasy:
+                        czasy[block_hex] = await klient._block_time(client, block_hex)
+                    created_at = czasy[block_hex]
+                    okno = rejestr.window(pid)
+                    if okno:
+                        opens, closes = okno
+                    else:
+                        span = _word(log["data"], 7) - _word(log["data"], 6)
+                        opens = created_at + voting_delay * L1_BLOCK_SECONDS
+                        closes = opens + max(span, 0) * L1_BLOCK_SECONDS
+                    if not (opens <= at_ts <= closes):
+                        continue
+                    opis = _string_at(log["data"], 8)
+                    p = Proposal(id=f"governor:{rola}:{pid}",
+                                 title=_title_from_description(opis), body=opis,
+                                 state="active", start=opens, end=closes)
+                    p.source_domain = f"governor:{rola}"
+                    p.native_proposal_id = str(pid)
+                    otwarte.append(p)
+
+        if not stany:
+            return None, SourceReceipt("ecosystem_governor", UNAVAILABLE,
+                                       detail="no contract answered")
+        ranking = [UNAVAILABLE, ERROR, TRUNCATED, PARTIAL, HEALTHY_COMPLETE, HEALTHY_EMPTY]
+        stan = next((s for s in ranking if s in stany), HEALTHY_EMPTY)
+        if stan in (ERROR, UNAVAILABLE) and not otwarte:
+            return None, SourceReceipt("ecosystem_governor", stan,
+                                       detail="; ".join(szczegoly)[:200])
+        if stan == HEALTHY_EMPTY and otwarte:
+            stan = HEALTHY_COMPLETE
+        return otwarte, SourceReceipt("ecosystem_governor", stan, events=len(otwarte),
+                                      detail="; ".join(szczegoly)[:200])
+
     async def _block_time(self, client: httpx.AsyncClient, block_hex: str) -> int:
         blk = (await self._call(client, "eth_getBlockByNumber", [block_hex, False]))["result"]
         return int(blk["timestamp"], 16)

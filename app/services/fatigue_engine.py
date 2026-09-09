@@ -197,6 +197,8 @@ class MeasurementIdentity:
     eligibility: str = ELIGIBLE                  # PRIMARY_ELIGIBLE | NOT_ELIGIBLE_...
     eligibility_reasons: List[str] = field(default_factory=list)   # disqualifying
     eligibility_notes: List[str] = field(default_factory=list)     # recorded, not disqualifying
+    canonical_input_digest: str = ""             # sha256 of CanonicalMeasurementInput
+    identity_schema_version: str = ""            # rule that produced measurement_id
     measurement_id: str = ""                     # digest of the whole manifest
 
     def manifest(self) -> Dict[str, Any]:
@@ -501,7 +503,16 @@ class FatigueEngine:
                 1 for p in ecosystem_proposals
                 if getattr(p, "end", None) and (p.start or 0) <= now_ts <= p.end
             )
-            concurrency_source = "ecosystem:snapshot"
+            # Nazwa źródła ma opisywać, SKĄD naprawdę pochodzi ekspozycja (I3, 2026-09-09).
+            # Do dziś stała tu na sztywno etykieta `ecosystem:snapshot`, więc po naprawie
+            # czytającej obie warstwy wynik nadal twierdziłby, że policzono go z Snapshota.
+            # To ta sama klasa błędu, którą naprawiamy: etykieta niezgodna z faktem.
+            warstwy = sorted({
+                "governor" if str(getattr(p, "source_domain", "") or "").startswith("governor")
+                else "snapshot"
+                for p in ecosystem_proposals
+            })
+            concurrency_source = ("ecosystem:" + "+".join(warstwy)) if warstwy else "ecosystem:empty"
         else:
             concurrency_source = "voted_only"
 
@@ -541,7 +552,12 @@ class FatigueEngine:
 
         receipts = [r.to_dict() if isinstance(r, SourceReceipt) else dict(r)
                     for r in (source_receipts or [])]
-        eligibility, reasons, notes = self._eligibility(receipts, concurrency_source, now_ts)
+        cel_domena = str(getattr(target_proposal, "source_domain", "")
+                         or getattr(target_proposal, "source", "") or "")
+        eligibility, reasons, notes = self._eligibility(
+            receipts, concurrency_source, now_ts,
+            ekspozycja_pusta=(ecosystem_proposals is not None and not ecosystem_proposals),
+            cel_kontraktowy=cel_domena.startswith("governor"))
 
         title = getattr(target_proposal, "title", None) or ""
         body = getattr(target_proposal, "body", None) or ""
@@ -549,16 +565,28 @@ class FatigueEngine:
                              for p in frozen_history)
         ecosystem_ids = (sorted(str(getattr(p, "id", "") or "") for p in ecosystem_proposals)
                          if ecosystem_proposals is not None else [])
+        # Schemat 2 (2026-09-09): tożsamość wiąże WARTOŚCI wejść, nie zbiory identyfikatorów.
+        # Schemat 1 hashował `context_set_hash` i `ecosystem_set_hash`, czyli odpowiedź na
+        # pytanie „na których rekordach liczono" - a nie „co te rekordy mówiły". Dwa pomiary
+        # o tej samej historii i innych kategoriach dostawały jeden identyfikator przy różnym
+        # wyniku (kontrprzykład: 44,90 i 46,60 pod `83df5f4f…9bea`).
+        wejscie = CanonicalMeasurementInput(
+            target=target_proposal, history=frozen_history,
+            ecosystem=ecosystem_proposals, instrument_hash=self.instrument_hash,
+            receipts=receipts)
         manifest_core = {
+            "identity_schema_version": IDENTITY_SCHEMA_VERSION,
             "vote_event_id": vote_event_id,
             "instrument_hash": self.instrument_hash,
             "instrument_version": self.version,
             "code_commit": self.code_commit,
+            # Skróty zbiorów zostają w manifeście jako czytelny opis zakresu - do tożsamości
+            # nie wchodzą już samodzielnie, bo robi to projekcja kanoniczna.
             "target_content_hash": _sha(title + "\n" + body),
             "context_set_hash": _sha("|".join(context_ids)),
             "ecosystem_set_hash": (_sha("|".join(ecosystem_ids))
                                    if ecosystem_proposals is not None else ""),
-            "receipts_hash": _sha(json.dumps(receipts, sort_keys=True)),
+            "canonical_input_digest": wejscie.digest(),
             "eligibility": eligibility,
         }
         identity = MeasurementIdentity(
@@ -593,6 +621,8 @@ class FatigueEngine:
             eligibility=eligibility,
             eligibility_reasons=reasons,
             eligibility_notes=notes,
+            canonical_input_digest=manifest_core["canonical_input_digest"],
+            identity_schema_version=IDENTITY_SCHEMA_VERSION,
             measurement_id=_sha(json.dumps(manifest_core, sort_keys=True))[:32],
         )
 
@@ -639,7 +669,8 @@ class FatigueEngine:
         return list(pierwsze.values())
 
     def _eligibility(self, receipts: List[Dict[str, Any]], concurrency_source: str,
-                     now_ts: int) -> Tuple[str, List[str], List[str]]:
+                     now_ts: int, ekspozycja_pusta: bool = False,
+                     cel_kontraktowy: bool = False) -> Tuple[str, List[str], List[str]]:
         """Fail closed (closure review points 2 and 6): a confirmatory
         measurement is PRIMARY_ELIGIBLE only when every required source
         answered in an eligible state and concurrency was measured on the
@@ -681,9 +712,33 @@ class FatigueEngine:
                 continue
             reasons.append(f"required source {name}: {state}"
                            + (f" ({r.get('detail')})" if r.get("detail") else ""))
-        if concurrency_source != "ecosystem:snapshot":
+        # Rodzina `ecosystem:*` - konkretne warstwy nazywa sama etykieta (snapshot,
+        # governor, snapshot+governor, empty). Porównanie z jedną nazwą odrzucałoby po
+        # naprawie każdą ekspozycję czytaną z obu warstw.
+        #
+        # `ecosystem:empty` PRZECHODZI świadomie: pusta lista jest pomiarem („nic nie było
+        # otwarte"), a nie awarią - rozróżnienie `None` od `[]` stoi w silniku od 28.08 i ma
+        # własny test. Niebezpieczny przypadek pustki - cel z kontraktu przy zerowej
+        # ekspozycji - łapie osobny warunek niżej, bo dopiero tam widać, że pustka może
+        # znaczyć „pytaliśmy nie tę warstwę".
+        if not concurrency_source.startswith("ecosystem:"):
             reasons.append(f"concurrency measured as {concurrency_source}, not ecosystem "
                            "exposure - a different construct than the frozen instrument")
+        # I3 (2026-09-09): źródło odpowiedziało - ale czy miało czego szukać?
+        #
+        # Warunek wyżej pyta, KTÓRĄ DROGĄ policzono składnik. Nie pyta, czy ta droga sięga
+        # warstwy, w której oceniane zdarzenie powstało. Do 09.09 ekspozycja czytała sam
+        # Snapshot, więc każdy głos kontraktowy po 27.08 - dnia zamknięcia ostatniej
+        # propozycji Snapshot - dostawał `concurrency` = 0 przy pokwitowaniu HEALTHY_EMPTY
+        # i werdykcie PRIMARY_ELIGIBLE. „Nic nie było otwarte" było nieodróżnialne od
+        # „pytaliśmy nie tę warstwę" (ANALIZA-2026-09-09, sekcja 8b).
+        #
+        # Źródło jest naprawione - ekspozycja czyta obie warstwy - ale bezpiecznik zostaje:
+        # przy pustej ekspozycji i celu z kontraktu zero nie przechodzi jako pomiar.
+        if ekspozycja_pusta and cel_kontraktowy:
+            reasons.append(
+                "ecosystem exposure empty while the rated vote comes from the contract "
+                "layer - zero here cannot be told apart from asking the wrong layer")
         return (ELIGIBLE if not reasons else NOT_ELIGIBLE), reasons, notes
 
     def _novelty_per_event(self, target: Any, history: List[Any]) -> float:
@@ -948,6 +1003,82 @@ class FatigueEngine:
 
 def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+IDENTITY_SCHEMA_VERSION = "2"
+"""Wersja reguły, według której powstaje `measurement_id`.
+
+`1` (do 2026-09-09): manifest wiązał ZBIORY IDENTYFIKATORÓW - `context_set_hash`,
+`ecosystem_set_hash` - więc dwa pomiary o tych samych rekordach i różnych WARTOŚCIACH tych
+rekordów dostawały jeden identyfikator. Udowodnione kontrprzykładem: DFI 44,90 i 46,60 pod
+`83df5f4f2301ef52b6b98551f1ae9bea`, przy zmienionej wyłącznie kategorii wpisów historii.
+
+`2` (od 2026-09-09): identyfikator hashuje `CanonicalMeasurementInput`, czyli WARTOŚCI wejść.
+
+Bez tego pola stare i nowe identyfikatory dałoby się rozróżnić tylko przez wnioskowanie
+z commita - a rejestr będzie zawierał jedne i drugie obok siebie.
+"""
+
+
+def _wejscie_kanoniczne(p: Any) -> Dict[str, Any]:
+    """Semantyczna projekcja JEDNEJ obserwacji - wartości, od których zależy wynik.
+
+    Nie identyfikator rekordu, tylko to, co składniki z niego czytają. Pole transportowe
+    (kolejność w odpowiedzi, nagłówki, numer strony) nie ma prawa tworzyć nowej tożsamości
+    pomiaru, więc go tu nie ma.
+    """
+    return {
+        "id": _stage_id(p) or f"~{_klucz_decyzji(p)}@{getattr(p, 'start', 0) or 0}",
+        "lifecycle": _lifecycle_key(p),
+        "voted_at": int(getattr(p, "voted_at", 0) or getattr(p, "cast_at", 0) or 0),
+        "start": int(getattr(p, "start", 0) or 0),
+        "end": int(getattr(p, "end", 0) or 0),
+        "category": (getattr(p, "category", None) or "").strip().lower(),
+    }
+
+
+class CanonicalMeasurementInput:
+    """Jedyne wejście, z którego wolno policzyć tożsamość pomiaru.
+
+    Powód istnienia tego typu, a nie listy pól: lista ręczna zbutwieje dokładnie tak, jak
+    zbutwiał manifest schematu 1 - ktoś dopisze składnik czytający nowe pole i kolizja wróci
+    warstwę niżej. Pomysł „wyprowadzić mechanicznie, co czyta funkcja" odpada, bo introspekcja
+    w Pythonie mija się z funkcjami pomocniczymi, aliasami i nowymi gałęziami warunków.
+
+    Kontrakt: `źródła surowe → CanonicalMeasurementInput → składniki`. Dopóki składnik czyta
+    wyłącznie stąd, pytanie „jakie pola wchodzą do tożsamości" ma odpowiedź w typie, nie
+    w domyśle. Pilnuje tego `test_skladniki_nie_omijaja_typu_wejsciowego`.
+    """
+
+    __slots__ = ("target", "history", "ecosystem", "instrument_hash", "receipts")
+
+    def __init__(self, target: Any, history: List[Any], ecosystem: Optional[List[Any]],
+                 instrument_hash: str, receipts: List[Dict[str, Any]]):
+        self.target = _wejscie_kanoniczne(target)
+        self.target["content"] = _sha((getattr(target, "title", None) or "") + "\n"
+                                      + (getattr(target, "body", None) or ""))
+        # Historia sortowana po identyfikatorze: kolejność w odpowiedzi źródła jest
+        # własnością transportu, nie pomiaru.
+        self.history = sorted((_wejscie_kanoniczne(p) for p in history),
+                              key=lambda d: d["id"])
+        self.ecosystem = (sorted((_wejscie_kanoniczne(p) for p in ecosystem),
+                                 key=lambda d: d["id"])
+                          if ecosystem is not None else None)
+        self.instrument_hash = instrument_hash
+        self.receipts = receipts
+
+    def kanonicznie(self) -> str:
+        return json.dumps({
+            "schema": IDENTITY_SCHEMA_VERSION,
+            "target": self.target,
+            "history": self.history,
+            "ecosystem": self.ecosystem,
+            "instrument_hash": self.instrument_hash,
+            "receipts": self.receipts,
+        }, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+    def digest(self) -> str:
+        return _sha(self.kanonicznie())
 
 
 def _klucz_decyzji(p: Any) -> str:

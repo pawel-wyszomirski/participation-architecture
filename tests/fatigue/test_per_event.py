@@ -339,7 +339,13 @@ def test_empty_ecosystem_list_is_a_measurement_not_a_fallback(engine, now):
                                  ecosystem_proposals=[])
 
     assert r.metrics.concurrent_active == 0
-    assert r.metrics.concurrency_source == "ecosystem:snapshot"
+    # Sedno reguły: pusta lista NIE spada na `voted_only`, czyli nie jest awarią.
+    # Od 2026-09-09 etykieta nazywa warstwy, z których pochodzi ekspozycja
+    # (`ecosystem:snapshot`, `ecosystem:governor`, `ecosystem:snapshot+governor`);
+    # przy pustej liście nie ma z czego ich odczytać, więc mówi `ecosystem:empty`.
+    assert r.metrics.concurrency_source.startswith("ecosystem:")
+    assert r.metrics.concurrency_source != "voted_only"
+    assert r.metrics.concurrency_source == "ecosystem:empty"
 
 
 def test_ecosystem_list_does_not_touch_volume_or_burstiness(engine, now):

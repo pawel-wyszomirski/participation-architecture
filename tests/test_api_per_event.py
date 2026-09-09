@@ -32,7 +32,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 import app.main as main  # noqa: E402
 from app.db.models import FatigueSnapshot, Proposal  # noqa: E402
 from app.services.fatigue_engine import (  # noqa: E402
-    SourceReceipt, HEALTHY_COMPLETE, AUTH_MISSING, ELIGIBLE, NOT_ELIGIBLE, UNAVAILABLE, ERROR,
+    SourceReceipt, HEALTHY_COMPLETE, HEALTHY_EMPTY, AUTH_MISSING, ELIGIBLE, NOT_ELIGIBLE,
+    UNAVAILABLE, ERROR,
 )
 
 NOW = datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
@@ -49,6 +50,9 @@ def _obs(id_, days_ago, title="Proposal", body="word " * 300, domain="snapshot")
     p.native_proposal_id = id_
     p.voter = ADDR
     p.cast_at = t
+    # Kategoria z taksonomii - WARTOŚĆ rekordu, nie jego identyfikator. Test tożsamości
+    # zmienia ją przy niezmienionych identyfikatorach (regresja kontrprzykładu z 09.09).
+    p.category = _Fakes.category
     return p
 
 
@@ -57,6 +61,8 @@ class _Fakes:
     snapshot_state = HEALTHY_COMPLETE
     eco_state = HEALTHY_COMPLETE
     taxonomy_state = HEALTHY_COMPLETE
+    eco_gov_state = HEALTHY_COMPLETE
+    category = "treasury"
 
 
 async def _snap(self, address, limit=200, **kw):
@@ -81,6 +87,18 @@ async def _eco(self, at_ts, space=None):
     return [_obs("eco-1", 1)], SourceReceipt("ecosystem", HEALTHY_COMPLETE, events=1)
 
 
+async def _eco_gov(self, at_ts, days_back=120):
+    """Ekspozycja z warstwy KONTRAKTOWEJ (I3, 2026-09-09).
+
+    Atrapa jest konieczna, nie kosmetyczna: bez niej testy wychodzą do publicznych węzłów
+    RPC - suita rosła z 6 do 46 sekund, a wynik zależał od stanu sieci. Test, który pyta
+    prawdziwy łańcuch, mierzy łańcuch, nie kod.
+    """
+    if _Fakes.eco_gov_state != HEALTHY_COMPLETE:
+        return None, SourceReceipt("ecosystem_governor", _Fakes.eco_gov_state, detail="fake")
+    return [], SourceReceipt("ecosystem_governor", HEALTHY_EMPTY, events=0)
+
+
 async def _registry(self):
     """The DAO registry is a source with a receipt too (production 2026-09-04:
     it answered 403 and the verdict stayed clean)."""
@@ -94,10 +112,12 @@ def fakes(monkeypatch):
     _Fakes.snapshot_state = HEALTHY_COMPLETE
     _Fakes.eco_state = HEALTHY_COMPLETE
     _Fakes.taxonomy_state = HEALTHY_COMPLETE
+    _Fakes.eco_gov_state = HEALTHY_COMPLETE
     monkeypatch.setattr(main.SnapshotClient, "fetch_voted_observations", _snap)
     monkeypatch.setattr(main.SnapshotClient, "fetch_ecosystem_exposure", _eco)
     monkeypatch.setattr(main.TallyClient, "fetch_voted_observations", _tally)
     monkeypatch.setattr(main.GovernorClient, "fetch_voted_observations", _gov)
+    monkeypatch.setattr(main.GovernorClient, "fetch_ecosystem_exposure", _eco_gov)
     monkeypatch.setattr(main.ArbdataClient, "load", _registry)
     yield
 
@@ -164,7 +184,11 @@ def test_target_by_stage_id_and_identity_fields(client):
     assert ident["stage_ids"] == ["governor:core:9"]
     assert ident["source_domain"] == "governor:core"
     assert ident["source_vote_id"] == "v-governor:core:9"
-    assert {x["source"] for x in ident["source_receipts"]} == {"snapshot", "tally", "governor", "ecosystem", "taxonomy"}
+    # `ecosystem_governor` doszło 2026-09-09 (I3): ekspozycja czyta OBIE warstwy, bo
+    # od czerwca 2026 wiążące głosowania są na kontrakcie, a sama warstwa Snapshot dawała
+    # `concurrency` = 0 dla każdego świeżego głosu.
+    assert {x["source"] for x in ident["source_receipts"]} == {
+        "snapshot", "tally", "governor", "ecosystem", "ecosystem_governor", "taxonomy"}
 
 
 def test_required_source_failure_is_visible_and_disqualifies(client):
@@ -195,3 +219,73 @@ def test_taxonomy_registry_failure_is_visible_and_disqualifies(client):
     body = r.json()
     assert body["eligibility"] == NOT_ELIGIBLE
     assert any("taxonomy" in x for x in body["identity"]["eligibility_reasons"])
+
+def test_ponowna_rejestracja_oddaje_zapisany_wiersz_nie_swiezy_wynik(client):
+    """I2 (2026-09-09): POST przy istniejącym identyfikatorze zwraca ZAPISANY pomiar.
+
+    Do 09.09 zwracany był wynik przeliczony przed chwilą (`main.py:813`), więc rejestr mógł
+    trzymać jedną liczbę, a wołający dostawał inną - obie pod jednym `measurement_id`.
+    Test sabotuje wiersz w bazie po pierwszej rejestracji i sprawdza, czym odpowiada API.
+    """
+    # Testy dzielą bazę, więc wiersz mógł powstać we wcześniejszym teście - liczy się to,
+    # że po tym wywołaniu istnieje, nie kto go założył.
+    pierwszy = client.post(f"/delegates/{ADDR}/per-event-fatigue").json()
+    mid = pierwszy["measurement_id"]
+    assert mid
+
+    # Podmiana zapisanego wyniku na wartość, której silnik nie policzy - odpowiedź
+    # zbudowana z wiersza musi ją oddać, odpowiedź z przeliczenia nie zna jej wcale.
+    with main.SessionLocal() as db:
+        row = db.query(FatigueSnapshot).filter(FatigueSnapshot.measurement_id == mid).first()
+        row.fatigue_score = pierwszy["fatigue_score"]      # zgodny, żeby nie wywołać 409
+        row.status = "SABOTAZ"
+        row.comp_novelty = 0.4242
+        db.commit()
+
+    drugi = client.post(f"/delegates/{ADDR}/per-event-fatigue")
+    assert drugi.status_code == 200
+    body = drugi.json()
+    assert body["persisted"] is False
+    assert body["status"] == "SABOTAZ", "odpowiedź pochodzi z przeliczenia, nie z rejestru"
+    assert body["components"]["novelty"] == 0.4242
+
+
+def test_rozbieznosc_zapisanego_i_przeliczonego_konczy_sie_konfliktem(client):
+    """Ta sama tożsamość przy innym wyniku jest naruszeniem kontraktu, nie sytuacją do
+    wygładzenia. Ciche oddanie starego wiersza schowałoby dokładnie ten defekt, którego
+    szukamy - dlatego rozbieżność kończy się 409, z obiema liczbami w treści."""
+    pierwszy = client.post(f"/delegates/{ADDR}/per-event-fatigue").json()
+    mid = pierwszy["measurement_id"]
+    with main.SessionLocal() as db:
+        row = db.query(FatigueSnapshot).filter(FatigueSnapshot.measurement_id == mid).first()
+        row.fatigue_score = (pierwszy["fatigue_score"] or 0) + 7.0
+        db.commit()
+
+    odp = client.post(f"/delegates/{ADDR}/per-event-fatigue")
+    assert odp.status_code == 409
+    detail = odp.json()["detail"]
+    assert detail["error"] == "MEASUREMENT_IDENTITY_CONFLICT"
+    assert detail["persisted_score"] != detail["recomputed_score"]
+
+
+def test_tozsamosc_wiaze_wartosci_wejsc_nie_identyfikatory(client):
+    """I1 (2026-09-09): kontrprzykład z sekcji 8a analizy, jako regresja.
+
+    Schemat 1 hashował zbiory identyfikatorów, więc zmiana WARTOŚCI rekordu przy tych samych
+    identyfikatorach dawała jeden `measurement_id` i dwa różne wyniki (44,90 i 46,60 pod
+    `83df5f4f2301ef52b6b98551f1ae9bea`). Schemat 2 hashuje projekcję wartości.
+    """
+    a = client.get(f"/delegates/{ADDR}/per-event-fatigue").json()
+    assert a["identity"]["identity_schema_version"], "brak wersji schematu tożsamości"
+    assert a["identity"]["canonical_input_digest"], "brak skrótu projekcji wartości"
+
+    stara_kategoria = _Fakes.category
+    try:
+        _Fakes.category = "inna-kategoria-tego-samego-rekordu"
+        b = client.get(f"/delegates/{ADDR}/per-event-fatigue").json()
+    finally:
+        _Fakes.category = stara_kategoria
+
+    if b["fatigue_score"] != a["fatigue_score"]:
+        assert b["measurement_id"] != a["measurement_id"], (
+            "ten sam identyfikator przy różnym wyniku - kontrakt tożsamości naruszony")
