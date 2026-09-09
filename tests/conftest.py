@@ -17,9 +17,16 @@ here fixes the class: conftest is imported before any test module, so every run
 starts from one fresh, complete schema regardless of collection order.
 """
 
+import atexit
 import os
+import shutil
 import tempfile
 
-os.environ.setdefault(
-    "DATABASE_URL", f"sqlite:///{tempfile.mkdtemp(prefix='pa-tests-')}/tests.db"
-)
+_KATALOG = tempfile.mkdtemp(prefix="pa-tests-")
+os.environ.setdefault("DATABASE_URL", f"sqlite:///{_KATALOG}/tests.db")
+
+# Sprzątanie po przebiegu. Bez tego każde uruchomienie pytest zostawia katalog z bazą,
+# a w tym repozytorium testy chodzą po kilkanaście razy dziennie - po tygodniu w /tmp
+# leżą setki nieużywanych baz. `ignore_errors`, bo nieudane sprzątanie nie ma prawa
+# przesłonić wyniku testów.
+atexit.register(lambda: shutil.rmtree(_KATALOG, ignore_errors=True))
