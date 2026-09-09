@@ -1,4 +1,5 @@
 import json
+import re
 import os
 import sys
 import pathlib
@@ -22,9 +23,9 @@ from app.services.rule_engine import (
     TriageResult,
     proposal_from_db_model,
 )
-from app.services.fatigue_engine import (  # noqa: F401
-    _klucz_decyzji,
+from app.services.fatigue_engine import (
     FatigueEngine, InstrumentInvalid, merge_stages, reconcile_observations,
+    scal_ekspozycje,
 )
 from app.services.arbdata_client import ArbdataClient
 from app.services.governor_client import GovernorClient
@@ -715,7 +716,7 @@ async def _measure_per_event(address: str, proposal_id: Optional[str]):
     # decyzji - tę samą, której silnik używa do etapów od 04.09.
     eco_snap, eco_receipt = await SnapshotClient().fetch_ecosystem_exposure(_vote_ts)
     eco_gov, eco_gov_receipt = await GovernorClient().fetch_ecosystem_exposure(_vote_ts)
-    ecosystem = _scal_ekspozycje(eco_snap, eco_gov)
+    ecosystem = scal_ekspozycje(eco_snap, eco_gov)
 
     result = fatigue_engine.compute_per_event(
         address=address, target_proposal=target, voted_history=voted, now=ref_time,
@@ -730,36 +731,6 @@ async def _measure_per_event(address: str, proposal_id: Optional[str]):
         reconciliations=reconciliations,
     )
     return result, target, ref_time
-
-
-def _scal_ekspozycje(snap, gov):
-    """Ekspozycja ekosystemu z dwóch warstw, jedna decyzja liczona RAZ (I3, 2026-09-09).
-
-    Prosta suma byłaby błędem odwrotnym do dzisiejszego: ta sama decyzja bywa etapem na
-    Snapshocie i później na kontrakcie, więc podwójne zliczenie zawyżałoby współbieżność
-    dokładnie tam, gdzie dziś ją zeruje. Klucz scalania to `_klucz_decyzji` z silnika -
-    tytuł sprowadzony do postaci porównywalnej między źródłami, ten sam, którym silnik
-    łączy etapy w cykl od 04.09.
-
-    `None` z obu źródeł zostaje `None`: brak odpowiedzi nie jest pustym ekosystemem, a
-    `compute_per_event` odróżnia te przypadki (`None` schodzi na `voted_only` i dyskwalifikuje,
-    pusta lista znaczy „nic nie było otwarte").
-    """
-    # Awaria KTÓREJKOLWIEK warstwy znaczy, że pełnej ekspozycji nie znamy - a nie, że
-    # znamy ją w części. Zwrócenie tego, co odpowiedziało, podałoby stan zdegradowany jako
-    # pomiar ekosystemu: dokładnie to, przed czym ostrzega recenzja („a degraded state must
-    # never cross as a valid, qualified result"). `None` schodzi na `voted_only`, co silnik
-    # dyskwalifikuje, a pokwitowania obu warstw zostają w manifeście, więc widać, która padła.
-    if snap is None or gov is None:
-        return None
-    scalone = {}
-    for p in list(snap or []) + list(gov or []):
-        klucz = _klucz_decyzji(p) or str(getattr(p, "id", "") or id(p))
-        # Przy tej samej decyzji zostaje etap kontraktowy: od czerwca 2026 to on jest
-        # wiążący, więc jego okno opisuje realny czas trwania obciążenia.
-        if klucz not in scalone or str(getattr(p, "source_domain", "")).startswith("governor"):
-            scalone[klucz] = p
-    return list(scalone.values())
 
 
 def _per_event_response_z_wiersza(row, result, target, ref_time) -> "PerEventFatigueResponse":

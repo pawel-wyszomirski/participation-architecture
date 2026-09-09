@@ -132,9 +132,16 @@ stage_merge_window_days: 45
 #   snapshot  - off-chain stages (temperature checks) of the delegate's history
 #   governor  - binding on-chain votes, read from the contract (authoritative
 #               for Arbitrum since Tally froze its index on 2026-06-08)
-#   ecosystem - all proposals open in the space at t (concurrency construct);
-#               without it concurrency falls back to voted_only, which is a
-#               different construct and disqualifies on its own
+#   ecosystem - Snapshot layer of the proposals open in the space at t
+#               (concurrency construct); without it concurrency falls back to
+#               voted_only, which is a different construct and disqualifies on
+#               its own
+#   ecosystem_governor - the SAME construct read from the contracts, binding
+#               since June 2026. Added 2026-09-09: the exposure repair gave the
+#               engine a second layer but left its receipt outside this list, so
+#               eligibility never looked at it. A 403 on one of the two Governor
+#               contracts then passed as a qualified measurement on an exposure
+#               known to be incomplete.
 #   taxonomy  - the DAO's proposal registry (arbdata): novelty is DEFINED on its
 #               categories, and the governor voting windows come from it. Without
 #               it novelty falls back to a keyword list, which is a different
@@ -152,7 +159,7 @@ stage_merge_window_days: 45
 #   novelty denominator is then bounded to the delivered records). A truncation
 #   reaching into the window fails.
 eligibility:
-  required_sources: [snapshot, governor, ecosystem, taxonomy]
+  required_sources: [snapshot, governor, ecosystem, ecosystem_governor, taxonomy]
   eligible_states: [HEALTHY_COMPLETE, HEALTHY_EMPTY, PARTIAL]
   context_window_days: 30
 

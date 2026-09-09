@@ -1157,6 +1157,48 @@ def reconcile_observations(votes: List[Any]) -> Tuple[List[Any], List[Dict[str, 
     return wynik, uzgodnienia
 
 
+def scal_ekspozycje(snap, gov):
+    """Ekspozycja ekosystemu z dwóch warstw, jedna decyzja liczona RAZ (I3, 2026-09-09).
+
+    Prosta suma byłaby błędem odwrotnym do dzisiejszego: ta sama decyzja bywa etapem na
+    Snapshocie i później na kontrakcie, więc podwójne zliczenie zawyżałoby współbieżność
+    dokładnie tam, gdzie dziś ją zeruje. Klucz scalania to `_klucz_decyzji` z silnika -
+    tytuł sprowadzony do postaci porównywalnej między źródłami, ten sam, którym silnik
+    łączy etapy w cykl od 04.09.
+
+    `None` z obu źródeł zostaje `None`: brak odpowiedzi nie jest pustym ekosystemem, a
+    `compute_per_event` odróżnia te przypadki (`None` schodzi na `voted_only` i dyskwalifikuje,
+    pusta lista znaczy „nic nie było otwarte").
+    """
+    # Awaria KTÓREJKOLWIEK warstwy znaczy, że pełnej ekspozycji nie znamy - a nie, że
+    # znamy ją w części. Zwrócenie tego, co odpowiedziało, podałoby stan zdegradowany jako
+    # pomiar ekosystemu: dokładnie to, przed czym ostrzega recenzja („a degraded state must
+    # never cross as a valid, qualified result"). `None` schodzi na `voted_only`, co silnik
+    # dyskwalifikuje, a pokwitowania obu warstw zostają w manifeście, więc widać, która padła.
+    if snap is None or gov is None:
+        return None
+
+    # Scalamy WYŁĄCZNIE MIĘDZY warstwami (09.09, druga runda I3). Wcześniej jeden słownik
+    # obejmował obie listy naraz, więc dwie RÓŻNE propozycje kontraktowe, których tytuły
+    # schodzą się po normalizacji, zlewały się w jedną i zaniżały współczynnik. W obrębie
+    # jednej warstwy powtórzony tytuł to zawsze dwa obciążenia - governance nie wystawia
+    # jednej propozycji dwa razy w tym samym miejscu, a jeżeli nazywa dwie sprawy tak samo,
+    # delegat i tak czyta obie.
+    #
+    # Klucz jest MOCNIEJSZY niż `_klucz_decyzji` o jedną rzecz: znika z niego odstęp. Snapshot
+    # i kontrakt zapisują ten sam tytuł raz jako „ArbOS 61", raz jako „ArbOS61", i sam
+    # `_klucz_decyzji` zostawiał je jako dwie decyzje - czyli ZAWYŻAŁ ekspozycję dokładnie tam,
+    # gdzie naprawa miała ją urealnić. Mocniejsza normalizacja jest tu bezpieczna właśnie
+    # dlatego, że działa wyłącznie na parach z dwóch różnych warstw.
+    def _klucz_ekspozycji(p):
+        return re.sub(r"\s+", "", _klucz_decyzji(p) or "")
+
+    klucze_gov = {_klucz_ekspozycji(p) for p in gov} - {""}
+    # Przy tej samej decyzji zostaje etap kontraktowy: od czerwca 2026 to on jest wiążący,
+    # więc jego okno opisuje realny czas trwania obciążenia.
+    return [p for p in snap if _klucz_ekspozycji(p) not in klucze_gov] + list(gov)
+
+
 def merge_stages(votes: List[Any], okno_dni: int = 45) -> List[Any]:
     """Wiąże etapy JEDNEJ decyzji w cykl (lifecycle), NIE mutując żadnego etapu.
 

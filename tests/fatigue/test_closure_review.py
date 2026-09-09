@@ -70,12 +70,18 @@ def obs(id_, days_ago, now, **kw):
 
 
 def healthy_receipts():
+    """UWAGA: testy podmieniają pozycje tej listy po INDEKSIE (receipts[0] to snapshot,
+    [2] governor, [3] ecosystem, [4] taxonomy). Nowe pokwitowania dokładaj na KOŃCU."""
     return [
         SourceReceipt("snapshot", HEALTHY_COMPLETE, events=3),
         SourceReceipt("tally", AUTH_MISSING, detail="no key"),
         SourceReceipt("governor", HEALTHY_COMPLETE, events=2),
         SourceReceipt("ecosystem", HEALTHY_COMPLETE, events=2),
         SourceReceipt("taxonomy", HEALTHY_COMPLETE, events=89),
+        # Warstwa kontraktowa ekspozycji - źródło wymagane od 2026-09-09. Do tej pory
+        # jej pokwitowanie powstawało, ale nie stało w `required_sources`, więc awaria
+        # jednego z dwóch kontraktów Governor przechodziła jako pomiar pierwszorzędny.
+        SourceReceipt("ecosystem_governor", HEALTHY_COMPLETE, events=2),
     ]
 
 

@@ -108,6 +108,11 @@ SELECTOR_VOTING_DELAY = "0x3932abb1"   # votingDelay()
 # Fallback if the contract cannot be queried. Current on-chain value; governance
 # can change it, which is why the live call comes first and this is only a floor.
 DEFAULT_VOTING_DELAY_BLOCKS = 21_600
+# Zapas przy przeliczaniu chwili na numer bloku. Tempo produkcji bloków nie jest stałe,
+# więc `at_ts` mapuje się na blok z błędem rosnącym wraz z odległością w czasie; trzy doby
+# zapasu kosztują jeden dodatkowy fragment skanu, a ich brak gubi propozycje otwarte
+# w mierzonej chwili.
+MARGINES_BLOKOW = 3 * BLOCKS_PER_DAY
 
 
 def _word(data: str, index: int) -> int:
@@ -228,7 +233,30 @@ class GovernorClient:
             except Exception as e:  # noqa: BLE001
                 return None, SourceReceipt("ecosystem_governor", UNAVAILABLE,
                                            detail=f"blockNumber: {e}"[:200])
-            first = max(0, head - days_back * BLOCKS_PER_DAY)
+            # Zakres skanu idzie za MIERZONĄ CHWILĄ, nie za czołem łańcucha (09.09,
+            # druga runda I3). `as_of` jest podstawowym trybem instrumentu, a okno liczone
+            # od HEAD sprawiało, że pomiar starszy niż `days_back` nie znajdował NICZEGO -
+            # przy pokwitowaniu HEALTHY_COMPLETE, bo opisywało ono udany skan, a nie
+            # ekspozycję przy `at_ts`.
+            #
+            # Czas czoła bierzemy z łańcucha, nie z zegara maszyny: różnica między nimi
+            # jest właśnie tym, co ten przelicznik ma mierzyć.
+            try:
+                head_ts = await self._block_time(client, hex(head))
+            except Exception as e:  # noqa: BLE001
+                return None, SourceReceipt("ecosystem_governor", UNAVAILABLE,
+                                           detail=f"head block time: {e}"[:200])
+            blok_chwili = head - max(0, head_ts - at_ts) * BLOCKS_PER_DAY // 86_400
+            if blok_chwili < 0:
+                # Mierzona chwila jest starsza niż łańcuch - nie ma czego skanować,
+                # a pusty wynik wyglądałby jak „nic nie było otwarte".
+                return None, SourceReceipt(
+                    "ecosystem_governor", UNAVAILABLE,
+                    detail=f"at_ts {at_ts} precedes the chain (head_ts {head_ts})")
+            # Propozycja utworzona PO mierzonej chwili nie mogła być wtedy otwarta, ale
+            # przeliczenie czasu na blok jest przybliżeniem - stąd zapas po prawej stronie.
+            last = min(head, blok_chwili + MARGINES_BLOKOW)
+            first = max(0, blok_chwili - days_back * BLOCKS_PER_DAY)
             voting_delay = await self._voting_delay(client)
             czasy: Dict[str, int] = {}
 
@@ -236,7 +264,7 @@ class GovernorClient:
                 klient = GovernorClient(address=adres, endpoints=self.endpoints)
                 klient._endpoint = self._endpoint
                 try:
-                    created = await klient._logs(client, [TOPIC_PROPOSAL_CREATED], first, head)
+                    created = await klient._logs(client, [TOPIC_PROPOSAL_CREATED], first, last)
                 except Exception as e:  # noqa: BLE001
                     stany.append(ERROR)
                     szczegoly.append(f"{rola}: ProposalCreated scan: {e}"[:200])
@@ -270,8 +298,15 @@ class GovernorClient:
                                        detail="no contract answered")
         ranking = [UNAVAILABLE, ERROR, TRUNCATED, PARTIAL, HEALTHY_COMPLETE, HEALTHY_EMPTY]
         stan = next((s for s in ranking if s in stany), HEALTHY_EMPTY)
-        if stan in (ERROR, UNAVAILABLE) and not otwarte:
-            return None, SourceReceipt("ecosystem_governor", stan,
+        # Awaria CZĘŚCIOWA też nie jest pomiarem (09.09, druga runda I3). Do tej pory
+        # warunek brzmiał `and not otwarte`, więc gdy jeden kontrakt odbił się o 403,
+        # a drugi oddał propozycje, funkcja zwracała TE propozycje razem ze stanem ERROR.
+        # Wołający widzi wartość nie-`None`, scala ją i werdykt wychodzi PRIMARY_ELIGIBLE
+        # na ekspozycji, o której wiemy, że jest niepełna. Ekspozycja jest z definicji
+        # sumą po całym ekosystemie - część tej sumy nie jest jej mniejszym oszacowaniem,
+        # tylko liczbą bez znanej relacji do prawdy.
+        if stan in (ERROR, UNAVAILABLE):
+            return None, SourceReceipt("ecosystem_governor", stan, events=len(otwarte),
                                        detail="; ".join(szczegoly)[:200])
         if stan == HEALTHY_EMPTY and otwarte:
             stan = HEALTHY_COMPLETE
