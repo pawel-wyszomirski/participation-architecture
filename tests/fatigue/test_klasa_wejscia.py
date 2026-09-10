@@ -138,6 +138,13 @@ def test_rowny_czas_glosu_rozne_okna_nie_rusza_wyniku(silnik):
 
 # --- 3. Dwie reguły czasu głosu ---------------------------------------------
 
+@pytest.mark.skip(reason=(
+    "PRZYPADEK NIEODTWORZONY. Pochodzi z cudzego przebiegu (Codex, gpt-6-astra, "
+    "10.09: 0,0 wobec 22,2 DFI pod jednym identyfikatorem). Moja konstrukcja go NIE "
+    "odtwarza: sabotaż na 09ece75 pokazał, że ten warunek przechodzi także na kodzie "
+    "sprzed naprawy, czyli nie chroni przed niczym. Zostaje wyłączony, dopóki nie mam "
+    "wejścia, którym rozjazd faktycznie widać - test przechodzący zawsze jest gorszy "
+    "niż jego brak, bo udaje pokrycie."))
 def test_dwie_reguly_czasu_glosu_daja_ten_sam_odcisk(silnik):
     """Obliczenia czytają `voted_at → start`, kanonizacja `voted_at → cast_at → 0`.
     Rekord bez `voted_at`, ale ze `start`, ma w projekcji zero, a w obliczeniu
@@ -165,6 +172,10 @@ def test_dwie_reguly_czasu_glosu_daja_ten_sam_odcisk(silnik):
 
 # --- 4. Granica między tytułem a treścią ------------------------------------
 
+@pytest.mark.skip(reason=(
+    "PRZYPADEK NIEODTWORZONY, ta sama przyczyna co przy regule czasu. Cudzy przebieg "
+    "dał 5,0 wobec 10,0 DFI przy 1 wobec 711 słów treści; moja konstrukcja daje różne "
+    "identyfikatory już na 09ece75. Wyłączony do czasu uzyskania parametrów wejścia."))
 def test_przesuniecie_tekstu_miedzy_tytulem_a_trescia(silnik):
     """`reading_time` liczy słowa z samego `body`, a tożsamość hashuje
     `title + "\\n" + body`. Sklejenie nie zachowuje granicy pól, więc przesunięcie
