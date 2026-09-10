@@ -737,6 +737,13 @@ async def _measure_per_event(address: str, proposal_id: Optional[str]):
     return result, target, ref_time
 
 
+def _cel_z_manifestu(manifest: Dict[str, Any], pole: str, zapasowo):
+    """Pole celu z zapisanego wejścia; surowy obiekt tylko dla starych manifestów."""
+    cel = ((manifest or {}).get("prepared_input") or {}).get("target") or {}
+    wartosc = cel.get(pole)
+    return wartosc if wartosc not in (None, "") else zapasowo
+
+
 def _rozjazd_zapisanego_i_przeliczonego(row, result) -> List[Dict[str, Any]]:
     """Które pola zapisanego pomiaru różnią się od przeliczonego przed chwilą.
 
@@ -808,8 +815,15 @@ def _per_event_response_z_wiersza(row, result, target, ref_time) -> "PerEventFat
         computed_at=row.computed_at,
         formula=FatigueEngine.FORMULA,
         mode=result.mode,
-        target_proposal_id=target.id,
-        target_proposal_title=(getattr(target, "title", None) or ""),
+        # Cel opisujemy z ZAPISANEGO wejścia, nie z obiektu, który przyszedł ze źródła
+        # przy tym wywołaniu. Do 10.09 szły tu `target.id` i `target.title` z surowego
+        # rekordu - a to znaczy, że odpowiedź „z rejestru" opisywała propozycję taką,
+        # jaka jest DZIŚ, nie taką, jaką zmierzono; tytuł bywa redagowany po głosowaniu.
+        # Stare manifesty (bez `prepared_input`) schodzą na surowy obiekt, inaczej
+        # pomiary sprzed tej zmiany przestałyby się odczytywać.
+        target_proposal_id=_cel_z_manifestu(manifest, "id", target.id),
+        target_proposal_title=_cel_z_manifestu(
+            manifest, "title", getattr(target, "title", None) or ""),
         as_of=ref_time,
         identity=MeasurementIdentityResponse(**manifest),
         eligibility=row.eligibility or "",

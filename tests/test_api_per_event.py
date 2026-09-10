@@ -120,6 +120,15 @@ def fakes(monkeypatch):
     monkeypatch.setattr(main.GovernorClient, "fetch_ecosystem_exposure", _eco_gov)
     monkeypatch.setattr(main.ArbdataClient, "load", _registry)
     yield
+    # Baza jest wspólna dla całego pliku, więc wiersz zostawiony przez jeden test
+    # rozstrzygał o wyniku następnego: test sprawdzający konflikt CELOWO psuje zapis,
+    # a kolejny dostawał przez to 409, badając coś zupełnie innego. Sprzątanie stoi tu,
+    # a nie w `finally` pojedynczych testów, bo wykona się także po nieudanej asercji
+    # - inaczej pierwsza porażka zatruwa całą resztę pliku i przyczyna wygląda na
+    # kilka usterek naraz. Kolejność zbierania nie ma prawa rozstrzygać o wyniku.
+    with main.SessionLocal() as db:
+        db.query(FatigueSnapshot).delete()
+        db.commit()
 
 
 @pytest.fixture

@@ -641,6 +641,13 @@ class FatigueEngine:
                 "events_unknown_window": sum(
                     1 for p in frozen_history if not getattr(p, "end", None)),
                 "concurrency_source": concurrency_source,
+                # Ujawnione zaangażowanie delegata NALEŻY do pomiaru, więc stoi
+                # w manifeście obok źródła współbieżności. Do 10.09 go tu nie było,
+                # a odpowiedź budowana z zapisanego wiersza brała je z zapasowej
+                # ścieżki na świeże obliczenie - czyli wiersz oddawał liczbę policzoną
+                # przed chwilą, nie tę, którą zarejestrowano (recenzja Codeksa,
+                # `main.py:768`).
+                "voted_concurrent": voted_concurrent,
                 "reconciliations": list(reconciliations or []),
             },
             lifecycle_id=str(getattr(target_proposal, "lifecycle_id", "") or ""),
