@@ -136,70 +136,15 @@ def test_rowny_czas_glosu_rozne_okna_nie_rusza_wyniku(silnik):
               "równy czas głosu, różne okna")
 
 
-# --- 3. Dwie reguły czasu głosu ---------------------------------------------
-
-@pytest.mark.skip(reason=(
-    "PRZYPADEK NIEODTWORZONY. Pochodzi z cudzego przebiegu (Codex, gpt-6-astra, "
-    "10.09: 0,0 wobec 22,2 DFI pod jednym identyfikatorem). Moja konstrukcja go NIE "
-    "odtwarza: sabotaż na 09ece75 pokazał, że ten warunek przechodzi także na kodzie "
-    "sprzed naprawy, czyli nie chroni przed niczym. Zostaje wyłączony, dopóki nie mam "
-    "wejścia, którym rozjazd faktycznie widać - test przechodzący zawsze jest gorszy "
-    "niż jego brak, bo udaje pokrycie."))
-def test_dwie_reguly_czasu_glosu_daja_ten_sam_odcisk(silnik):
-    """Obliczenia czytają `voted_at → start`, kanonizacja `voted_at → cast_at → 0`.
-    Rekord bez `voted_at`, ale ze `start`, ma w projekcji zero, a w obliczeniu
-    czas otwarcia. Zmierzone: 0,0 wobec 22,2 DFI."""
-    z_czasem = Propozycja(id="c-1", title="C", body="słowo " * 100,
-                          start=BAZA - 100_000, end=BAZA - 90_000,
-                          voted_at=BAZA - 95_000, category="treasury",
-                          lifecycle_id="cykl-z", native_proposal_id="0xc")
-    bez_czasu = Propozycja(id="c-1", title="C", body="słowo " * 100,
-                           start=BAZA - 100_000, end=BAZA - 90_000,
-                           voted_at=0, category="treasury",
-                           lifecycle_id="cykl-z", native_proposal_id="0xc")
-    cel = _cel()
-    a = zmierz(silnik, cel, [z_czasem])
-    b = zmierz(silnik, cel, [bez_czasu])
-    # Po naprawie te dwa wejścia PRZESTAŁY być tożsame - projekcja niesie jedną,
-    # ujednoliconą regułę czasu, więc rekord bez `voted_at` jest innym rekordem.
-    # Warunek zmienia się więc z „ten sam identyfikator, ten sam wynik" na
-    # „rozróżnienie nie ma prawa zniknąć". Gdyby ktoś przywrócił dwie reguły czasu,
-    # identyfikatory znów by się zrównały i ten test padnie.
-    assert a.identity.measurement_id != b.identity.measurement_id, (
-        "regresja: rekord z czasem głosu i bez niego znów dzielą jeden identyfikator "
-        f"({a.identity.measurement_id}) przy DFI {a.fatigue_score} i {b.fatigue_score}")
-
-
 # --- 4. Granica między tytułem a treścią ------------------------------------
 
-@pytest.mark.skip(reason=(
-    "PRZYPADEK NIEODTWORZONY, ta sama przyczyna co przy regule czasu. Cudzy przebieg "
-    "dał 5,0 wobec 10,0 DFI przy 1 wobec 711 słów treści; moja konstrukcja daje różne "
-    "identyfikatory już na 09ece75. Wyłączony do czasu uzyskania parametrów wejścia."))
-def test_przesuniecie_tekstu_miedzy_tytulem_a_trescia(silnik):
-    """`reading_time` liczy słowa z samego `body`, a tożsamość hashuje
-    `title + "\\n" + body`. Sklejenie nie zachowuje granicy pól, więc przesunięcie
-    fragmentu z treści do tytułu zostawia hash bez zmian. Zmierzone: 5,0 wobec 10,0."""
-    tresc = "słowo " * 400
-    cel_a = _cel()
-    cel_a.title = ""
-    cel_a.body = "\n" + tresc
-    cel_b = _cel()
-    cel_b.title = "\n" + tresc.split(" ", 1)[0]
-    cel_b.body = tresc.split(" ", 1)[1]
-    historia = [Propozycja(id="h-1", title="H", body="słowo " * 50,
-                           start=BAZA - 300_000, end=BAZA - 200_000,
-                           voted_at=BAZA - 250_000, category="treasury",
-                           lifecycle_id="cykl-h", native_proposal_id="0xh")]
-    a = zmierz(silnik, cel_a, historia)
-    b = zmierz(silnik, cel_b, historia)
-    # Po naprawie `title` i `body` idą do serializacji osobno, więc przesunięcie
-    # fragmentu między nimi jest widoczne w tożsamości. Wcześniej hash liczył się
-    # ze sklejenia i granica pól ginęła. Ten warunek pilnuje, żeby sklejenie nie wróciło.
-    assert a.identity.measurement_id != b.identity.measurement_id, (
-        "regresja: przesunięcie tekstu z treści do tytułu znów nie rusza identyfikatora "
-        f"({a.identity.measurement_id}) przy DFI {a.fatigue_score} i {b.fatigue_score}")
 
+# Przypadki „dwie reguły czasu głosu" i „granica między tytułem a treścią" NIE stoją
+# w tym pliku. Moje konstrukcje ich nie odtwarzały - przechodziły również na kodzie
+# sprzed naprawy, co wykrył sabotaż w osobnym drzewie roboczym. Poprawne wersje, z polem
+# `cast_at` i bez dopisywania celu do historii, leżą w `test_odtworzenie_wejscia.py`
+# (`test_czas_rozne_znaczenie_rozne_id`, `test_tekst_granica_pol_rozne_id`) i tam padają
+# na starym silniku. Trzymanie tu drugiej, słabszej kopii dawałoby złudzenie pokrycia.
 
 # --- 5. Własność, nie usterka: dowolna permutacja ----------------------------
 

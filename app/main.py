@@ -737,6 +737,39 @@ async def _measure_per_event(address: str, proposal_id: Optional[str]):
     return result, target, ref_time
 
 
+def _rozjazd_zapisanego_i_przeliczonego(row, result) -> List[Dict[str, Any]]:
+    """Które pola zapisanego pomiaru różnią się od przeliczonego przed chwilą.
+
+    Kontrakt tożsamości brzmi: ten sam `measurement_id` znaczy ten sam wynik
+    kanoniczny. Sprawdzanie samego `fatigue_score` sprawdza go w jednej piątej -
+    składniki liczą się z dokładnością do trzech miejsc, a wynik jest zaokrąglany
+    do jednego, więc rozjazd w `novelty` albo `burstiness` potrafi zniknąć
+    w zaokrągleniu. Status i kwalifikacja nie wchodzą do wyniku liczbowego wcale.
+
+    Zwraca listę różnic, nie wartość logiczną: przy 409 trzeba powiedzieć, CO się
+    rozjechało, inaczej odbiorca dostaje sam fakt konfliktu bez tropu.
+    """
+    pola = [
+        ("fatigue_score", row.fatigue_score, result.fatigue_score),
+        ("status", row.status, result.status),
+        ("volume", row.comp_volume, result.components.volume),
+        ("concurrency", row.comp_concurrency, result.components.concurrency),
+        ("burstiness", row.comp_burstiness, result.components.burstiness),
+        ("reading_time", row.comp_reading_time, result.components.reading_time),
+        ("novelty", row.comp_novelty, result.components.novelty),
+        ("eligibility", getattr(row, "eligibility", None), result.identity.eligibility),
+    ]
+    out: List[Dict[str, Any]] = []
+    for nazwa, zapisane, przeliczone in pola:
+        if isinstance(zapisane, (int, float)) and isinstance(przeliczone, (int, float)):
+            rozne = abs((zapisane or 0.0) - (przeliczone or 0.0)) > 1e-9
+        else:
+            rozne = zapisane != przeliczone
+        if rozne:
+            out.append({"pole": nazwa, "zapisane": zapisane, "przeliczone": przeliczone})
+    return out
+
+
 def _per_event_response_z_wiersza(row, result, target, ref_time) -> "PerEventFatigueResponse":
     """Odpowiedź złożona z ZAPISANEGO wiersza rejestru (I2, 2026-09-09).
 
@@ -889,12 +922,19 @@ async def register_per_event_fatigue(
         # Rozbieżność między zapisanym a świeżym wynikiem NIE jest tu wygładzana. Ta sama
         # tożsamość przy innym wyniku znaczy, że kontrakt tożsamości jest naruszony, i musi to
         # być widoczne, a nie schowane za cichym zwrotem starego wiersza.
-        if abs((existing.fatigue_score or 0.0) - result.fatigue_score) > 1e-9:
+        # Porównanie obejmuje CAŁY wynik kanoniczny, nie sam `fatigue_score`. Do 10.09
+        # sprawdzana była jedna liczba, więc rozjazd składników, statusu albo
+        # kwalifikacji przechodził jako zgodność, o ile zaokrąglony wynik się zgadzał -
+        # a to jest dokładnie ten stan, którego kontrakt tożsamości zabrania. Wskazał
+        # to Codex (gpt-6-astra) w recenzji z 10.09, `app/main.py:892`.
+        rozjazdy = _rozjazd_zapisanego_i_przeliczonego(existing, result)
+        if rozjazdy:
             raise HTTPException(
                 status_code=409,
                 detail={
                     "error": "MEASUREMENT_IDENTITY_CONFLICT",
                     "measurement_id": mid,
+                    "rozjazdy": rozjazdy,
                     "persisted_score": existing.fatigue_score,
                     "recomputed_score": result.fatigue_score,
                     "identity_schema_version": getattr(

@@ -243,11 +243,26 @@ def test_ponowna_rejestracja_oddaje_zapisany_wiersz_nie_swiezy_wynik(client):
         db.commit()
 
     drugi = client.post(f"/delegates/{ADDR}/per-event-fatigue")
-    assert drugi.status_code == 200
-    body = drugi.json()
-    assert body["persisted"] is False
-    assert body["status"] == "SABOTAZ", "odpowiedź pochodzi z przeliczenia, nie z rejestru"
-    assert body["components"]["novelty"] == 0.4242
+
+    # ZMIANA WARUNKU 10.09, po wzmocnieniu kontraktu zapisu.
+    # Do dziś porównywany był sam `fatigue_score`, więc wiersz z podmienionym statusem
+    # i składnikiem przechodził jako zgodny, a test sprawdzał, czy odpowiedź niesie
+    # zapisane wartości. Teraz porównanie obejmuje CAŁY wynik kanoniczny, więc taki
+    # rozjazd jest tym, czym jest: naruszeniem tożsamości, nie stanem do oddania
+    # wołającemu. Sytuacja „odpowiedź z wiersza różni się od przeliczenia" nie może już
+    # zaistnieć - albo wartości są zgodne, albo leci 409.
+    # Ochrona przed I2 nie znika, tylko zmienia miejsce: skoro każdy rozjazd kończy się
+    # konfliktem, nie da się oddać świeżego wyniku udającego zapisany.
+    assert drugi.status_code == 409
+    detail = drugi.json()["detail"]
+    assert detail["error"] == "MEASUREMENT_IDENTITY_CONFLICT"
+    rozjechane = {r["pole"] for r in detail["rozjazdy"]}
+    assert rozjechane == {"status", "novelty"}, (
+        f"konflikt ma nazywać KTÓRE pola się rozjechały, dostałam: {detail['rozjazdy']}")
+
+    with main.SessionLocal() as db:
+        db.query(FatigueSnapshot).filter(FatigueSnapshot.measurement_id == mid).delete()
+        db.commit()
 
 
 def test_rozbieznosc_zapisanego_i_przeliczonego_konczy_sie_konfliktem(client):
