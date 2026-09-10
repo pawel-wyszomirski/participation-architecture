@@ -262,13 +262,17 @@ class MeasurementIdentityResponse(BaseModel):
     eligibility_reasons: List[str] = Field(default_factory=list, description="Disqualifying")
     eligibility_notes: List[str] = Field(default_factory=list, description=(
         "Recorded limits that do not disqualify (e.g. history truncated beyond the context window)"))
+    prepared_input: Dict[str, Any] = Field(default_factory=dict, description=(
+        "Pełne wejście do odtworzenia offline, włącznie z konfiguracją instrumentu"))
+    input_conflicts: List[Dict[str, Any]] = Field(default_factory=list, description=(
+        "Sprzeczne kategorie cyklu i powtórzone ID; bez automatycznej dyskwalifikacji"))
     canonical_input_digest: str = Field("", description=(
         "sha256 of CanonicalMeasurementInput - the VALUES the score is a function of "
         "(target, history, ecosystem, instrument, receipts), not the ids of the records "
         "they came from"))
     identity_schema_version: str = Field("", description=(
         "Rule that produced measurement_id. '1' bound id sets and could give one identity "
-        "to two different scores; '2' (from 2026-09-09) binds the canonical input. Empty "
+        "to two different scores; '2' binds a projection; '3' binds the input consumed by components. Empty "
         "means a measurement taken before the field existed"))
     measurement_id: str = Field("", description=(
         "Digest of the complete measurement identity; persistence is idempotent on it"))

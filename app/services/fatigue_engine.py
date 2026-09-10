@@ -49,6 +49,7 @@ import re
 import subprocess
 import yaml
 import logging
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field, asdict
@@ -197,6 +198,8 @@ class MeasurementIdentity:
     eligibility: str = ELIGIBLE                  # PRIMARY_ELIGIBLE | NOT_ELIGIBLE_...
     eligibility_reasons: List[str] = field(default_factory=list)   # disqualifying
     eligibility_notes: List[str] = field(default_factory=list)     # recorded, not disqualifying
+    prepared_input: Dict[str, Any] = field(default_factory=dict)
+    input_conflicts: List[Dict[str, Any]] = field(default_factory=list)
     canonical_input_digest: str = ""             # sha256 of CanonicalMeasurementInput
     identity_schema_version: str = ""            # rule that produced measurement_id
     measurement_id: str = ""                     # digest of the whole manifest
@@ -468,10 +471,51 @@ class FatigueEngine:
         exposure and a possible response to load); off-vote reading and
         forum/Discord load are not captured; Snapshot data is off-chain. See 6.5.
         """
-        if now is None:
-            now = datetime.now(timezone.utc)
+        now_ts = int((now or datetime.now(timezone.utc)).timestamp())
+        receipts = [r.to_dict() if isinstance(r, SourceReceipt) else dict(r)
+                    for r in (source_receipts or [])]
+        wejscie = CanonicalMeasurementInput(
+            target_proposal, voted_history, ecosystem_proposals,
+            self.instrument_hash, receipts, now_ts=now_ts, address=address,
+            config=self.config, code_commit=self.code_commit,
+            source_counts=source_counts, reconciliations=reconciliations)
+        return self.compute_prepared(wejscie)
 
-        now_ts = int(now.timestamp())
+    @staticmethod
+    def compute_prepared(wejscie: "CanonicalMeasurementInput") -> FatigueResult:
+        """Obliczenie bez dostępu do surowych źródeł ani bieżącego YAML."""
+        data = wejscie.to_dict()
+        worker = object.__new__(FatigueEngine)
+        worker.config = data["config"]
+        worker.version = str(worker.config["version"])
+        worker.instrument_hash = data["instrument_hash"]
+        worker.code_commit = data["code_commit"]
+        return worker._compute_prepared(wejscie)
+
+    @staticmethod
+    def replay(manifest: Dict[str, Any]) -> FatigueResult:
+        """Odtwarza pomiar tym samym kodem; nie podszywa się pod starszy silnik."""
+        prepared = CanonicalMeasurementInput.from_dict(
+            manifest["prepared_input"], manifest["canonical_input_digest"])
+        if prepared.to_dict()["code_commit"] != FatigueEngine._read_code_commit():
+            raise ValueError("Odtworzenie wymaga wersji kodu zapisanej w pomiarze")
+        result = FatigueEngine.compute_prepared(prepared)
+        if result.identity.measurement_id != manifest["measurement_id"]:
+            raise ValueError("Tożsamość odtworzonego pomiaru jest inna")
+        return result
+
+    def _compute_prepared(self, wejscie: "CanonicalMeasurementInput") -> FatigueResult:
+        data = wejscie.to_dict()
+        target_proposal = SimpleNamespace(**data["target"])
+        frozen_history = [SimpleNamespace(**p) for p in data["history"]]
+        ecosystem_proposals = ([SimpleNamespace(**p) for p in data["ecosystem"]]
+                               if data["ecosystem"] is not None else None)
+        now_ts = data["now_ts"]
+        now = datetime.fromtimestamp(now_ts, timezone.utc)
+        address = data["address"]
+        source_receipts = data["receipts"]
+        source_counts = data["source_counts"]
+        reconciliations = data["reconciliations"]
         weights = self.config["weights"]
         ref = self.config.get(
             "reference_values_per_event", self.config["reference_values"]
@@ -482,7 +526,6 @@ class FatigueEngine:
         # it; without this filter that later vote would enter the target's
         # history and the historical DFI would depend on information that did
         # not exist at the declared as_of boundary.
-        frozen_history = [p for p in voted_history if self._vote_ts(p) <= now_ts]
 
         # One decision = one workload event. Stages of a lifecycle collapse to
         # the EARLIEST frozen stage for counting only - a view over immutable
@@ -490,7 +533,7 @@ class FatigueEngine:
         decisions = self._decision_representatives(frozen_history)
 
         # Context components from the delegate's history around the vote.
-        ctx = self._compute_metrics(decisions, now_ts, by_vote_time=True)
+        ctx = self._compute_metrics(decisions, now_ts, by_vote_time=True, context_only=True)
 
         # Separation of the two quantities (grant review point 3): what the
         # delegate's own votes show at t is REVEALED ENGAGEMENT and is always
@@ -570,10 +613,6 @@ class FatigueEngine:
         # pytanie „na których rekordach liczono" - a nie „co te rekordy mówiły". Dwa pomiary
         # o tej samej historii i innych kategoriach dostawały jeden identyfikator przy różnym
         # wyniku (kontrprzykład: 44,90 i 46,60 pod `83df5f4f…9bea`).
-        wejscie = CanonicalMeasurementInput(
-            target=target_proposal, history=frozen_history,
-            ecosystem=ecosystem_proposals, instrument_hash=self.instrument_hash,
-            receipts=receipts)
         manifest_core = {
             "identity_schema_version": IDENTITY_SCHEMA_VERSION,
             "vote_event_id": vote_event_id,
@@ -582,7 +621,7 @@ class FatigueEngine:
             "code_commit": self.code_commit,
             # Skróty zbiorów zostają w manifeście jako czytelny opis zakresu - do tożsamości
             # nie wchodzą już samodzielnie, bo robi to projekcja kanoniczna.
-            "target_content_hash": _sha(title + "\n" + body),
+            "target_content_hash": _sha(_serialized({"title": title, "body": body})),
             "context_set_hash": _sha("|".join(context_ids)),
             "ecosystem_set_hash": (_sha("|".join(ecosystem_ids))
                                    if ecosystem_proposals is not None else ""),
@@ -621,6 +660,8 @@ class FatigueEngine:
             eligibility=eligibility,
             eligibility_reasons=reasons,
             eligibility_notes=notes,
+            prepared_input=wejscie.to_dict(),
+            input_conflicts=_input_conflicts(data["history"]),
             canonical_input_digest=manifest_core["canonical_input_digest"],
             identity_schema_version=IDENTITY_SCHEMA_VERSION,
             measurement_id=_sha(json.dumps(manifest_core, sort_keys=True))[:32],
@@ -664,7 +705,7 @@ class FatigueEngine:
         pierwsze: Dict[str, Any] = {}
         for p in history:
             k = _lifecycle_key(p)
-            if k not in pierwsze or FatigueEngine._vote_ts(p) < FatigueEngine._vote_ts(pierwsze[k]):
+            if k not in pierwsze or _observation_order(p) < _observation_order(pierwsze[k]):
                 pierwsze[k] = p
         return list(pierwsze.values())
 
@@ -780,7 +821,7 @@ class FatigueEngine:
             # pierwsza znana wśród jego ZAMROŻONYCH etapów (wszystkie <= now,
             # więc to informacja, która w chwili głosu istniała).
             kategorie_cykli: Dict[str, str] = {}
-            for p in history:
+            for p in sorted(history, key=_observation_order):
                 k = _lifecycle_key(p)
                 if k == wlasny:
                     continue
@@ -841,7 +882,8 @@ class FatigueEngine:
         return int(getattr(item, "voted_at", None) or getattr(item, "start", None) or 0)
 
     def _compute_metrics(
-        self, proposals: List[Any], now_ts: int, by_vote_time: bool = False
+        self, proposals: List[Any], now_ts: int, by_vote_time: bool = False,
+        context_only: bool = False
     ) -> FatigueMetrics:
         """
         Volume windows measure votes per week/month when `by_vote_time` is set
@@ -880,7 +922,7 @@ class FatigueEngine:
 
         # Average word count across 30d window
         recent = [p for p in proposals if cutoff_30d <= window_ts(p) <= now_ts]
-        if recent:
+        if recent and not context_only:
             word_counts = [len((p.body or "").split()) for p in recent]
             avg_word_count = sum(word_counts) / len(word_counts)
         else:
@@ -889,7 +931,7 @@ class FatigueEngine:
         # 4-week rolling average (proposals_30d / 4.33 weeks)
         weekly_avg = proposals_30d / 4.33
 
-        novelty_ratio = self._compute_novelty_ratio(recent)
+        novelty_ratio = 0.0 if context_only else self._compute_novelty_ratio(recent)
 
         return FatigueMetrics(
             proposals_7d=proposals_7d,
@@ -1005,7 +1047,7 @@ def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-IDENTITY_SCHEMA_VERSION = "2"
+IDENTITY_SCHEMA_VERSION = "3"
 """Wersja reguły, według której powstaje `measurement_id`.
 
 `1` (do 2026-09-09): manifest wiązał ZBIORY IDENTYFIKATORÓW - `context_set_hash`,
@@ -1013,7 +1055,9 @@ IDENTITY_SCHEMA_VERSION = "2"
 rekordów dostawały jeden identyfikator. Udowodnione kontrprzykładem: DFI 44,90 i 46,60 pod
 `83df5f4f2301ef52b6b98551f1ae9bea`, przy zmienionej wyłącznie kategorii wpisów historii.
 
-`2` (od 2026-09-09): identyfikator hashuje `CanonicalMeasurementInput`, czyli WARTOŚCI wejść.
+`2` (od 2026-09-09): identyfikator hashuje projekcję wartości.
+`3` (od 2026-09-10): składniki czytają to samo zapisane wejście co tożsamość;
+osobne title/body, jedna reguła czasu, deterministyczne remisy i odtworzenie offline.
 
 Bez tego pola stare i nowe identyfikatory dałoby się rozróżnić tylko przez wnioskowanie
 z commita - a rejestr będzie zawierał jedne i drugie obok siebie.
@@ -1021,64 +1065,112 @@ z commita - a rejestr będzie zawierał jedne i drugie obok siebie.
 
 
 def _wejscie_kanoniczne(p: Any) -> Dict[str, Any]:
-    """Semantyczna projekcja JEDNEJ obserwacji - wartości, od których zależy wynik.
-
-    Nie identyfikator rekordu, tylko to, co składniki z niego czytają. Pole transportowe
-    (kolejność w odpowiedzi, nagłówki, numer strony) nie ma prawa tworzyć nowej tożsamości
-    pomiaru, więc go tu nie ma.
-    """
+    """Kopia wartości obserwacji; bez referencji do obiektu źródłowego."""
+    title = getattr(p, "title", None) or ""
+    body = getattr(p, "body", None) or ""
+    start = int(getattr(p, "start", 0) or 0)
+    end = int(getattr(p, "end", 0) or 0)
+    own_id = _stage_id(p) or "~" + _sha(json.dumps(
+        [title, body, start, end], ensure_ascii=False))
     return {
-        "id": _stage_id(p) or f"~{_klucz_decyzji(p)}@{getattr(p, 'start', 0) or 0}",
-        "lifecycle": _lifecycle_key(p),
-        "voted_at": int(getattr(p, "voted_at", 0) or getattr(p, "cast_at", 0) or 0),
-        "start": int(getattr(p, "start", 0) or 0),
-        "end": int(getattr(p, "end", 0) or 0),
+        "id": own_id,
+        "lifecycle_id": str(getattr(p, "lifecycle_id", None) or own_id),
+        "voted_at": FatigueEngine._vote_ts(p),
+        "start": start, "end": end,
         "category": (getattr(p, "category", None) or "").strip().lower(),
+        "title": title, "body": body,
+        "source_domain": str(getattr(p, "source_domain", None)
+                             or getattr(p, "source", None) or ""),
+        "source_vote_id": str(getattr(p, "source_vote_id", None) or ""),
+        "native_proposal_id": str(getattr(p, "native_proposal_id", None) or ""),
+        "lifecycle_stage_ids": sorted(str(x) for x in
+            (getattr(p, "lifecycle_stage_ids", None) or [own_id])),
     }
 
 
+def _observation_order(p):
+    return (FatigueEngine._vote_ts(p), _stage_id(p),
+            _serialized(_wejscie_kanoniczne(p)))
+
+
+def _input_conflicts(history):
+    cycles = {}
+    ids = {}
+    for p in history:
+        cycles.setdefault(p["lifecycle_id"], []).append(p)
+        ids.setdefault(p["id"], []).append(p)
+    result = []
+    for lifecycle, stages in sorted(cycles.items()):
+        known = sorted((p for p in stages if p["category"]),
+                       key=lambda p: (p["voted_at"], p["id"], _serialized(p)))
+        if len({p["category"] for p in known}) > 1:
+            result.append({"kind": "category", "lifecycle_id": lifecycle,
+                           "selected_stage_id": known[0]["id"],
+                           "selected_category": known[0]["category"],
+                           "stages": known})
+    for stage_id, stages in sorted(ids.items()):
+        if len({_serialized(p) for p in stages}) > 1:
+            result.append({"kind": "duplicate_id", "stage_id": stage_id,
+                           "stages": sorted(stages, key=_serialized)})
+    return result
+
+
+def _serialized(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, ensure_ascii=False,
+                      separators=(",", ":"), allow_nan=False)
+
+
 class CanonicalMeasurementInput:
-    """Jedyne wejście, z którego wolno policzyć tożsamość pomiaru.
+    """Samowystarczalny zapis wejścia. Odczyt zawsze zwraca niezależną kopię.
 
-    Powód istnienia tego typu, a nie listy pól: lista ręczna zbutwieje dokładnie tak, jak
-    zbutwiał manifest schematu 1 - ktoś dopisze składnik czytający nowe pole i kolizja wróci
-    warstwę niżej. Pomysł „wyprowadzić mechanicznie, co czyta funkcja" odpada, bo introspekcja
-    w Pythonie mija się z funkcjami pomocniczymi, aliasami i nowymi gałęziami warunków.
-
-    Kontrakt: `źródła surowe → CanonicalMeasurementInput → składniki`. Dopóki składnik czyta
-    wyłącznie stąd, pytanie „jakie pola wchodzą do tożsamości" ma odpowiedź w typie, nie
-    w domyśle. Pilnuje tego `test_skladniki_nie_omijaja_typu_wejsciowego`.
+    Po przygotowaniu składniki nie mogą sięgać do obserwacji źródłowych.
+    Czas i okna normalizujemy do całkowitych sekund dokładnie jeden raz.
     """
+    __slots__ = ("_json",)
 
-    __slots__ = ("target", "history", "ecosystem", "instrument_hash", "receipts")
-
-    def __init__(self, target: Any, history: List[Any], ecosystem: Optional[List[Any]],
-                 instrument_hash: str, receipts: List[Dict[str, Any]]):
-        self.target = _wejscie_kanoniczne(target)
-        self.target["content"] = _sha((getattr(target, "title", None) or "") + "\n"
-                                      + (getattr(target, "body", None) or ""))
-        # Historia sortowana po identyfikatorze: kolejność w odpowiedzi źródła jest
-        # własnością transportu, nie pomiaru.
-        self.history = sorted((_wejscie_kanoniczne(p) for p in history),
-                              key=lambda d: d["id"])
-        self.ecosystem = (sorted((_wejscie_kanoniczne(p) for p in ecosystem),
-                                 key=lambda d: d["id"])
-                          if ecosystem is not None else None)
-        self.instrument_hash = instrument_hash
-        self.receipts = receipts
-
-    def kanonicznie(self) -> str:
-        return json.dumps({
+    def __init__(self, target, history, ecosystem, instrument_hash, receipts,
+                 *, now_ts=None, address="", config=None, code_commit="unknown",
+                 source_counts=None, reconciliations=None):
+        target = _wejscie_kanoniczne(target)
+        now_ts = target["voted_at"] if now_ts is None else int(now_ts)
+        history = [_wejscie_kanoniczne(p) for p in history]
+        self._json = _serialized({
             "schema": IDENTITY_SCHEMA_VERSION,
-            "target": self.target,
-            "history": self.history,
-            "ecosystem": self.ecosystem,
-            "instrument_hash": self.instrument_hash,
-            "receipts": self.receipts,
-        }, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+            "target": target,
+            "history": sorted((p for p in history if p["voted_at"] <= now_ts),
+                              key=lambda p: (p["id"], _serialized(p))),
+            "ecosystem": (sorted((_wejscie_kanoniczne(p) for p in ecosystem),
+                                 key=lambda p: (p["id"], _serialized(p)))
+                          if ecosystem is not None else None),
+            "now_ts": now_ts, "address": address.lower(),
+            "instrument_hash": instrument_hash, "config": config,
+            "code_commit": code_commit,
+            "receipts": sorted(receipts, key=_serialized),
+            "source_counts": source_counts or {},
+            "reconciliations": sorted(reconciliations or [], key=_serialized),
+        })
 
-    def digest(self) -> str:
-        return _sha(self.kanonicznie())
+    @classmethod
+    def from_dict(cls, data, expected_digest=None):
+        if data.get("schema") != IDENTITY_SCHEMA_VERSION:
+            raise ValueError("Nieobsługiwana wersja przygotowanego wejścia")
+        problems = FatigueEngine.validate_config(data.get("config"))
+        if problems:
+            raise InstrumentInvalid("; ".join(problems))
+        instance = object.__new__(cls)
+        instance._json = _serialized(data)
+        if expected_digest is not None and instance.digest() != expected_digest:
+            raise ValueError("Zapisane wejście nie zgadza się ze skrótem")
+        return instance
+
+    def to_dict(self):
+        return json.loads(self._json)
+
+    def kanonicznie(self):
+        return self._json
+
+    def digest(self):
+        return _sha(self._json)
 
 
 def _klucz_decyzji(p: Any) -> str:

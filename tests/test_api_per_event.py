@@ -289,3 +289,22 @@ def test_tozsamosc_wiaze_wartosci_wejsc_nie_identyfikatory(client):
     if b["fatigue_score"] != a["fatigue_score"]:
         assert b["measurement_id"] != a["measurement_id"], (
             "ten sam identyfikator przy różnym wyniku - kontrakt tożsamości naruszony")
+
+
+def test_post_zapisuje_wejscie_do_odtworzenia_offline(client, monkeypatch):
+    import json
+    from app.services.fatigue_engine import FatigueEngine
+
+    response = client.post(f"/delegates/{ADDR}/per-event-fatigue")
+    assert response.status_code == 200
+    body = response.json()
+    row = next(r for r in _rows() if r.measurement_id == body['measurement_id'])
+    manifest = json.loads(row.manifest)
+    assert manifest['prepared_input'] == body['identity']['prepared_input']
+    assert manifest['prepared_input']['config']['reference_values_per_event']['reading_words'] == 710
+    monkeypatch.setattr(FatigueEngine, '_load_config', lambda self: pytest.fail('odczyt YAML'))
+    restored = FatigueEngine.replay(manifest)
+    assert restored.fatigue_score == row.fatigue_score
+    assert restored.components.novelty == row.comp_novelty
+    assert restored.identity.measurement_id == row.measurement_id
+    assert restored.identity.input_conflicts == manifest['input_conflicts']
