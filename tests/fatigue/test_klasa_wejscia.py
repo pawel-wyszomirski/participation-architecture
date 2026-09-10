@@ -151,8 +151,16 @@ def test_dwie_reguly_czasu_glosu_daja_ten_sam_odcisk(silnik):
                            voted_at=0, category="treasury",
                            lifecycle_id="cykl-z", native_proposal_id="0xc")
     cel = _cel()
-    _porownaj(zmierz(silnik, cel, [z_czasem]), zmierz(silnik, cel, [bez_czasu]),
-              "dwie reguły czasu głosu")
+    a = zmierz(silnik, cel, [z_czasem])
+    b = zmierz(silnik, cel, [bez_czasu])
+    # Po naprawie te dwa wejścia PRZESTAŁY być tożsame - projekcja niesie jedną,
+    # ujednoliconą regułę czasu, więc rekord bez `voted_at` jest innym rekordem.
+    # Warunek zmienia się więc z „ten sam identyfikator, ten sam wynik" na
+    # „rozróżnienie nie ma prawa zniknąć". Gdyby ktoś przywrócił dwie reguły czasu,
+    # identyfikatory znów by się zrównały i ten test padnie.
+    assert a.identity.measurement_id != b.identity.measurement_id, (
+        "regresja: rekord z czasem głosu i bez niego znów dzielą jeden identyfikator "
+        f"({a.identity.measurement_id}) przy DFI {a.fatigue_score} i {b.fatigue_score}")
 
 
 # --- 4. Granica między tytułem a treścią ------------------------------------
@@ -172,8 +180,14 @@ def test_przesuniecie_tekstu_miedzy_tytulem_a_trescia(silnik):
                            start=BAZA - 300_000, end=BAZA - 200_000,
                            voted_at=BAZA - 250_000, category="treasury",
                            lifecycle_id="cykl-h", native_proposal_id="0xh")]
-    _porownaj(zmierz(silnik, cel_a, historia), zmierz(silnik, cel_b, historia),
-              "przesunięcie tekstu między tytułem a treścią")
+    a = zmierz(silnik, cel_a, historia)
+    b = zmierz(silnik, cel_b, historia)
+    # Po naprawie `title` i `body` idą do serializacji osobno, więc przesunięcie
+    # fragmentu między nimi jest widoczne w tożsamości. Wcześniej hash liczył się
+    # ze sklejenia i granica pól ginęła. Ten warunek pilnuje, żeby sklejenie nie wróciło.
+    assert a.identity.measurement_id != b.identity.measurement_id, (
+        "regresja: przesunięcie tekstu z treści do tytułu znów nie rusza identyfikatora "
+        f"({a.identity.measurement_id}) przy DFI {a.fatigue_score} i {b.fatigue_score}")
 
 
 # --- 5. Własność, nie usterka: dowolna permutacja ----------------------------

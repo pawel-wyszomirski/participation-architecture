@@ -267,6 +267,16 @@ def test_rozbieznosc_zapisanego_i_przeliczonego_konczy_sie_konfliktem(client):
     assert detail["error"] == "MEASUREMENT_IDENTITY_CONFLICT"
     assert detail["persisted_score"] != detail["recomputed_score"]
 
+    # Ten test CELOWO psuje zapisany wiersz, więc musi po sobie posprzątać: bez tego
+    # każdy późniejszy test rejestrujący ten sam pomiar dziedziczy konflikt i pada
+    # z 409, choć sprawdza coś zupełnie innego. Tak padał
+    # `test_post_zapisuje_wejscie_do_odtworzenia_offline` - w izolacji przechodził,
+    # w suicie nie. Baza jest wspólna dla całego pliku, a kolejność zbierania nie
+    # ma prawa rozstrzygać o wyniku (`tests/conftest.py`, zasada z CLAUDE.md).
+    with main.SessionLocal() as db:
+        db.query(FatigueSnapshot).filter(FatigueSnapshot.measurement_id == mid).delete()
+        db.commit()
+
 
 def test_tozsamosc_wiaze_wartosci_wejsc_nie_identyfikatory(client):
     """I1 (2026-09-09): kontrprzykład z sekcji 8a analizy, jako regresja.
