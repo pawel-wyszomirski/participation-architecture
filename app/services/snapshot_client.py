@@ -469,7 +469,8 @@ class SnapshotClient:
         return out
 
     async def fetch_voted_observations(
-        self, voter: str, space: str = ARBITRUM_SPACE, limit: int = 200
+        self, voter: str, space: str = ARBITRUM_SPACE, limit: int = 200,
+        max_stron: int = 25
     ) -> "tuple[List[Proposal], SourceReceipt]":
         """
         Fetch the proposals a delegate voted on, WITH the full proposal fields
@@ -489,10 +490,10 @@ class SnapshotClient:
         (`reconcile_observations`).
         """
         query = """
-        query Votes($voter: String!, $space: String!, $first: Int!) {
+        query Votes($voter: String!, $space: String!, $first: Int!, $created_lt: Int) {
           votes(
             first: $first,
-            where: { voter: $voter, space: $space },
+            where: { voter: $voter, space: $space, created_lt: $created_lt },
             orderBy: "created",
             orderDirection: desc
           ) {
@@ -502,18 +503,49 @@ class SnapshotClient:
           }
         }
         """
-        variables = {"voter": voter, "space": space, "first": limit}
+
+        # STRONICOWANIE PO CZASIE, nie po `skip` (P2 sekcja 3.3, plan z 11.09).
+        # Do 11.09 leciało jedno zapytanie `first: limit` i pełna strona dawała
+        # pokwitowanie TRUNCATED - czyli delegat z historią dłuższą niż strona nie mógł
+        # dać pomiaru pierwszorzędnego, choć jego dane były dostępne. `skip` nie nadaje
+        # się na kursor: Snapshot odrzuca go powyżej 5000, a wynik obcięty sufitem wygląda
+        # identycznie jak pełny (ta sama pułapka zaniżyła wcześniej ramę doboru).
+        # Kursorem jest `created` najstarszego rekordu strony - filtr `created_lt`
+        # gwarantuje ciągłość i nie ma sufitu.
+        raw: List[Dict[str, Any]] = []
+        stron = 0
+        kursor: Optional[int] = None
+        sufit_trafiony = False
 
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.post(
-                    self.url,
-                    json={"query": query, "variables": variables},
-                    headers=self.headers,
-                    timeout=60.0,
-                )
-                response.raise_for_status()
-                data = response.json()
+                while True:
+                    variables = {"voter": voter, "space": space, "first": limit,
+                                 "created_lt": kursor}
+                    response = await client.post(
+                        self.url,
+                        json={"query": query, "variables": variables},
+                        headers=self.headers,
+                        timeout=60.0,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    if data.get("errors"):
+                        break
+                    strona = (data.get("data", {}) or {}).get("votes")
+                    if strona is None:
+                        break
+                    stron += 1
+                    raw.extend(strona)
+                    if len(strona) < limit:
+                        break                      # ostatnia strona - zbiór wyczerpany
+                    czasy = [v.get("created") for v in strona if v.get("created")]
+                    if not czasy:
+                        break                      # bez kursora nie ma jak iść dalej
+                    kursor = min(int(c) for c in czasy)
+                    if stron >= max_stron:
+                        sufit_trafiony = True      # zbiór może mieć dalszy ciąg
+                        break
             except httpx.HTTPStatusError as e:
                 print(f"❌ Snapshot HTTP error (voted proposals): {e}")
                 return [], SourceReceipt("snapshot", ERROR, limit=limit,
@@ -526,8 +558,7 @@ class SnapshotClient:
             msg = str(data["errors"][0].get("message", ""))[:200]
             print(f"❌ Snapshot GraphQL error (voted proposals): {msg}")
             return [], SourceReceipt("snapshot", ERROR, limit=limit, detail=msg)
-        raw = data.get("data", {}).get("votes")
-        if raw is None:
+        if stron == 0 or (data.get("data", {}) or {}).get("votes") is None and not raw:
             return [], SourceReceipt("snapshot", ERROR, limit=limit,
                                      detail="no votes field in answer")
 
@@ -558,16 +589,30 @@ class SnapshotClient:
             prop.voter = voter
             prop.cast_at = v.get("created")
             out.append(prop)
-        if not raw:
-            state = HEALTHY_EMPTY
-        elif len(raw) >= limit:
+        # Pokrycie jest teraz MIERZONE, nie zakładane: zbiór jest kompletny, gdy
+        # stronicowanie doszło do ostatniej, niepełnej strony. Sufit stron to jedyna
+        # droga do TRUNCATED - i mówi wprost, o co się odbiliśmy.
+        if sufit_trafiony:
             state = TRUNCATED
+        elif not raw:
+            state = HEALTHY_EMPTY
         else:
             state = HEALTHY_COMPLETE
-        detail = f"{orphaned} votes on deleted proposals skipped" if orphaned else ""
+        czesci = []
+        if orphaned:
+            czesci.append(f"{orphaned} votes on deleted proposals skipped")
+        if sufit_trafiony:
+            czesci.append(f"page ceiling {max_stron} reached after {stron} pages - "
+                          "the delegate has more history than this scan covers")
+        detail = "; ".join(czesci)
         oldest = min((p.cast_at for p in out if p.cast_at), default=None)
-        return out, SourceReceipt("snapshot", state, events=len(out), limit=limit, detail=detail,
-                                  oldest_cast_at=oldest)
+        return out, SourceReceipt(
+            "snapshot", state, events=len(out), limit=limit, detail=detail,
+            oldest_cast_at=oldest,
+            # Dowód pokrycia, nie jego opis (P2 sekcja 3.3). `record_count` liczy rekordy
+            # DOSTARCZONE przez źródło, więc razem z `orphaned` w `detail` widać, ile
+            # z nich dało się użyć - liczba użytecznych obserwacji jest w `events`.
+            page_count=stron, record_count=len(raw), limit_hit=sufit_trafiony)
 
 class FatigueEngine:
     """Core logic for calculating Delegate Fatigue Index"""

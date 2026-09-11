@@ -12,7 +12,7 @@
 #   DFI = (w_volume×volume + w_concurrency×concurrency + w_burstiness×burstiness
 #          + w_reading_time×reading_time + w_novelty×novelty) × 100
 
-version: "1.2.0"
+version: "1.3.0"
 
 # Component weights (must sum to 1.0)
 weights:
@@ -160,7 +160,26 @@ stage_merge_window_days: 45
 #   reaching into the window fails.
 eligibility:
   required_sources: [snapshot, governor, ecosystem, ecosystem_governor, taxonomy]
-  eligible_states: [HEALTHY_COMPLETE, HEALTHY_EMPTY, PARTIAL]
+
+  # DWA WYMIARY OD 1.3.0 (plan domknięcia z 2026-09-11, P2). Do 1.2.0 stała tu jedna
+  # lista `eligible_states` z `PARTIAL` w środku, więc pomiar konfirmacyjny mógł powstać
+  # na źródle, które odpowiedziało, ale nie dowiodło, że objęło wymagany obszar.
+  #
+  # `availability` odpowiada na pytanie "czy źródło odpowiedziało", `coverage` na pytanie
+  # "czy mamy dowód, że mamy całość". Drugiego nie da się wyprowadzić z pierwszego -
+  # i właśnie to wyprowadzanie recenzja 78179 nazwała klasą błędu.
+  eligible_availability: [HEALTHY]
+  eligible_coverage: [COMPLETE, EMPTY_PROVEN]
+
+  # Stany pokrycia, które NIE wchodzą do pomiaru pierwszorzędnego, z powodem:
+  #   TRUNCATED      - limit strony mógł uciąć rekordy; wiek najstarszego dostarczonego
+  #                    nie dowodzi, że w zbiorze nie ma dziur
+  #   PARTIAL_DATA   - część rekordów nie ma pola, którego instrument potrzebuje
+  #                    (np. okna głosowania), albo pochodzi z kopii o nieznanej aktualności
+  #   UNKNOWN_COVERAGE - nikt nie zmierzył pokrycia
+  #   NONE           - nie mamy nic
+  # Taki pomiar nie jest bezużyteczny: wchodzi do analizy wrażliwości, nie do H_val.
+
   context_window_days: 30
 
 # Status thresholds (score 0-100). These are WORKLOAD bands, nothing more.

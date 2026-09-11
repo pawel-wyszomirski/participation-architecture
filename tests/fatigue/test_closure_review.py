@@ -185,14 +185,29 @@ def test_required_source_in_bad_state_is_not_eligible(engine, now, state):
     assert any("governor" in x and state in x for x in r.identity.eligibility_reasons)
 
 
-def test_partial_history_stays_eligible_and_is_counted(engine, now):
+def test_partial_history_nie_wchodzi_do_pomiaru_pierwszorzednego(engine, now):
+    """ZMIANA KONTRAKTU 2026-09-11 (plan domknięcia, P2 sekcja 3.2).
+
+    Do dziś `PARTIAL` kwalifikował się, a ten test stwierdzał to wprost. Powód
+    zmiany: `PARTIAL` na źródle `governor` znaczy „część głosów nie ma okna
+    głosowania" (`unknown_window=1`) - czyli brakuje pola, którego instrument
+    potrzebuje do policzenia współbieżności. Werdykt „pierwszorzędny" mówił wtedy,
+    że pomiar nadaje się do analizy konfirmacyjnej, choć jeden z jego składników
+    powstał na zbiorze o nieznanym pokryciu.
+
+    Liczba nadal się liczy i nadal jest zwracana - zmienia się tylko to, czy wolno
+    jej użyć w H_val. Do analizy wrażliwości wchodzi bez przeszkód.
+    """
     receipts = healthy_receipts()
     receipts[2] = SourceReceipt("governor", PARTIAL, events=2, unknown_window=1)
     target = obs("0xt", 0, now)
     r = engine.compute_per_event("0xA", target, [target], now=now,
                                  ecosystem_proposals=[],
                                  source_receipts=receipts)
-    assert r.identity.eligibility == ELIGIBLE
+    assert r.identity.eligibility == NOT_ELIGIBLE
+    assert any("governor" in x and "PARTIAL_DATA" in x for x in r.identity.eligibility_reasons), (
+        f"powód ma nazywać źródło i stan pokrycia: {r.identity.eligibility_reasons}")
+    assert r.fatigue_score > 0, "liczba nadal ma być policzona, tylko nie promowana"
 
 
 def test_healthy_empty_is_eligible(engine, now):
@@ -417,28 +432,76 @@ def test_taxonomy_failure_disqualifies(engine, now):
     assert any("taxonomy" in x and "403" in x for x in r.identity.eligibility_reasons)
 
 
-def test_cached_taxonomy_is_partial_and_eligible(engine, now):
+def test_cached_taxonomy_nie_jest_pierwszorzedna(engine, now):
+    """ZMIANA KONTRAKTU 2026-09-11 (plan domknięcia, P2 sekcja 3.2 i P6 sekcja 7.1).
+
+    Kopia rejestru taksonomii z 28.08 użyta do pomiaru z 11.09 nie jest dowodem
+    pokrycia: nie wiadomo, czy w rejestrze nie pojawiły się kategorie, które
+    zmieniłyby mianownik `novelty`. Do dziś taki pomiar wychodził pierwszorzędny
+    z notatką „cached copy", czyli różnica między żywym rejestrem i kopią nie
+    docierała do żadnej decyzji.
+
+    Kopia PRZESTAJE być problemem, gdy przyjdzie P6: zamrożony snapshot taksonomii
+    z identyfikatorem i skrótem JEST dowodem - wtedy pomiar wraca do pierwszorzędnych,
+    bo wiadomo dokładnie, jaki zbiór kategorii go zbudował. Do tego czasu: notatka
+    zostaje, werdykt nie.
+    """
     receipts = healthy_receipts()
     receipts[4] = SourceReceipt("taxonomy", PARTIAL, events=89,
                                 detail="live: HTTP 403; cached copy from 2026-08-28")
     target = obs("0xt", 0, now)
     r = engine.compute_per_event("0xA", target, [target], now=now,
                                  ecosystem_proposals=[], source_receipts=receipts)
-    assert r.identity.eligibility == ELIGIBLE
-    assert any("cached copy" in x for x in r.identity.eligibility_notes)
+    assert r.identity.eligibility == NOT_ELIGIBLE
+    assert any("cached copy" in x for x in r.identity.eligibility_reasons), (
+        f"powód ma nieść treść pokwitowania: {r.identity.eligibility_reasons}")
 
 
-def test_truncated_beyond_window_is_eligible_with_note(engine, now):
-    """P02 has 408 Snapshot votes; a page of 200 newest is TRUNCATED but its
-    oldest record predates the 30-day window, so volume/burstiness are complete."""
+def test_truncated_beyond_window_nie_jest_pierwszorzedny_ale_zostawia_note(engine, now):
+    """ZMIANA KONTRAKTU 2026-09-11 (plan domknięcia, P2 i własność P-G).
+
+    Do dziś obcięty zbiór kwalifikował się, o ile najstarszy DOSTARCZONY rekord był
+    starszy niż okno kontekstu: skoro strona 200 najnowszych sięga poza trzydzieści
+    dni, to `volume` i `burstiness` w oknie są pełne. Rozumowanie jest poprawne
+    dokładnie wtedy, gdy sortowanie i stronicowanie źródła gwarantują ciągłość -
+    czyli opiera się na własności, której pokwitowanie nie dowodzi. Własność P-G:
+    sto procent rekordów poprawnych nie dowodzi kompletności zbioru.
+
+    Dowodem ma być pokrycie mierzone przy pozyskaniu (`limit_hit=False` po przejściu
+    wszystkich stron albo podział okna), nie wiek najstarszego rekordu. Sam wiek
+    zostaje jako NOTATKA - jest użyteczną informacją o zakresie, nie podstawą werdyktu.
+    """
     receipts = healthy_receipts()
     receipts[0] = SourceReceipt("snapshot", TRUNCATED, events=200, limit=200,
+                                limit_hit=True,
                                 oldest_cast_at=int((now - timedelta(days=400)).timestamp()))
     target = obs("0xt", 0, now)
     r = engine.compute_per_event("0xA", target, [target], now=now,
                                  ecosystem_proposals=[], source_receipts=receipts)
-    assert r.identity.eligibility == ELIGIBLE
-    assert any("TRUNCATED beyond" in x for x in r.identity.eligibility_notes)
+    assert r.identity.eligibility == NOT_ELIGIBLE
+    powody = r.identity.eligibility_reasons
+    assert any("snapshot" in x and "TRUNCATED" in x for x in powody), powody
+    assert any("page limit 200 reached" in x for x in powody), (
+        f"powód ma nazywać dowód obcięcia, nie tylko stan: {powody}")
+
+
+def test_pelne_pokrycie_po_stronicowaniu_jest_pierwszorzedne(engine, now):
+    """Odwrotna strona P2: dowiedziona kompletność przechodzi.
+
+    Bez tego testu bramka pokrycia byłaby implementacją „odrzuć wszystko", a własność
+    P-D (positive acceptance) pilnuje tego na poziomie klasy. Tu ten sam warunek na
+    poziomie jednego źródła: wiele stron, limit nietrafiony, pokrycie dowiedzione.
+    """
+    receipts = healthy_receipts()
+    receipts[0] = SourceReceipt("snapshot", HEALTHY_COMPLETE, events=408,
+                                limit=200, page_count=3, record_count=408, limit_hit=False,
+                                oldest_cast_at=int((now - timedelta(days=400)).timestamp()))
+    target = obs("0xt", 0, now)
+    r = engine.compute_per_event("0xA", target, [target], now=now,
+                                 ecosystem_proposals=[], source_receipts=receipts)
+    assert r.identity.eligibility == ELIGIBLE, r.identity.eligibility_reasons
+    assert any("beyond the 30-day context window" in x for x in r.identity.eligibility_notes), (
+        f"zakres dostarczonych rekordów ma zostać w notatce: {r.identity.eligibility_notes}")
 
 
 def test_truncated_inside_window_is_not_eligible(engine, now):

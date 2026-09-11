@@ -94,6 +94,41 @@ ERROR = "ERROR"                         # the source answered with an error
 SOURCE_STATES = (HEALTHY_COMPLETE, HEALTHY_EMPTY, PARTIAL, TRUNCATED,
                  UNAVAILABLE, AUTH_MISSING, ERROR)
 
+# Dwa NIEZALEŻNE wymiary pokwitowania (plan domknięcia z 11.09, P2 sekcja 3.1).
+# Jeden `state` mieszał dwa pytania: "czy zapytanie się wykonało" i "czy objęliśmy
+# cały obszar wymagany przez konstrukt". Mieszał je tak, że odpowiedź na pierwsze
+# wystarczała do werdyktu: `HEALTHY_COMPLETE` znaczyło jednocześnie "źródło żyje"
+# i "zbiór jest pełny", choć drugiego żaden klient nie dowodził. Recenzja 78179,
+# własność P-G: sto procent rekordów poprawnych nie dowodzi kompletności zbioru.
+AVAIL_HEALTHY = "HEALTHY"               # źródło odpowiedziało
+AVAIL_ERROR = "ERROR"                   # odpowiedziało błędem
+AVAIL_UNAVAILABLE = "UNAVAILABLE"       # nie odpowiedziało (transport)
+AVAIL_AUTH_MISSING = "AUTH_MISSING"     # nie było czym zapytać
+AVAILABILITY_STATES = (AVAIL_HEALTHY, AVAIL_ERROR, AVAIL_UNAVAILABLE, AVAIL_AUTH_MISSING)
+
+COV_COMPLETE = "COMPLETE"               # dowód, że zbiór jest pełny dla konstruktu
+COV_EMPTY_PROVEN = "EMPTY_PROVEN"       # dowiedziona pustka: nic nie było, i to wiemy
+COV_TRUNCATED = "TRUNCATED"             # limit strony/skanu - zbiór może mieć dziury
+COV_PARTIAL_DATA = "PARTIAL_DATA"       # rekordy są, ale części brakuje pola albo źródła
+COV_UNKNOWN = "UNKNOWN_COVERAGE"        # nie wiemy, ile obszaru objęliśmy
+COV_NONE = "NONE"                       # nie mamy nic
+COVERAGE_STATES = (COV_COMPLETE, COV_EMPTY_PROVEN, COV_TRUNCATED, COV_PARTIAL_DATA,
+                   COV_UNKNOWN, COV_NONE)
+
+# Rzut starego, jednowymiarowego stanu na parę wymiarów. Istnieje dla zgodności:
+# manifesty zapisane przed 11.09 i klienci, którzy jeszcze nie podają wymiarów jawnie,
+# muszą dawać ten sam werdykt co przedtem - z jednym wyjątkiem opisanym w `_eligibility`
+# (PARTIAL i TRUNCATED przestają kwalifikować, i to jest cała zmiana instrumentu).
+_RZUT_STANU = {
+    HEALTHY_COMPLETE: (AVAIL_HEALTHY, COV_COMPLETE),
+    HEALTHY_EMPTY: (AVAIL_HEALTHY, COV_EMPTY_PROVEN),
+    PARTIAL: (AVAIL_HEALTHY, COV_PARTIAL_DATA),
+    TRUNCATED: (AVAIL_HEALTHY, COV_TRUNCATED),
+    ERROR: (AVAIL_ERROR, COV_NONE),
+    UNAVAILABLE: (AVAIL_UNAVAILABLE, COV_NONE),
+    AUTH_MISSING: (AVAIL_AUTH_MISSING, COV_NONE),
+}
+
 ELIGIBLE = "PRIMARY_ELIGIBLE"
 NOT_ELIGIBLE = "NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS"
 
@@ -110,10 +145,32 @@ class SourceReceipt:
     oldest_cast_at: Optional[int] = None  # oldest record delivered (epoch) - lets
                                           # eligibility tell whether a TRUNCATED
                                           # history still covers the context window
+    # P2 (plan domknięcia, 11.09): dostępność i pokrycie to dwa pytania, nie jedno.
+    # Klient może podać je jawnie; gdy ich nie poda, powstają z rzutu `state`, żeby
+    # manifesty sprzed 11.09 i niezmigrowani klienci czytali się bez zmiany znaczenia.
+    availability_state: str = ""
+    coverage_state: str = ""
+    # Dowód pokrycia, nie jego opis: ile stron przeszło zapytanie, ile rekordów wróciło
+    # i czy któraś strona dobiła do limitu. `limit_hit=None` znaczy "nie mierzono" - to
+    # inny stan niż `False` i nie wolno go czytać jako dowodu kompletności.
+    page_count: Optional[int] = None
+    record_count: Optional[int] = None
+    limit_hit: Optional[bool] = None
 
     def __post_init__(self) -> None:
         if self.state not in SOURCE_STATES:
             raise ValueError(f"unknown source state {self.state!r}")
+        rzut_avail, rzut_cov = _RZUT_STANU[self.state]
+        if not self.availability_state:
+            self.availability_state = rzut_avail
+        if not self.coverage_state:
+            self.coverage_state = rzut_cov
+        if self.availability_state not in AVAILABILITY_STATES:
+            raise ValueError(f"unknown availability state {self.availability_state!r}")
+        if self.coverage_state not in COVERAGE_STATES:
+            raise ValueError(f"unknown coverage state {self.coverage_state!r}")
+        if self.record_count is None and self.events:
+            self.record_count = self.events
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -724,23 +781,29 @@ class FatigueEngine:
     def _eligibility(self, receipts: List[Dict[str, Any]], concurrency_source: str,
                      now_ts: int, ekspozycja_pusta: bool = False,
                      cel_kontraktowy: bool = False) -> Tuple[str, List[str], List[str]]:
-        """Fail closed (closure review points 2 and 6): a confirmatory
-        measurement is PRIMARY_ELIGIBLE only when every required source
-        answered in an eligible state and concurrency was measured on the
-        construct the instrument declares (ecosystem exposure). Rules live in
-        fatigue_config.yaml#eligibility; this method only applies them.
+        """Fail closed (closure review points 2 and 6, plan domknięcia P2):
+        pomiar konfirmacyjny jest `PRIMARY_ELIGIBLE` tylko wtedy, gdy każde wymagane
+        źródło ODPOWIEDZIAŁO i DOWIODŁO pokrycia obszaru wymaganego przez konstrukt,
+        a współbieżność policzono na konstrukcie, który instrument deklaruje. Reguły
+        stoją w `fatigue_config.yaml#eligibility`; ta metoda je tylko stosuje.
 
-        TRUNCATED is judged against the context window, not on its own: a
-        history cut at the page limit still measures volume/burstiness
-        completely when its OLDEST delivered record predates the window
-        (`context_window_days` before the vote). That case passes with a note -
-        the novelty denominator is then bounded to the delivered records, which
-        the manifest states. A truncation that reaches INTO the window fails.
+        DWA WYMIARY, NIE JEDEN (zmiana z 11.09). Dotąd jeden `state` odpowiadał na oba
+        pytania naraz, więc `PARTIAL` kwalifikował się jako „źródło odpowiedziało",
+        choć znaczy „część rekordów nie ma pola, którego instrument potrzebuje",
+        a `TRUNCATED` przechodził, gdy najstarszy DOSTARCZONY rekord był starszy niż
+        okno kontekstu. To drugie było rozumowaniem wewnątrz jednego źródła, nie
+        dowodem pokrycia: wiek najstarszego rekordu nie mówi nic o rekordach, które
+        limit strony uciął. Dowodem jest `coverage_state`, a ten ma się brać z liczby
+        stron i z tego, czy którakolwiek dobiła do limitu.
+
+        Wiek najstarszego rekordu zostaje w NOTATCE, bo jest użyteczną informacją
+        o zakresie - przestaje być podstawą werdyktu.
 
         Returns (verdict, disqualifying reasons, non-disqualifying notes)."""
         rules = self.config.get("eligibility") or {}
         required = list(rules.get("required_sources") or [])
-        ok_states = set(rules.get("eligible_states") or [HEALTHY_COMPLETE, HEALTHY_EMPTY])
+        ok_avail = set(rules.get("eligible_availability") or [AVAIL_HEALTHY])
+        ok_coverage = set(rules.get("eligible_coverage") or [COV_COMPLETE, COV_EMPTY_PROVEN])
         window = int(rules.get("context_window_days") or 30) * 86_400
         reasons: List[str] = []
         notes: List[str] = []
@@ -752,19 +815,31 @@ class FatigueEngine:
             if r is None:
                 reasons.append(f"required source {name}: no receipt")
                 continue
-            state = r.get("state")
-            if state in ok_states:
-                if state == PARTIAL and r.get("detail"):
-                    notes.append(f"{name}: PARTIAL ({r['detail']})")
+            # Pokwitowania zapisane przed 11.09 nie mają wymiarów - rzutujemy je tak samo,
+            # jak robi to `SourceReceipt.__post_init__`, żeby stary manifest dał ten sam
+            # werdykt, jaki dałby dziś świeży pomiar o tym samym stanie źródeł.
+            rzut = _RZUT_STANU.get(r.get("state") or "", (AVAIL_UNAVAILABLE, COV_NONE))
+            avail = r.get("availability_state") or rzut[0]
+            coverage = r.get("coverage_state") or rzut[1]
+            if avail not in ok_avail:
+                reasons.append(f"required source {name}: availability {avail}"
+                               + (f" ({r.get('detail')})" if r.get("detail") else ""))
                 continue
-            if state == TRUNCATED and r.get("oldest_cast_at") is not None \
+            if coverage not in ok_coverage:
+                powod = f"required source {name}: coverage {coverage} - completeness not proven"
+                if r.get("limit_hit"):
+                    powod += f" (page limit {r.get('limit')} reached)"
+                if r.get("detail"):
+                    powod += f" ({r['detail']})"
+                reasons.append(powod)
+                continue
+            if r.get("oldest_cast_at") is not None \
                     and int(r["oldest_cast_at"]) <= now_ts - window:
-                notes.append(f"{name}: TRUNCATED beyond the {window // 86_400}-day context "
-                             f"window ({r.get('events')} records delivered) - context "
-                             "complete, novelty denominator bounded to delivered records")
-                continue
-            reasons.append(f"required source {name}: {state}"
-                           + (f" ({r.get('detail')})" if r.get("detail") else ""))
+                notes.append(f"{name}: delivered records reach beyond the "
+                             f"{window // 86_400}-day context window "
+                             f"({r.get('record_count') or r.get('events')} records)")
+            if r.get("coverage_state") == COV_PARTIAL_DATA and r.get("detail"):
+                notes.append(f"{name}: {r['detail']}")
         # Rodzina `ecosystem:*` - konkretne warstwy nazywa sama etykieta (snapshot,
         # governor, snapshot+governor, empty). Porównanie z jedną nazwą odrzucałoby po
         # naprawie każdą ekspozycję czytaną z obu warstw.
