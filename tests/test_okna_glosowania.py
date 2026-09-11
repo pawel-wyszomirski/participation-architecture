@@ -407,3 +407,65 @@ def test_jedno_okno_bez_dowodu_psuje_cala_ekspozycje():
     wynik = _policz([_obserwacja("eco-1", 1, WINDOW_SNAPSHOT_EXACT),
                      _obserwacja("eco-2", 2, WINDOW_ESTIMATED)])
     assert wynik.identity.eligibility != "PRIMARY_ELIGIBLE"
+
+
+# ---------------------------------------------------------------------------
+# PRAWDZIWOSC ETYKIETY EXACT (uwaga recenzenta z 11.09 wieczorem)
+#
+# Zarzut brzmi: implementacja ma stan GOVERNOR_EXACT, a rekonstrukcja okna uzywa sredniego
+# czasu bloku (BLOCKS_PER_DAY, L1_BLOCK_SECONDS) i WSPOLCZESNEJ wartosci votingDelay.
+# Jesli ktokolwiek kiedys nada te etykiete takiemu oknu, powstanie dokladnie ten sam blad
+# semantyczny o poziom nizej: bardzo precyzyjna nazwa "EXACT" przykryje estymacje.
+#
+# Dzis nikt jej nie nadaje - i te dwa testy pilnuja, zeby dodanie jej wymagalo dowodu,
+# a nie tylko checi. Strażnik wpiecia, nie test przypadku.
+# ---------------------------------------------------------------------------
+
+def _zrodlo_klienta() -> str:
+    from pathlib import Path
+    return (Path(ROOT) / "app" / "services" / "governor_client.py").read_text(encoding="utf-8")
+
+
+def test_governor_exact_nie_jest_nadawany_bez_dowodu_historycznego():
+    """`GOVERNOR_EXACT` wolno nadac tylko oknu z HISTORYCZNYM dowodem start/end.
+
+    Test pada, gdy etykieta pojawi sie w kliencie, a w kodzie nie ma jednoczesnie znacznika
+    historycznego odczytu (`_voting_delay_at`, `block_time_at`, `archival`). Wtedy nalezy albo
+    dostarczyc dowod, albo zostac przy `ESTIMATED` - trzeciej drogi nie ma.
+    """
+    zrodlo = _zrodlo_klienta()
+    if "WINDOW_GOVERNOR_EXACT" not in zrodlo:
+        return  # etykieta nieuzywana - stan zgodny z kontraktem
+    znaczniki = ("_voting_delay_at", "block_time_at", "archival", "historyczny")
+    assert any(z in zrodlo for z in znaczniki), (
+        "klient nadaje GOVERNOR_EXACT, ale nie widac odczytu historycznych parametrow - "
+        "etykieta EXACT przykrywa wtedy estymacje ze sredniego czasu bloku")
+
+
+def test_okno_z_przybliżonego_czasu_bloku_jest_estimated(monkeypatch, bez_rejestru):
+    """Behawioralna strona tej samej reguly: rekonstrukcja arytmetyczna = ESTIMATED.
+
+    Powod `window_uncertainty_reason` musi NAZYWAC oba zrodla przyblizenia - wspolczesny
+    parametr i czas bloku - zeby z pomiaru bylo widac, czego dokladnie nie wiemy.
+    """
+    adresy = _adresy()
+    rola, adres = next(iter(adresy.items()))
+    blok = CZOLO - BLOCKS_PER_DAY
+    logi = {adres: [_log_utworzenia(3, blok, start_l1=0, end_l1=7200, opis="# T\nX")]}
+    wezel = AtrapaWezla(logi, voting_delay_per_adres={adres: 0})
+    _podstaw_wezel(monkeypatch, wezel)
+
+    otwarte, _ = await_ekspozycji(wezel)
+    assert otwarte, "propozycja miala byc otwarta"
+    for p in otwarte:
+        assert p.window_basis == WINDOW_ESTIMATED
+        powod = (p.window_uncertainty_reason or "").lower()
+        assert "votingdelay" in powod and "block" in powod, (
+            f"powod nie nazywa obu zrodel przyblizenia: {powod!r}")
+
+
+def await_ekspozycji(wezel):
+    """Pomocnik: uruchamia asynchroniczna ekspozycje w tescie synchronicznym."""
+    import asyncio
+    return asyncio.get_event_loop_policy().new_event_loop().run_until_complete(
+        GovernorClient().fetch_ecosystem_exposure(CHWILA))
