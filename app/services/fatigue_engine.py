@@ -384,6 +384,12 @@ class SourceReceipt:
     page_count: Optional[int] = None
     record_count: Optional[int] = None
     limit_hit: Optional[bool] = None
+    # D5=A (11.09): dla źródła, które oddaje CAŁY zbiór jednym żądaniem, dowodem pokrycia
+    # nie jest liczba stron - te są zawsze jedną - tylko ZAKRES, jaki zbiór obejmuje.
+    # Rejestr taksonomii odpowiada kompletnie i jednocześnie urywa się na 2026-08-17
+    # (zmierzone), więc „dostaliśmy całość" i „całość sięga mierzonej chwili" to dwa różne
+    # zdania. Bez tego pola manifest nie pozwala ich rozróżnić.
+    newest_record_at: Optional[int] = None
 
     def __post_init__(self) -> None:
         if self.state not in SOURCE_STATES:

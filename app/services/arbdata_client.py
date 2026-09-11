@@ -48,7 +48,31 @@ import httpx
 
 from app.services.fatigue_engine import (
     SourceReceipt, HEALTHY_COMPLETE, HEALTHY_EMPTY, PARTIAL, UNAVAILABLE, ERROR,
+    COV_PARTIAL_DATA,
 )
+
+
+def _najnowszy_rekord(rows) -> Optional[int]:
+    """Znacznik czasu najnowszej propozycji w rejestrze (D5=A, 11.09).
+
+    Dowodem pokrycia dla zrodla oddajacego caly zbior jednym zadaniem nie jest liczba stron -
+    ta jest zawsze jedna - tylko ZAKRES, jaki zbior obejmuje. Rejestr odpowiada kompletnie
+    i jednoczesnie urywa sie na 2026-08-17 (pomiar 11.09: 90 rekordow, najnowszy sprzed
+    25 dni), wiec "dostalismy calosc" i "calosc siega mierzonej chwili" to dwa rozne zdania.
+
+    Brak pola czasu w rekordach daje `None`, czyli "nie zmierzono" - inny stan niz zero.
+    """
+    czasy = []
+    for r in rows or []:
+        v = (r or {}).get("creation_time")
+        if v in (None, ""):
+            continue
+        try:
+            czasy.append(int(v) if str(v).isdigit() else int(
+                dt.datetime.fromisoformat(str(v).replace("Z", "+00:00")).timestamp()))
+        except (ValueError, TypeError):
+            continue
+    return max(czasy) if czasy else None
 
 ENDPOINT = "https://arbdata.com/api/governance-proposals"
 
@@ -152,10 +176,29 @@ class ArbdataClient:
         if failure is None:
             self._index(rows)
             self._write_cache(rows)
+            # DOWOD POKRYCIA (D5=A, 11.09). Do tej daty `coverage_state` dla tego zrodla
+            # powstawal z rzutu `state`, a `page_count` i `limit_hit` byly `None`, czyli
+            # NIE ZMIERZONE - a mimo to kwalifikacja czytala COMPLETE. Komentarz przy polach
+            # pokwitowania mowil wprost, ze `None` nie wolno czytac jako dowodu kompletnosci.
+            #
+            # Co jest dowodem dla TEGO zrodla: rejestr przychodzi CALY jednym zadaniem GET,
+            # bez parametrow stronicowania i bez limitu po stronie API, a odpowiedz musi byc
+            # poprawnym JSON-em z lista - obciecie w transporcie wywala parsowanie wyzej.
+            # Stad `page_count=1` i `limit_hit=False` sa POMIAREM tego wywolania, nie
+            # zalozeniem o API.
+            #
+            # Odrzucenie czesci wierszy przy indeksowaniu jest luka POKRYCIA, nie dostepnosci:
+            # zrodlo oddalo komplet, ale instrument uzyl mniej, niz dostal.
+            odrzucone = len(rows) - len(self._rekordy)
             self.receipt = SourceReceipt(
                 "taxonomy", HEALTHY_COMPLETE if self._rekordy else HEALTHY_EMPTY,
                 events=len(self._rekordy),
-                taxonomy_snapshot_id=self.snapshot_id(rows))
+                taxonomy_snapshot_id=self.snapshot_id(rows),
+                page_count=1, record_count=len(rows), limit_hit=False,
+                newest_record_at=_najnowszy_rekord(rows),
+                coverage_state=COV_PARTIAL_DATA if odrzucone else "",
+                detail=(f"{odrzucone} z {len(rows)} rekordow rejestru nie weszlo do indeksu"
+                        if odrzucone else ""))
             return len(self._rekordy)
 
         cached, stamp = self._read_cache()
@@ -164,6 +207,8 @@ class ArbdataClient:
             self.receipt = SourceReceipt(
                 "taxonomy", PARTIAL, events=len(self._rekordy),
                 taxonomy_snapshot_id=self.snapshot_id(cached, stamp),
+                page_count=1, record_count=len(cached), limit_hit=False,
+                newest_record_at=_najnowszy_rekord(cached),
                 detail=f"live: {failure.detail}; cached copy from {stamp}")
             print(f"⚠ arbdata: using cached registry from {stamp} ({len(self._rekordy)} rows)")
             return len(self._rekordy)

@@ -25,6 +25,7 @@ from typing import List, Dict, Any, Optional
 
 from app.db.models import Proposal
 from app.services.fatigue_engine import (
+    COV_PARTIAL_DATA,
     SourceReceipt, HEALTHY_COMPLETE, HEALTHY_EMPTY, TRUNCATED, UNAVAILABLE,
     AUTH_MISSING, ERROR,
 )
@@ -247,5 +248,22 @@ class TallyClient:
             "index frozen since 2026-06-08 (known)",
         ) if x)
         oldest = min((p.cast_at for p in out if p.cast_at), default=None)
-        return out, SourceReceipt("tally", state, events=len(out), limit=limit, detail=detail,
-                                  oldest_cast_at=oldest)
+        newest = max((p.cast_at for p in out if p.cast_at), default=None)
+        # POKRYCIE tego zrodla NIE jest pelne i nigdy juz nie bedzie (D5=A, 11.09).
+        #
+        # Do tej daty pokwitowanie mowilo HEALTHY_COMPLETE, wiec `coverage_state` wychodzil
+        # z rzutu jako COMPLETE - o zrodle, ktorego indeks stoi od 2026-06-08. Zdanie
+        # "kompletne" o zbiorze, ktory swiadomie nie ma nowszych danych, jest mylace dla
+        # kazdego, kto czyta manifest, nawet jesli dzis nic nie psuje: `tally` nie stoi
+        # w `required_sources`, bo nie pokrywa niczego, czego nie widzi skan kontraktu.
+        #
+        # To nie jest brak POLA w rekordach, tylko brak ZAKRESU - stad PARTIAL_DATA
+        # z jawnym powodem, a nie nowy stan w kontrakcie pokwitowan.
+        #
+        # Dostepnosc zostaje bez zmian: API odpowiada i oddaje to, co ma.
+        return out, SourceReceipt(
+            "tally", state, events=len(out), limit=limit, detail=detail,
+            oldest_cast_at=oldest, newest_record_at=newest,
+            record_count=len(vote_nodes), page_count=1,
+            limit_hit=bool(len(vote_nodes) >= limit or proposals_truncated),
+            coverage_state=COV_PARTIAL_DATA)
