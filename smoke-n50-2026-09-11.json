@@ -1,0 +1,339 @@
+{
+ "meta": {
+  "zmierzony": "2026-09-11T16:33:44+00:00",
+  "ziarno": 20260911,
+  "uwaga": "pomiar liczony sciezka produkcyjna (_measure_per_event z app/main.py), kodem z galezi - NIE z wdrozonej produkcji, ktora stoi na starszym commicie"
+ },
+ "pomiary": [
+  {
+   "adres": "0xCf21C3bBCc34aFa5D474cfF53752F8eE8395bf9b",
+   "stan": "OK",
+   "dfi": 48.7,
+   "cel": "0x472fb3b40d3df9b1a65de03b85e4867a76f7b1ec014e2d69f347256b0d08184c",
+   "cel_tytul": "Banning projects identified in the high-severity Watchdog Pr",
+   "eligibility": "NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS",
+   "powody": [
+    "novelty: mianownik niepełny albo kategoria celu nieznana",
+    "powiązanie etapów bez dowodu"
+   ],
+   "novelty_basis": "TARGET_CATEGORY_UNKNOWN",
+   "category_coverage": 0.13114754098360656,
+   "taxonomy_snapshot_id": "tax:a6a868420bb3668d@2026-09-11",
+   "podstawy_okien": [
+    "SNAPSHOT_EXACT"
+   ],
+   "pokrycia_zrodel": {
+    "ecosystem_governor": "COMPLETE",
+    "governor": "COMPLETE",
+    "ecosystem": "COMPLETE",
+    "snapshot": "COMPLETE",
+    "taxonomy": "COMPLETE",
+    "tally": "COMPLETE"
+   },
+   "promocja_dopuszczona": false
+  },
+  {
+   "adres": "0x5FfD23B1B0350debB17A2cB668929aC5f76d0E18",
+   "stan": "OK",
+   "dfi": 45.3,
+   "cel": "0x472fb3b40d3df9b1a65de03b85e4867a76f7b1ec014e2d69f347256b0d08184c",
+   "cel_tytul": "Banning projects identified in the high-severity Watchdog Pr",
+   "eligibility": "NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS",
+   "powody": [
+    "pokrycie źródła nieudowodnione",
+    "novelty: mianownik niepełny albo kategoria celu nieznana",
+    "powiązanie etapów bez dowodu"
+   ],
+   "novelty_basis": "TARGET_CATEGORY_UNKNOWN",
+   "category_coverage": 0.14218009478672985,
+   "taxonomy_snapshot_id": "tax:a6a868420bb3668d@2026-09-11",
+   "podstawy_okien": [
+    "SNAPSHOT_EXACT"
+   ],
+   "pokrycia_zrodel": {
+    "ecosystem_governor": "COMPLETE",
+    "ecosystem": "COMPLETE",
+    "snapshot": "COMPLETE",
+    "taxonomy": "COMPLETE",
+    "tally": "COMPLETE",
+    "governor": "PARTIAL_DATA"
+   },
+   "promocja_dopuszczona": false
+  },
+  {
+   "adres": "0xc5f705cA8f70acc5F3d3DB9636558102f528A475",
+   "stan": "OK",
+   "dfi": 48.7,
+   "cel": "0x472fb3b40d3df9b1a65de03b85e4867a76f7b1ec014e2d69f347256b0d08184c",
+   "cel_tytul": "Banning projects identified in the high-severity Watchdog Pr",
+   "eligibility": "NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS",
+   "powody": [
+    "pokrycie źródła nieudowodnione",
+    "novelty: mianownik niepełny albo kategoria celu nieznana",
+    "powiązanie etapów bez dowodu"
+   ],
+   "novelty_basis": "TARGET_CATEGORY_UNKNOWN",
+   "category_coverage": 0.12439024390243902,
+   "taxonomy_snapshot_id": "tax:a6a868420bb3668d@2026-09-11",
+   "podstawy_okien": [
+    "SNAPSHOT_EXACT"
+   ],
+   "pokrycia_zrodel": {
+    "ecosystem_governor": "COMPLETE",
+    "ecosystem": "COMPLETE",
+    "snapshot": "COMPLETE",
+    "taxonomy": "COMPLETE",
+    "tally": "COMPLETE",
+    "governor": "PARTIAL_DATA"
+   },
+   "promocja_dopuszczona": false
+  },
+  {
+   "adres": "0x7375237dCef733d17409e25dcc4DA5e0F71Ba199",
+   "stan": "OK",
+   "dfi": 45.3,
+   "cel": "0xddcea6a783aaabce1d616508999078e45ca95932b2b536c0620a9f5e57fa1899",
+   "cel_tytul": "Banning projects identified in the high-severity Watchdog Pr",
+   "eligibility": "NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS",
+   "powody": [
+    "pokrycie źródła nieudowodnione",
+    "novelty: mianownik niepełny albo kategoria celu nieznana",
+    "powiązanie etapów bez dowodu"
+   ],
+   "novelty_basis": "TARGET_CATEGORY_UNKNOWN",
+   "category_coverage": 0.265625,
+   "taxonomy_snapshot_id": "tax:a6a868420bb3668d@2026-09-11",
+   "podstawy_okien": [
+    "SNAPSHOT_EXACT"
+   ],
+   "pokrycia_zrodel": {
+    "ecosystem_governor": "COMPLETE",
+    "ecosystem": "COMPLETE",
+    "snapshot": "COMPLETE",
+    "taxonomy": "COMPLETE",
+    "tally": "COMPLETE",
+    "governor": "PARTIAL_DATA"
+   },
+   "promocja_dopuszczona": false
+  },
+  {
+   "adres": "0x019Ed608dD806b80193942F2A960e7AC8aBb2EE3",
+   "stan": "OK",
+   "dfi": 48.3,
+   "cel": "0x472fb3b40d3df9b1a65de03b85e4867a76f7b1ec014e2d69f347256b0d08184c",
+   "cel_tytul": "Banning projects identified in the high-severity Watchdog Pr",
+   "eligibility": "NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS",
+   "powody": [
+    "novelty: mianownik niepełny albo kategoria celu nieznana",
+    "powiązanie etapów bez dowodu"
+   ],
+   "novelty_basis": "TARGET_CATEGORY_UNKNOWN",
+   "category_coverage": 0.15436241610738255,
+   "taxonomy_snapshot_id": "tax:a6a868420bb3668d@2026-09-11",
+   "podstawy_okien": [
+    "SNAPSHOT_EXACT"
+   ],
+   "pokrycia_zrodel": {
+    "ecosystem_governor": "COMPLETE",
+    "snapshot": "COMPLETE",
+    "ecosystem": "COMPLETE",
+    "taxonomy": "COMPLETE",
+    "tally": "COMPLETE",
+    "governor": "EMPTY_PROVEN"
+   },
+   "promocja_dopuszczona": false
+  },
+  {
+   "adres": "0x0Cd5e7c7FC12C9fCD2673Cf0f7e168E661060A50",
+   "stan": "OK",
+   "dfi": 45.3,
+   "cel": "0x472fb3b40d3df9b1a65de03b85e4867a76f7b1ec014e2d69f347256b0d08184c",
+   "cel_tytul": "Banning projects identified in the high-severity Watchdog Pr",
+   "eligibility": "NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS",
+   "powody": [
+    "pokrycie źródła nieudowodnione",
+    "novelty: mianownik niepełny albo kategoria celu nieznana",
+    "powiązanie etapów bez dowodu"
+   ],
+   "novelty_basis": "TARGET_CATEGORY_UNKNOWN",
+   "category_coverage": 0.265625,
+   "taxonomy_snapshot_id": "tax:a6a868420bb3668d@2026-09-11",
+   "podstawy_okien": [
+    "SNAPSHOT_EXACT"
+   ],
+   "pokrycia_zrodel": {
+    "ecosystem_governor": "COMPLETE",
+    "ecosystem": "COMPLETE",
+    "snapshot": "COMPLETE",
+    "taxonomy": "COMPLETE",
+    "tally": "COMPLETE",
+    "governor": "PARTIAL_DATA"
+   },
+   "promocja_dopuszczona": false
+  },
+  {
+   "adres": "0xbF1fF222F18E053AB6F28707e33718726558B0E7",
+   "stan": "OK",
+   "dfi": 48.7,
+   "cel": "0x57e83d4df2139ff67626852cf2693146318492cc973ba5084a2a2625e78578a9",
+   "cel_tytul": "Banning projects identified in the high-severity Watchdog Pr",
+   "eligibility": "NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS",
+   "powody": [
+    "novelty: mianownik niepełny albo kategoria celu nieznana",
+    "powiązanie etapów bez dowodu"
+   ],
+   "novelty_basis": "TARGET_CATEGORY_UNKNOWN",
+   "category_coverage": 0.10434782608695652,
+   "taxonomy_snapshot_id": "tax:a6a868420bb3668d@2026-09-11",
+   "podstawy_okien": [
+    "SNAPSHOT_EXACT"
+   ],
+   "pokrycia_zrodel": {
+    "ecosystem_governor": "COMPLETE",
+    "governor": "COMPLETE",
+    "snapshot": "COMPLETE",
+    "ecosystem": "COMPLETE",
+    "taxonomy": "COMPLETE",
+    "tally": "COMPLETE"
+   },
+   "promocja_dopuszczona": false
+  },
+  {
+   "adres": "0x5423c38c544104ae3d44d355de685b6865Db57a0",
+   "stan": "OK",
+   "dfi": 48.8,
+   "cel": "0xddcea6a783aaabce1d616508999078e45ca95932b2b536c0620a9f5e57fa1899",
+   "cel_tytul": "Banning projects identified in the high-severity Watchdog Pr",
+   "eligibility": "NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS",
+   "powody": [
+    "novelty: mianownik niepełny albo kategoria celu nieznana"
+   ],
+   "novelty_basis": "TARGET_CATEGORY_UNKNOWN",
+   "category_coverage": 0.21875,
+   "taxonomy_snapshot_id": "tax:a6a868420bb3668d@2026-09-11",
+   "podstawy_okien": [
+    "SNAPSHOT_EXACT"
+   ],
+   "pokrycia_zrodel": {
+    "ecosystem_governor": "COMPLETE",
+    "ecosystem": "COMPLETE",
+    "snapshot": "COMPLETE",
+    "taxonomy": "COMPLETE",
+    "tally": "COMPLETE",
+    "governor": "EMPTY_PROVEN"
+   },
+   "promocja_dopuszczona": false
+  },
+  {
+   "adres": "0x3FB19771947072629C8EEE7995a2eF23B72d4C8A",
+   "stan": "OK",
+   "dfi": 45.3,
+   "cel": "0xddcea6a783aaabce1d616508999078e45ca95932b2b536c0620a9f5e57fa1899",
+   "cel_tytul": "Banning projects identified in the high-severity Watchdog Pr",
+   "eligibility": "NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS",
+   "powody": [
+    "pokrycie źródła nieudowodnione",
+    "novelty: mianownik niepełny albo kategoria celu nieznana",
+    "powiązanie etapów bez dowodu"
+   ],
+   "novelty_basis": "TARGET_CATEGORY_UNKNOWN",
+   "category_coverage": 0.17064846416382254,
+   "taxonomy_snapshot_id": "tax:a6a868420bb3668d@2026-09-11",
+   "podstawy_okien": [
+    "SNAPSHOT_EXACT"
+   ],
+   "pokrycia_zrodel": {
+    "ecosystem_governor": "COMPLETE",
+    "snapshot": "COMPLETE",
+    "ecosystem": "COMPLETE",
+    "taxonomy": "COMPLETE",
+    "tally": "COMPLETE",
+    "governor": "PARTIAL_DATA"
+   },
+   "promocja_dopuszczona": false
+  },
+  {
+   "adres": "0x6f9BB7e454f5B3eb2310343f0E99269dC2BB8A1d",
+   "stan": "OK",
+   "dfi": 45.3,
+   "cel": "0xddcea6a783aaabce1d616508999078e45ca95932b2b536c0620a9f5e57fa1899",
+   "cel_tytul": "Banning projects identified in the high-severity Watchdog Pr",
+   "eligibility": "NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS",
+   "powody": [
+    "pokrycie źródła nieudowodnione",
+    "novelty: mianownik niepełny albo kategoria celu nieznana",
+    "powiązanie etapów bez dowodu"
+   ],
+   "novelty_basis": "TARGET_CATEGORY_UNKNOWN",
+   "category_coverage": 0.1346153846153846,
+   "taxonomy_snapshot_id": "tax:a6a868420bb3668d@2026-09-11",
+   "podstawy_okien": [
+    "SNAPSHOT_EXACT"
+   ],
+   "pokrycia_zrodel": {
+    "ecosystem_governor": "COMPLETE",
+    "ecosystem": "COMPLETE",
+    "snapshot": "COMPLETE",
+    "taxonomy": "COMPLETE",
+    "tally": "COMPLETE",
+    "governor": "PARTIAL_DATA"
+   },
+   "promocja_dopuszczona": false
+  },
+  {
+   "adres": "0x679100046F086c74694f96Ae19508f22879E5954",
+   "stan": "OK",
+   "dfi": 48.7,
+   "cel": "0x472fb3b40d3df9b1a65de03b85e4867a76f7b1ec014e2d69f347256b0d08184c",
+   "cel_tytul": "Banning projects identified in the high-severity Watchdog Pr",
+   "eligibility": "NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS",
+   "powody": [
+    "novelty: mianownik niepełny albo kategoria celu nieznana",
+    "powiązanie etapów bez dowodu"
+   ],
+   "novelty_basis": "TARGET_CATEGORY_UNKNOWN",
+   "category_coverage": 0.1834319526627219,
+   "taxonomy_snapshot_id": "tax:a6a868420bb3668d@2026-09-11",
+   "podstawy_okien": [
+    "SNAPSHOT_EXACT"
+   ],
+   "pokrycia_zrodel": {
+    "ecosystem_governor": "COMPLETE",
+    "snapshot": "COMPLETE",
+    "ecosystem": "COMPLETE",
+    "taxonomy": "COMPLETE",
+    "governor": "EMPTY_PROVEN",
+    "tally": "EMPTY_PROVEN"
+   },
+   "promocja_dopuszczona": false
+  },
+  {
+   "adres": "0x2B49eb913E5D5d82Ae3c7145577F24E9a7615d39",
+   "stan": "OK",
+   "dfi": 45.3,
+   "cel": "0x472fb3b40d3df9b1a65de03b85e4867a76f7b1ec014e2d69f347256b0d08184c",
+   "cel_tytul": "Banning projects identified in the high-severity Watchdog Pr",
+   "eligibility": "NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS",
+   "powody": [
+    "pokrycie źródła nieudowodnione",
+    "novelty: mianownik niepełny albo kategoria celu nieznana",
+    "powiązanie etapów bez dowodu"
+   ],
+   "novelty_basis": "TARGET_CATEGORY_UNKNOWN",
+   "category_coverage": 0.1388235294117647,
+   "taxonomy_snapshot_id": "tax:a6a868420bb3668d@2026-09-11",
+   "podstawy_okien": [
+    "SNAPSHOT_EXACT"
+   ],
+   "pokrycia_zrodel": {
+    "ecosystem_governor": "COMPLETE",
+    "ecosystem": "COMPLETE",
+    "snapshot": "COMPLETE",
+    "taxonomy": "COMPLETE",
+    "tally": "COMPLETE",
+    "governor": "PARTIAL_DATA"
+   },
+   "promocja_dopuszczona": false
+  }
+ ]
+}
