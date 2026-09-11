@@ -46,8 +46,10 @@ def etap(id_, dni_temu, *, title="ArbOS 61 Elara", body="tresc " * 50, domena="s
 
 
 def pokwitowania():
-    return [SourceReceipt(z, HEALTHY_COMPLETE, events=3, page_count=1,
-                          record_count=3, limit_hit=False) for z in WYMAGANE]
+    return [SourceReceipt(
+        z, HEALTHY_COMPLETE, events=3, page_count=1, record_count=3, limit_hit=False,
+        taxonomy_snapshot_id="tax:testowy0000000@2026-09-11" if z == "taxonomy" else "")
+        for z in WYMAGANE]
 
 
 @pytest.fixture

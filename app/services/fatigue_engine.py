@@ -167,6 +167,25 @@ WINDOW_BASES = (WINDOW_SNAPSHOT_EXACT, WINDOW_REGISTRY_EXACT, WINDOW_GOVERNOR_EX
 # i dzisiejszy `votingDelay` się nie kwalifikują, choćby skan zdarzeń się udał.
 WINDOW_BASES_PRIMARY = (WINDOW_SNAPSHOT_EXACT, WINDOW_REGISTRY_EXACT, WINDOW_GOVERNOR_EXACT)
 
+# NA CZYM STOI `novelty` (plan domkniecia z 11.09, P6; punkt 6 recenzji 78179).
+# Skladnik pyta, na ile ten RODZAJ decyzji jest nowy dla delegata - czyli liczy udzial
+# kategorii wsrod jego wczesniejszych decyzji. Przy nieznanej kategorii kod schodzil na
+# dopasowanie po slowach kluczowych i zwracal 0,0, czyli "decyzja rutynowa": jedna liczba
+# na dwa rozne stany swiata. Pokrycie taksonomia u trojki uczestnikow Fazy A to
+# 1,2% / 1,8% / 30,8%, wiec zejscie bylo stanem normalnym, nie wyjatkiem.
+NOVELTY_COMPLETE = "COMPLETE"                      # pelny mianownik, wartosc obowiazuje
+NOVELTY_NO_PRIOR = "NO_PRIOR_OBSERVED_DECISIONS_IN_COMPLETE_CORPUS"
+NOVELTY_TARGET_UNKNOWN = "TARGET_CATEGORY_UNKNOWN"  # nie wiemy, czego dotyczy cel
+NOVELTY_HISTORY_INCOMPLETE = "HISTORY_COVERAGE_INCOMPLETE"  # mianownik czesciowy
+NOVELTY_KEYWORD_FALLBACK = "KEYWORD_FALLBACK"      # inny konstrukt: cecha tekstu
+NOVELTY_BASES = (NOVELTY_COMPLETE, NOVELTY_NO_PRIOR, NOVELTY_TARGET_UNKNOWN,
+                 NOVELTY_HISTORY_INCOMPLETE, NOVELTY_KEYWORD_FALLBACK)
+
+# Do pomiaru konfirmacyjnego wchodza dwa stany. NO_PRIOR jest WIEDZA, nie brakiem:
+# zero wczesniejszych zaobserwowanych decyzji przy dowiedzionej kompletnosci korpusu
+# znaczy, ze kazda kategoria jest dla tego adresu nowa.
+NOVELTY_BASES_PRIMARY = (NOVELTY_COMPLETE, NOVELTY_NO_PRIOR)
+
 
 @dataclass
 class SourceReceipt:
@@ -185,6 +204,10 @@ class SourceReceipt:
     # manifesty sprzed 11.09 i niezmigrowani klienci czytali się bez zmiany znaczenia.
     availability_state: str = ""
     coverage_state: str = ""
+    # P6 (11.09): rejestr taksonomii ZYJE - kategoria dopisana po pomiarze zmienilaby
+    # historyczny wynik przy ponownym liczeniu. Identyfikator zamrozonego snapshotu mowi,
+    # JAKI zbior kategorii zbudowal ten pomiar.
+    taxonomy_snapshot_id: str = ""
     # Dowód pokrycia, nie jego opis: ile stron przeszło zapytanie, ile rekordów wróciło
     # i czy któraś strona dobiła do limitu. `limit_hit=None` znaczy "nie mierzono" - to
     # inny stan niż `False` i nie wolno go czytać jako dowodu kompletności.
@@ -294,6 +317,11 @@ class MeasurementIdentity:
     input_conflicts: List[Dict[str, Any]] = field(default_factory=list)
     canonical_input_digest: str = ""             # sha256 of CanonicalMeasurementInput
     identity_schema_version: str = ""            # rule that produced measurement_id
+    # P6 (11.09): na czym stoi `novelty` i ile mianownika znamy. Bez tych pol liczba 0,0
+    # opisywala jednocześnie "delegat robi to stale" i "nie wiemy nic o kategoriach".
+    novelty_basis: str = ""                      # NOVELTY_* - patrz staly wyzej
+    category_coverage: Dict[str, Any] = field(default_factory=dict)
+    taxonomy_snapshot_id: str = ""               # zamrozony zbior kategorii tego pomiaru
     measurement_id: str = ""                     # digest of the whole manifest
 
     def manifest(self) -> Dict[str, Any]:
@@ -657,7 +685,9 @@ class FatigueEngine:
         ref_words = max(ref.get("reading_words", 1500), 1)
         words = len((getattr(target_proposal, "body", None) or "").split())
         reading_time = round(min(min(words / ref_words, 2.0) / 2.0, 1.0), 4)
-        novelty = round(self._novelty_per_event(target_proposal, frozen_history), 4)
+        novelty_raw, novelty_basis, category_coverage = self._novelty_z_podstawa(
+            target_proposal, frozen_history)
+        novelty = round(novelty_raw, 4)
 
         components = FatigueComponents(
             volume=ctx_components.volume,
@@ -706,6 +736,9 @@ class FatigueEngine:
         # otwarte w mierzonej chwili, wiec kazde okno oszacowane wchodzi do wyniku tak
         # samo jak dowiedzione. Cel i historia nie sa tu sprawdzane: ich okna nie licza
         # sie do wspolbieznosci, a `reading_time` i `novelty` biora sie z tresci.
+        taxonomy_snapshot_id = next(
+            (str(r.get("taxonomy_snapshot_id") or "") for r in receipts
+             if r.get("source") == "taxonomy"), "")
         okna_bez_dowodu = sorted({
             str(getattr(p, "window_basis", "") or WINDOW_UNKNOWN)
             for p in (ecosystem_proposals or [])
@@ -715,7 +748,8 @@ class FatigueEngine:
             receipts, concurrency_source, now_ts,
             ekspozycja_pusta=(ecosystem_proposals is not None and not ecosystem_proposals),
             cel_kontraktowy=cel_domena.startswith("governor"),
-            podstawy_bez_dowodu=domysly, okna_bez_dowodu=okna_bez_dowodu)
+            podstawy_bez_dowodu=domysly, okna_bez_dowodu=okna_bez_dowodu,
+            novelty_basis=novelty_basis, taxonomy_snapshot_id=taxonomy_snapshot_id)
 
         title = getattr(target_proposal, "title", None) or ""
         body = getattr(target_proposal, "body", None) or ""
@@ -786,6 +820,9 @@ class FatigueEngine:
             input_conflicts=_input_conflicts(data["history"]),
             canonical_input_digest=manifest_core["canonical_input_digest"],
             identity_schema_version=IDENTITY_SCHEMA_VERSION,
+            novelty_basis=novelty_basis,
+            category_coverage=category_coverage,
+            taxonomy_snapshot_id=taxonomy_snapshot_id,
             measurement_id=_sha(json.dumps(manifest_core, sort_keys=True))[:32],
         )
 
@@ -836,6 +873,8 @@ class FatigueEngine:
                      cel_kontraktowy: bool = False,
                      podstawy_bez_dowodu: Optional[List[str]] = None,
                      okna_bez_dowodu: Optional[List[str]] = None,
+                     novelty_basis: str = "",
+                     taxonomy_snapshot_id: str = "",
                      ) -> Tuple[str, List[str], List[str]]:
         """Fail closed (closure review points 2 and 6, plan domknięcia P2):
         pomiar konfirmacyjny jest `PRIMARY_ELIGIBLE` tylko wtedy, gdy każde wymagane
@@ -903,6 +942,19 @@ class FatigueEngine:
             reasons.append(
                 f"exposure window basis {okno} - concurrency counts proposals open at the "
                 "measured moment, and this one's window is reconstructed, not evidenced")
+        # P6: `novelty` policzona na czesciowym mianowniku albo bez znanej kategorii celu
+        # nie jest pomiarem pierwszorzednym. Iloraz z jednego procenta sklasyfikowanych
+        # decyzji opisuje ten procent i milczy o pozostalych dziewiecdziesieciu dziewieciu.
+        if novelty_basis and novelty_basis not in NOVELTY_BASES_PRIMARY:
+            reasons.append(
+                f"novelty basis {novelty_basis} - the component's denominator is partial "
+                "or the target category is unknown, so the value is not a primary measure")
+        # Rejestr taksonomii ZYJE: bez identyfikatora zamrozonego snapshotu nie da sie
+        # powiedziec, jaki zbior kategorii zbudowal ten pomiar, ani powtorzyc go pozniej.
+        if "taxonomy" in required and not taxonomy_snapshot_id:
+            reasons.append(
+                "taxonomy snapshot id missing - the category set behind this measurement "
+                "is not frozen, so a later registry change would silently alter it")
         for podstawa in (podstawy_bez_dowodu or []):
             reasons.append(
                 f"stage linking basis {podstawa} - one decision was assembled without "
@@ -964,33 +1016,71 @@ class FatigueEngine:
         klasyfikacji na zero byłaby twierdzeniem, że decyzja jest rutynowa - a to
         inna rzecz niż „nie wiemy".
         """
+        wartosc, _podstawa, _pokrycie = self._novelty_z_podstawa(target, history)
+        return wartosc
+
+    def _novelty_z_podstawa(self, target: Any, history: List[Any]):
+        """Wartość `novelty` RAZEM z podstawą i pokryciem mianownika (P6, 11.09).
+
+        Zwraca `(wartosc, podstawa, pokrycie)`. Do 11.09 ta funkcja zwracała samą liczbę,
+        więc stan "nie wiemy" wychodził jako 0,0 - nieodróżnialne od "delegat robi to stale".
+        Pokrycie liczy się na TYM SAMYM korpusie, z którego bierze się mianownik: własny
+        cykl celu jest wyłączony, bo endpoint podaje cel wewnątrz jego własnej historii.
+        """
         kat = (getattr(target, "category", None) or "").strip().lower()
-        if kat:
-            # Own lifecycle excluded (closure review 2026-09-03, found while
-            # separating stages): the endpoint hands the target inside its own
-            # history, so until 2026-09-04 a delegate's FIRST vote in a category
-            # scored 1 - 1/1 = 0.0 - "routine" - instead of 1.0. The component
-            # could only reach its ceiling through the keyword fallback.
-            wlasny = _lifecycle_key(target)
-            # Jedna decyzja = jedno wcześniejsze zetknięcie. Kategoria cyklu to
-            # pierwsza znana wśród jego ZAMROŻONYCH etapów (wszystkie <= now,
-            # więc to informacja, która w chwili głosu istniała).
-            kategorie_cykli: Dict[str, str] = {}
-            for p in sorted(history, key=_observation_order):
-                k = _lifecycle_key(p)
-                if k == wlasny:
-                    continue
-                c = (getattr(p, "category", None) or "").strip().lower()
-                if c and not kategorie_cykli.get(k):
-                    kategorie_cykli[k] = c
-                else:
-                    kategorie_cykli.setdefault(k, "")
-            wczesniej = [c for c in kategorie_cykli.values() if c]
-            if wczesniej:
-                w_tej = sum(1 for c in wczesniej if c == kat)
-                return 1.0 - min(w_tej / len(wczesniej), 1.0)
-            return 1.0  # brak historii z kategoriami = wszystko jest nowe
-        return self._proposal_is_novel(target)
+        wlasny = _lifecycle_key(target)
+
+        # Kategorie cykli historii. Jedna decyzja = jedno wcześniejsze zetknięcie, a kategoria
+        # cyklu to pierwsza znana wśród jego ZAMROŻONYCH etapów (wszystkie <= now, więc to
+        # informacja, która w chwili głosu istniała).
+        kategorie_cykli: Dict[str, str] = {}
+        identyfikatory: Dict[str, str] = {}
+        for p in sorted(history, key=_observation_order):
+            k = _lifecycle_key(p)
+            if k == wlasny:
+                # Own lifecycle excluded (closure review 2026-09-03): do 2026-09-04
+                # PIERWSZY głos delegata w kategorii dawał 1 - 1/1 = 0,0, czyli "rutynowa".
+                continue
+            c = (getattr(p, "category", None) or "").strip().lower()
+            if c and not kategorie_cykli.get(k):
+                kategorie_cykli[k] = c
+            else:
+                kategorie_cykli.setdefault(k, "")
+            identyfikatory.setdefault(k, str(getattr(p, "id", "") or k))
+
+        wczesniej = [c for c in kategorie_cykli.values() if c]
+        brakujace = [identyfikatory[k] for k, c in kategorie_cykli.items() if not c]
+        pokrycie = {
+            "classified_count": len(wczesniej),
+            "eligible_history_count": len(kategorie_cykli),
+            "coverage_ratio": (len(wczesniej) / len(kategorie_cykli)
+                               if kategorie_cykli else 1.0),
+            "coverage_basis": ("prior decision lifecycles in the measured history, "
+                              "own lifecycle excluded"),
+            "missing_ids": sorted(brakujace)[:50],
+            "missing_count": len(brakujace),
+        }
+
+        if not kat:
+            # Kategoria celu nieznana. Słowa kluczowe policzone DO WGLĄDU - to inny konstrukt
+            # (cecha tekstu, nie stan czytającego), więc nie wolno go promować jako `novelty`.
+            return self._proposal_is_novel(target), NOVELTY_TARGET_UNKNOWN, pokrycie
+
+        if not kategorie_cykli:
+            # Brak wcześniejszych ZAOBSERWOWANYCH decyzji. To wiedza, nie brak: każda
+            # kategoria jest dla tego adresu nowa. Nazwa stanu nie mówi "pierwszy głos
+            # człowieka" - osoba może mieć historię pod innym adresem albo w innym DAO.
+            return 1.0, NOVELTY_NO_PRIOR, pokrycie
+
+        if brakujace:
+            # Iloraz z podzbioru NIE jest estymatą punktową (plan, 7.4). Wartość wraca
+            # do wglądu, ale podstawa mówi, że mianownik jest częściowy.
+            w_tej = sum(1 for c in wczesniej if c == kat)
+            czesciowa = (1.0 - min(w_tej / len(wczesniej), 1.0)) if wczesniej else 1.0
+            return czesciowa, NOVELTY_HISTORY_INCOMPLETE, pokrycie
+
+        w_tej = sum(1 for c in wczesniej if c == kat)
+        return 1.0 - min(w_tej / len(wczesniej), 1.0), NOVELTY_COMPLETE, pokrycie
 
     def _proposal_is_novel(self, proposal: Any) -> float:
         """

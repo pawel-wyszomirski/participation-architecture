@@ -105,8 +105,10 @@ async def _eco_gov(self, at_ts, days_back=120):
 async def _registry(self):
     """The DAO registry is a source with a receipt too (production 2026-09-04:
     it answered 403 and the verdict stayed clean)."""
-    self.receipt = SourceReceipt("taxonomy", _Fakes.taxonomy_state,
-                                 detail="fake" if _Fakes.taxonomy_state != HEALTHY_COMPLETE else "")
+    self.receipt = SourceReceipt(
+        "taxonomy", _Fakes.taxonomy_state,
+        taxonomy_snapshot_id="tax:testowy0000000@2026-09-11",
+        detail="fake" if _Fakes.taxonomy_state != HEALTHY_COMPLETE else "")
     return 0
 
 

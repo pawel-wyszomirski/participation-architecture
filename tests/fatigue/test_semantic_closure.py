@@ -154,7 +154,14 @@ def pokwitowania(stan_per_zrodlo: Optional[dict] = None, **kw) -> List[SourceRec
     """Komplet pokwitowań dla wszystkich wymaganych źródeł."""
     stany = {z: HEALTHY_COMPLETE for z in WYMAGANE_ZRODLA}
     stany.update(stan_per_zrodlo or {})
-    return [SourceReceipt(z, s, events=5, **kw) for z, s in stany.items()]
+    out = []
+    for z, s in stany.items():
+        dodatki = dict(kw)
+        if z == "taxonomy":
+            # Zamrozony snapshot taksonomii (P6) - warunek pomiaru pierwszorzednego.
+            dodatki["taxonomy_snapshot_id"] = "tax:testowy0000000@2026-09-11"
+        out.append(SourceReceipt(z, s, events=5, **dodatki))
+    return out
 
 
 class _Brak:

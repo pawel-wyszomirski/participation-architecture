@@ -362,8 +362,10 @@ def _obserwacja(id_, dni_temu, podstawa, *, kategoria="grants"):
 def _pokwitowania_komplet():
     from app.services.fatigue_engine import HEALTHY_COMPLETE, SourceReceipt
     zrodla = ("snapshot", "governor", "ecosystem", "ecosystem_governor", "taxonomy")
-    return [SourceReceipt(z, HEALTHY_COMPLETE, events=2, page_count=1,
-                          record_count=2, limit_hit=False) for z in zrodla]
+    return [SourceReceipt(
+        z, HEALTHY_COMPLETE, events=2, page_count=1, record_count=2, limit_hit=False,
+        taxonomy_snapshot_id="tax:testowy0000000@2026-09-11" if z == "taxonomy" else "")
+        for z in zrodla]
 
 
 def _policz(ekspozycja):

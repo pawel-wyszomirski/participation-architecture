@@ -38,6 +38,7 @@ response code.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -153,7 +154,8 @@ class ArbdataClient:
             self._write_cache(rows)
             self.receipt = SourceReceipt(
                 "taxonomy", HEALTHY_COMPLETE if self._rekordy else HEALTHY_EMPTY,
-                events=len(self._rekordy))
+                events=len(self._rekordy),
+                taxonomy_snapshot_id=self.snapshot_id(rows))
             return len(self._rekordy)
 
         cached, stamp = self._read_cache()
@@ -161,11 +163,34 @@ class ArbdataClient:
             self._index(cached)
             self.receipt = SourceReceipt(
                 "taxonomy", PARTIAL, events=len(self._rekordy),
+                taxonomy_snapshot_id=self.snapshot_id(cached, stamp),
                 detail=f"live: {failure.detail}; cached copy from {stamp}")
             print(f"⚠ arbdata: using cached registry from {stamp} ({len(self._rekordy)} rows)")
             return len(self._rekordy)
         self.receipt = failure
         return 0
+
+    @staticmethod
+    def snapshot_id(rows, stamp: Optional[str] = None) -> str:
+        """Identyfikator ZAMROZONEGO zbioru kategorii, ktory zbudowal pomiar (P6, 11.09).
+
+        Rejestr zyje: kategoria dopisana po pomiarze zmienilaby historyczny wynik przy
+        ponownym liczeniu, a pomiar nie mialby jak tego pokazac. Identyfikator wiaze wynik
+        z konkretna TRESCIA rejestru, nie z data odczytu - dwa odczyty tego samego zbioru
+        daja ten sam identyfikator, a dopisanie jednej kategorii zmienia go.
+
+        Skrot liczy sie z pary (identyfikator propozycji, kategoria) po sortowaniu, wiec
+        kolejnosc odpowiedzi serwisu na niego nie wplywa - ta sama zasada, ktora obowiazuje
+        cale wejscie kanoniczne od 10.09.
+        """
+        pary = sorted(
+            (str(r.get("proposal_id")), str(r.get("proposal_category") or ""))
+            for r in (rows or [])
+        )
+        skrot = hashlib.sha256(
+            json.dumps(pary, ensure_ascii=False).encode()).hexdigest()[:16]
+        data = (stamp or dt.datetime.now(dt.timezone.utc).date().isoformat())[:10]
+        return f"tax:{skrot}@{data}"
 
     def _index(self, rows) -> None:
         for row in rows:

@@ -72,6 +72,11 @@ def obs(id_, days_ago, now, **kw):
     # Podstawa okna od 11.09 (P4): warstwy produkcyjne ja deklaruja, wiec atrapy tez.
     # Test badajacy okno bez dowodu przekazuje `window_basis` sam.
     kw.setdefault("window_basis", "SNAPSHOT_EXACT")
+    # Kategoria z rejestru taksonomii (P6, 11.09). Produkcja ja podaje, o ile rejestr zna
+    # propozycje, wiec atrapa tez - bez tego kazdy pomiar wychodzi TARGET_CATEGORY_UNKNOWN
+    # i test bada brak pola, nie zachowanie kwalifikacji. Test o nieznanej kategorii
+    # przekazuje `category=""` sam.
+    kw.setdefault("category", "grants")
     return Obs(id=id_, voted_at=t, **kw)
 
 
@@ -83,7 +88,10 @@ def healthy_receipts():
         SourceReceipt("tally", AUTH_MISSING, detail="no key"),
         SourceReceipt("governor", HEALTHY_COMPLETE, events=2),
         SourceReceipt("ecosystem", HEALTHY_COMPLETE, events=2),
-        SourceReceipt("taxonomy", HEALTHY_COMPLETE, events=89),
+        SourceReceipt("taxonomy", HEALTHY_COMPLETE, events=89,
+                      # P6 (11.09): produkcja podaje identyfikator zamrozonego snapshotu,
+                      # wiec atrapa tez - inaczej test bada brak pola, nie kwalifikacje.
+                      taxonomy_snapshot_id="tax:testowy0000000@2026-09-11"),
         # Warstwa kontraktowa ekspozycji - źródło wymagane od 2026-09-09. Do tej pory
         # jej pokwitowanie powstawało, ale nie stało w `required_sources`, więc awaria
         # jednego z dwóch kontraktów Governor przechodziła jako pomiar pierwszorzędny.

@@ -12,7 +12,7 @@
 #   DFI = (w_volume×volume + w_concurrency×concurrency + w_burstiness×burstiness
 #          + w_reading_time×reading_time + w_novelty×novelty) × 100
 
-version: "1.5.0"
+version: "1.6.0"
 
 # Component weights (must sum to 1.0)
 weights:
@@ -89,8 +89,22 @@ reference_values_per_event:
   # (at 2x reference = 4) unreachable in the observed data - the component's
   # resolution is limited by the source, not by this constant, and that limit
   # is recorded in the measurement registry, not hidden in a denominator.
+  # POTWIERDZONE 2026-09-11 na korpusie DWUWARSTWOWYM (P5, dziennik D33). Zarzut punktu 5
+  # recenzji 78179 byl sluszny co do procedury: ta wartosc pochodzila z p75 ekspozycji
+  # Snapshot-only (korpus 28.08), a od 09.09 licznik czyta Snapshot RAZEM z kontraktem
+  # Governor - mianownik nalezal do jednego obiektu semantycznego, licznik do drugiego.
+  #
+  # Rekalibracja ta sama procedura, na ekspozycji liczonej DOKLADNIE jak w endpoincie
+  # (30 chwil glosow, 23 rozne dni, 06.03-16.07.2026, korpus 3a1472af8d48c947):
+  # min 1, mediana 2, p75 2, p90 3, max 3. Warstwa kontraktowa doklada najwyzej JEDNA
+  # propozycje i tylko w trzeciej czesci chwil, wiec percentyl sie nie przesunal.
+  # Wartosc zostaje - teraz z dowodem, nie przez bezczynnosc.
+  #
+  # Zastrzezenie: korpus konczy sie 17.08.2026, bo dalej okna kontraktowe nie maja dowodu
+  # (rejestr taksonomii urywa sie na tej dacie). Dla okresu rundy N=50 zakladam kontynuacje
+  # rezimu - to hipoteza, nie pomiar. Powtorzyc przed pierwszym respondentem.
   concurrent: 2       # p75 of proposals open in the SPACE at vote moments
-                      # (ecosystem corpus 2026-08-28; field median 1)
+                      # (ecosystem corpus 2026-08-28, potwierdzone dwuwarstwowo 2026-09-11)
   reading_words: 710  # p75 proposal length halved - the formula divides by 2
                       # again (field median 730 words, not the assumed 1500)
 
