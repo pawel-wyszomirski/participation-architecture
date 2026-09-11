@@ -507,3 +507,63 @@ def test_rejestracja_dopisuje_manifest_poza_baze(client, tmp_path, monkeypatch):
     # przestalaby cokolwiek znaczyc.
     client.post(f"/delegates/{ADDR}/per-event-fatigue")
     assert len(odczytaj_manifesty(katalog)) == 1
+
+
+def test_odpowiedz_niesie_zakres_pomiaru_az_do_bramy_promocji(client):
+    """Pełna ścieżka: API → manifest z odpowiedzi → brama promocji.
+
+    POWÓD: `prep-dataset.py` buduje zbiór analityczny z `odp["identity"]`, czyli z pól,
+    które przepuści SCHEMAT odpowiedzi - a Pydantic domyślnie tnie wszystko, czego
+    w schemacie nie ma. Manifest silnika może więc nieść `primary_components`, a odpowiedź
+    API już nie; brama uznałaby wtedy każdy pomiar za zapis sprzed decyzji z 11.09
+    i odrzuciła go za `novelty`. Smoke tego nie sprawdza - liczy przez `_measure_per_event`,
+    czyli z pominięciem serializacji.
+    """
+    from app.services.promocja import promote_to_primary
+
+    body = client.get(f"/delegates/{ADDR}/per-event-fatigue").json()
+    ident = body["identity"]
+
+    assert "primary_components" in ident, "schemat odpowiedzi obciął zakres pomiaru"
+    assert ident["primary_components"], "zakres pomiaru pusty w odpowiedzi API"
+    assert "novelty" not in ident["primary_components"]
+    assert ident["sensitivity_score"] is not None, "brak wartości analizy wrażliwości"
+    assert ident["sensitivity_score"] != body["fatigue_score"], (
+        "test stracił moc: obie liczby równe, więc nie widać, czy zakres zadziałał")
+
+    # Wzór pod liczbą ma opisywać wariant, którym ją policzono.
+    assert "novelty" not in body["formula"], body["formula"]
+    assert "0.95" in body["formula"], body["formula"]
+
+    # I to, po co te pola istnieją: brama musi przepuścić pomiar kwalifikowany.
+    p = promote_to_primary(ident, body)
+    assert p.dopuszczony, (
+        f"API mówi {body['eligibility']}, brama odmawia: {p.powody}")
+
+
+def test_schemat_odpowiedzi_niesie_KAZDE_pole_manifestu():
+    """Warunek na KLASĘ, nie na instancję usterki.
+
+    11.09 sześć pól manifestu (P6 i P7) nie miało odpowiednika w schemacie odpowiedzi,
+    więc ginęły przy serializacji. Jedno z nich - `eligibility_policy_version` - jest
+    WYMAGANE przez bramę promocji, więc każdy pomiar budowany ze ścieżki API był
+    odrzucany, podczas gdy ten sam pomiar liczony silnikiem przechodził.
+
+    Naprawienie sześciu pól nie zamyka sprawy: siódme, dodane jutro do manifestu,
+    zniknęłoby tak samo cicho. Ten warunek pilnuje reguły - manifest i odpowiedź opisują
+    ten sam pomiar, więc odpowiedź nie ma prawa być uboższa.
+    """
+    import dataclasses
+    from app.services.fatigue_engine import MeasurementIdentity
+    from app.services.promocja import POLA_WYMAGANE
+
+    w_manifescie = {f.name for f in dataclasses.fields(MeasurementIdentity)}
+    w_schemacie = set(main.MeasurementIdentityResponse.model_fields.keys())
+
+    brakujace = sorted(w_manifescie - w_schemacie)
+    assert not brakujace, (
+        "schemat odpowiedzi gubi pola manifestu - pomiar zserializowany opisuje mniej "
+        f"niż pomiar policzony: {brakujace}")
+
+    # Osobno i wprost: bez tych pól brama promocji odmawia z powodu braku dowodu.
+    assert not [p for p in POLA_WYMAGANE if p not in w_schemacie]

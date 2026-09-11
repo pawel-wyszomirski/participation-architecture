@@ -275,6 +275,25 @@ class MeasurementIdentityResponse(BaseModel):
         "Rule that produced measurement_id. '1' bound id sets and could give one identity "
         "to two different scores; '2' binds a projection; '3' binds the input consumed by components. Empty "
         "means a measurement taken before the field existed"))
+    # Pola P6 i P7 (11.09). Trafiły do manifestu silnika i NIE trafiły tutaj, więc ginęły
+    # przy serializacji: Pydantic tnie wszystko, czego w schemacie nie ma. Skutek był cichy
+    # i dotkliwy - `prep-dataset.py` buduje zbiór analityczny z `odp["identity"]`, a brama
+    # promocji WYMAGA `eligibility_policy_version`, więc przez ścieżkę API odrzucała KAŻDY
+    # pomiar, niezależnie od jego jakości. Ten sam pomiar liczony bezpośrednio silnikiem
+    # przechodził, więc testy silnika i smoke tego nie widziały. Złapane testem pełnej
+    # ścieżki (API → manifest → brama), nie przeglądem.
+    eligibility_policy_version: str = Field("", description=(
+        "Digest of the eligibility rules in force - REQUIRED by the promotion gate"))
+    runtime_digest: str = Field("", description="Dependency versions + image digest")
+    build_image_digest: str = Field("", description=(
+        "Digest of the built image; empty means computed outside a built image"))
+    novelty_basis: str = Field("", description=(
+        "COMPLETE | NO_PRIOR_OBSERVED_DECISIONS_IN_COMPLETE_CORPUS | "
+        "TARGET_CATEGORY_UNKNOWN | HISTORY_COVERAGE_INCOMPLETE | KEYWORD_FALLBACK"))
+    category_coverage: Dict[str, Any] = Field(default_factory=dict, description=(
+        "How much of the history the taxonomy classified - the novelty denominator"))
+    taxonomy_snapshot_id: str = Field("", description=(
+        "Frozen category set behind this measurement; the registry is alive"))
     # Zakres pomiaru pierwszorzędnego (D1=B, config 1.8.0). Bez tych dwóch pól odpowiedź
     # nie mówi, KTÓRE składniki zbudowały `fatigue_score` - a panel i eksport pokazywały
     # wszystkie pięć razem z wagami, więc czytający miał prawo sądzić, że każdy z nich
