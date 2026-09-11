@@ -20,7 +20,11 @@ import sys
 
 import pytest
 
+import re
+from pathlib import Path
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+ROOT_PATH = Path(ROOT)
 sys.path.insert(0, ROOT)
 os.chdir(ROOT)
 
@@ -104,3 +108,55 @@ async def test_pokwitowanie_governora_niesie_dowod_pokrycia(monkeypatch):
     assert pokwitowanie.page_count > 0, "pokwitowanie nie niesie liczby okien skanu"
     assert pokwitowanie.limit_hit is False
     assert hasattr(pokwitowanie, "coverage_state")
+
+
+def test_dowod_ZAMROZONY_przed_drugim_skanem():
+    """JEDEN atrybut nie może opisywać DWÓCH pomiarów - strażnik KOLEJNOŚCI.
+
+    `_votes_on_one_governor` woła `_logs` dwa razy na tym samym kliencie: po `VoteCast`
+    (z tego powstają `vote_logs` i `truncated`) i po `ProposalCreated`. `_ostatni_skan`
+    opisuje z definicji OSTATNI skan, więc dowód budowany po obu opisywał kompletność
+    skanu propozycji, a podpisywał się pod kompletnością głosów.
+
+    Znalezione przeglądem kodu 11.09 - w sesji, która tę samą klasę błędu naprawiała
+    na trzech innych warstwach.
+
+    DLACZEGO STRAŻNIK SKŁADNI, A NIE TEST INTEGRACYJNY: pierwsza wersja próbowała
+    odtworzyć scenariusz atrapami sieci. Po pięciu podejściach nadal nie docierała do
+    badanej gałęzi (pusty skan wychodzi wcześniej, `fromBlock` zaczyna się od bloku
+    liczonego z `days`, `_voting_delay` jest asynchroniczne, rejestr taksonomii sięga po
+    sieć) - a przechodziła na zielono, czyli mierzyła własną atrapę. Defekt jest faktem
+    SKŁADNIOWYM: kopia musi powstać przed drugim wywołaniem. Tak go mierzymy.
+    """
+    import ast as _ast
+    zrodlo = (ROOT_PATH / "app" / "services" / "governor_client.py").read_text(encoding="utf-8")
+    drzewo = _ast.parse(zrodlo)
+
+    funkcja = next((n for n in _ast.walk(drzewo)
+                    if isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef))
+                    and n.name == "_votes_on_one_governor"), None)
+    assert funkcja, "zniknęła funkcja _votes_on_one_governor"
+
+    linia_kopii = None
+    linie_logow = []
+    for node in _ast.walk(funkcja):
+        if isinstance(node, _ast.Assign):
+            cele = [t.id for t in node.targets if isinstance(t, _ast.Name)]
+            if "dowod_glosow" in cele:
+                linia_kopii = node.lineno
+        if isinstance(node, _ast.Call):
+            f = node.func
+            if isinstance(f, _ast.Attribute) and f.attr == "_logs":
+                linie_logow.append(node.lineno)
+
+    assert linia_kopii, (
+        "nie ma zamrożonej kopii dowodu - `dowod` czyta `_ostatni_skan` po obu skanach, "
+        "więc opisuje skan PROPOZYCJI, a podpisuje się pod skanem GŁOSÓW")
+    assert len(linie_logow) >= 2, "test stracił moc: nie ma już dwóch skanów w tej funkcji"
+    assert linia_kopii < max(linie_logow), (
+        "kopia dowodu powstaje PO drugim skanie - nadpisany `_ostatni_skan` opisuje "
+        "wtedy niewłaściwy pomiar")
+
+    # I to, po co kopia istnieje: dowód budowany jest WŁAŚNIE z niej.
+    assert re.search(r"dowod\s*=\s*dict\(dowod_glosow\)", zrodlo), (
+        "dowód nie jest budowany z zamrożonej kopii")

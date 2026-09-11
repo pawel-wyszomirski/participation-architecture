@@ -561,7 +561,14 @@ class GovernorClient:
                 return [], ERROR, f"VoteCast scan failed: {e}"[:200], 0, {}
             if not vote_logs:
                 return [], HEALTHY_EMPTY, "", 0, dict(self._ostatni_skan,
-                                                     record_count=0, limit_hit=False)
+                                                      record_count=0, limit_hit=False)
+            # Dowód pokrycia zamrażamy TERAZ, bo `_ostatni_skan` opisuje OSTATNI skan,
+            # a niżej idzie drugi (`ProposalCreated`) na tym samym kliencie i nadpisze go.
+            # Kompletność, o którą tu pytamy, dotyczy skanu GŁOSÓW - to z nich powstają
+            # `vote_logs` i `truncated`. Znalezione przy przeglądzie kodu 11.09: JEDEN
+            # atrybut opisywał dwa różne pomiary, czyli dokładnie ta klasa błędu, którą
+            # ta sama sesja naprawiała na trzech innych warstwach.
+            dowod_glosow = dict(self._ostatni_skan)
             truncated = len(vote_logs) > limit
             vote_logs_surowe = list(vote_logs)     # liczba DOSTARCZONYCH rekordów
             vote_logs = vote_logs[-limit:]
@@ -673,7 +680,7 @@ class GovernorClient:
             # Dowód pokrycia zakresu (D5=A, 11.09): ile okien skanu wysłano i ile
             # odpowiedziało. Okno bez odpowiedzi znaczy, że kawałek historii nie został
             # obejrzany - a to jest luka w POKRYCIU, nie awaria dostępności.
-            dowod = dict(self._ostatni_skan)
+            dowod = dict(dowod_glosow)
             dowod["record_count"] = len(vote_logs_surowe)
             dowod["limit_hit"] = truncated
             okien = dowod.get("okien", 0)
