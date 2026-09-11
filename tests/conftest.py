@@ -15,6 +15,13 @@ test file that happens to import `governor_client` (which pulls `snapshot_client
 was enough to break five API tests that pass on their own. Setting the variable
 here fixes the class: conftest is imported before any test module, so every run
 starts from one fresh, complete schema regardless of collection order.
+
+Druga skladnica stanu to REJESTR MANIFESTOW na dysku (`data/manifests/*.jsonl`),
+przez dziewiec dni pomijana tutaj - a izolacja jednego skladu nie jest izolacja
+stanu. Do 11.09 kazdy przebieg pytest dopisywal do rejestru w repo dwa wiersze
+z syntetycznego glosu; w HEAD lezalo ich dwadziescia, wszystkie o tym samym
+`vote_event_id` i roznych `code_commit`. Format mialy identyczny jak pomiar
+prawdziwy, wiec w rozdziale Methods przeszlyby za sciezke audytu badania.
 """
 
 import atexit
@@ -24,6 +31,10 @@ import tempfile
 
 _KATALOG = tempfile.mkdtemp(prefix="pa-tests-")
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{_KATALOG}/tests.db")
+# Ustawiane PRZED importem `app.*`: silnik czyta te zmienna w chwili importu, tak samo
+# jak `session.py` czyta DATABASE_URL. Osobny podkatalog, zeby w sladzie bylo widac,
+# co wyprodukowal przebieg testowy.
+os.environ.setdefault("PA_KATALOG_MANIFESTOW", f"{_KATALOG}/manifests")
 
 # Sprzątanie po przebiegu. Bez tego każde uruchomienie pytest zostawia katalog z bazą,
 # a w tym repozytorium testy chodzą po kilkanaście razy dziennie - po tygodniu w /tmp

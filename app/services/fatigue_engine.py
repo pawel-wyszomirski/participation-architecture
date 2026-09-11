@@ -238,7 +238,18 @@ def _runtime_digest() -> str:
 # odtworzenia pelnego wyniku bez sieci (`replay`). Format wierszowy wybrany swiadomie:
 # uszkodzenie ogona pliku - przerwany zapis, pelny dysk - zostawia wczesniejsze wiersze
 # czytelnymi, w odroznieniu od jednego duzego dokumentu JSON.
-KATALOG_MANIFESTOW = Path(__file__).resolve().parents[2] / "data" / "manifests"
+#
+# Katalog daje sie WSKAZAC zmienna srodowiskowa, bo rejestr manifestow jest sladem
+# audytowym badania - pomiar ma tam wejsc wtedy i tylko wtedy, gdy naprawde powstal.
+# Do 11.09 sciezka byla stala, wiec KAZDY przebieg pytest dopisywal do rejestru w repo
+# wiersze z syntetycznego glosu: dwadziescia wpisow, wszystkie o jednym
+# `vote_event_id` i roznych `code_commit`, nie do odroznienia formatem od pomiaru
+# prawdziwego. `tests/conftest.py` izolowal baze od 09.09 z dokladnie tego powodu
+# i pominal ten rejestr - izolacja jednego skladu stanu nie jest izolacja stanu.
+KATALOG_MANIFESTOW = Path(
+    os.environ.get("PA_KATALOG_MANIFESTOW")
+    or (Path(__file__).resolve().parents[2] / "data" / "manifests")
+)
 
 
 def _plik_manifestow(katalog: Path, znacznik: Optional[str] = None) -> Path:
