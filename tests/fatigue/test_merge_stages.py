@@ -27,7 +27,7 @@ from typing import Optional
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from app.services.fatigue_engine import merge_stages
+from app.services.fatigue_engine import _lifecycle_key, merge_stages
 
 DZIEN = 86_400
 
@@ -51,8 +51,20 @@ def glos(id_, tytul, dzien, **kw):
 
 
 def cykle(wynik):
-    """Distinct lifecycle ids in the result."""
-    return {getattr(p, "lifecycle_id", None) for p in wynik}
+    """Ile ODRĘBNYCH DECYZJI widzi zliczanie obciążenia.
+
+    ZMIANA 2026-09-11 (P3): liczone po zapisanym związku etapów, nie po `lifecycle_id`.
+    Te dwie rzeczy zostały wtedy rozdzielone. `lifecycle_id` jest tożsamością pomiaru
+    i bez dowodu powiązania pozostaje tożsamością natywną etapu - kanoniczny identyfikator
+    cyklu zbudowany na zbieżności nazwy zmieniałby się wraz z zakresem skanu, a od niego
+    zależy `measurement_id`. Grupowanie do zliczania idzie po `linked_stage_ids` i dlatego
+    jedna decyzja nadal jest jednym zdarzeniem w oknie `volume`.
+
+    Helper mierzy więc to samo co przedtem - liczbę decyzji - tylko pytając o pole,
+    które o tym rozstrzyga. Że tożsamość kanoniczna NIE powstaje bez dowodu, sprawdza
+    `test_tozsamosc_powiazania.py`.
+    """
+    return {_lifecycle_key(p) for p in wynik}
 
 
 # ---------------------------------------------------------------------------

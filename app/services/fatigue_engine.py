@@ -132,6 +132,24 @@ _RZUT_STANU = {
 ELIGIBLE = "PRIMARY_ELIGIBLE"
 NOT_ELIGIBLE = "NOT_ELIGIBLE_FOR_PRIMARY_ANALYSIS"
 
+# NA CZYM STOI POWIĄZANIE ETAPÓW W JEDNĄ DECYZJĘ (plan domknięcia z 11.09, P3).
+# Znormalizowany tytuł jest sygnałem kandydata, nie dowodem tożsamości decyzji.
+# Do 11.09 różnicy nie było widać: `merge_stages` wiązało etapy po tytule i oddawało
+# cykl jako fakt, a `volume`, `burstiness` i `novelty` liczyły się po cyklach.
+LINK_NATIVE_ID = "NATIVE_ID"                  # jedna obserwacja - własna tożsamość
+LINK_EXPLICIT_REFERENCE = "EXPLICIT_REFERENCE"  # etap cytuje identyfikator drugiego
+LINK_VERIFIED_MAPPING = "VERIFIED_MAPPING"    # mapowanie potwierdzone poza tytułem
+LINK_TITLE_HEURISTIC = "TITLE_HEURISTIC"      # tylko zbieżność znormalizowanej nazwy
+LINK_UNRESOLVED = "UNRESOLVED"                # kandydaci są, powiązania nie znamy
+LINK_BASES = (LINK_NATIVE_ID, LINK_EXPLICIT_REFERENCE, LINK_VERIFIED_MAPPING,
+              LINK_TITLE_HEURISTIC, LINK_UNRESOLVED)
+
+# Podstawy, które wolno wpuścić do pomiaru konfirmacyjnego. `TITLE_HEURISTIC`
+# i `UNRESOLVED` nie dyskwalifikują pomiaru same z siebie - dyskwalifikują wtedy,
+# gdy wynik OD NICH ZALEŻY, czyli gdy w liczonej historii stoi cykl zbudowany
+# na domyśle. Cykl jednoetapowy ma `NATIVE_ID` i nie jest tym dotknięty.
+LINK_BASES_PRIMARY = (LINK_NATIVE_ID, LINK_EXPLICIT_REFERENCE, LINK_VERIFIED_MAPPING)
+
 
 @dataclass
 class SourceReceipt:
@@ -659,10 +677,19 @@ class FatigueEngine:
         receipts = list(source_receipts or [])
         cel_domena = str(getattr(target_proposal, "source_domain", "")
                          or getattr(target_proposal, "source", "") or "")
+        # Powiązania bez dowodu w tym, co WCHODZI DO LICZENIA: cel i zamrożona historia.
+        # Sprawdzane na obserwacjach odtworzonych z przygotowanego wejścia, nie na surowych
+        # obiektach - inaczej bramka pytałaby o inny zbiór niż ten, który opisuje pomiar.
+        domysly = sorted({
+            str(getattr(p, "link_basis", "") or LINK_NATIVE_ID)
+            for p in [target_proposal, *frozen_history]
+            if str(getattr(p, "link_basis", "") or LINK_NATIVE_ID) not in LINK_BASES_PRIMARY
+        })
         eligibility, reasons, notes = self._eligibility(
             receipts, concurrency_source, now_ts,
             ekspozycja_pusta=(ecosystem_proposals is not None and not ecosystem_proposals),
-            cel_kontraktowy=cel_domena.startswith("governor"))
+            cel_kontraktowy=cel_domena.startswith("governor"),
+            podstawy_bez_dowodu=domysly)
 
         title = getattr(target_proposal, "title", None) or ""
         body = getattr(target_proposal, "body", None) or ""
@@ -780,7 +807,9 @@ class FatigueEngine:
 
     def _eligibility(self, receipts: List[Dict[str, Any]], concurrency_source: str,
                      now_ts: int, ekspozycja_pusta: bool = False,
-                     cel_kontraktowy: bool = False) -> Tuple[str, List[str], List[str]]:
+                     cel_kontraktowy: bool = False,
+                     podstawy_bez_dowodu: Optional[List[str]] = None,
+                     ) -> Tuple[str, List[str], List[str]]:
         """Fail closed (closure review points 2 and 6, plan domknięcia P2):
         pomiar konfirmacyjny jest `PRIMARY_ELIGIBLE` tylko wtedy, gdy każde wymagane
         źródło ODPOWIEDZIAŁO i DOWIODŁO pokrycia obszaru wymaganego przez konstrukt,
@@ -840,6 +869,14 @@ class FatigueEngine:
                              f"({r.get('record_count') or r.get('events')} records)")
             if r.get("coverage_state") == COV_PARTIAL_DATA and r.get("detail"):
                 notes.append(f"{name}: {r['detail']}")
+        # P3: powiązanie etapów bez dowodu nie może wpłynąć na liczbę wchodzącą do
+        # analizy konfirmacyjnej. `volume` i `burstiness` liczą się po cyklach, więc
+        # cykl zbudowany na zbieżności nazwy jest domysłem w mianowniku obciążenia.
+        for podstawa in (podstawy_bez_dowodu or []):
+            reasons.append(
+                f"stage linking basis {podstawa} - one decision was assembled without "
+                "evidence beyond a normalized title match, and volume/burstiness count "
+                "by decision")
         # Rodzina `ecosystem:*` - konkretne warstwy nazywa sama etykieta (snapshot,
         # governor, snapshot+governor, empty). Porównanie z jedną nazwą odrzucałoby po
         # naprawie każdą ekspozycję czytaną z obu warstw.
@@ -1172,6 +1209,14 @@ def _wejscie_kanoniczne(p: Any) -> Dict[str, Any]:
         "native_proposal_id": str(getattr(p, "native_proposal_id", None) or ""),
         "lifecycle_stage_ids": sorted(str(x) for x in
             (getattr(p, "lifecycle_stage_ids", None) or [own_id])),
+        # P3 (11.09): podstawa powiązania rozstrzyga o werdykcie, więc musi przejść
+        # granicę wejścia - kwalifikacja liczy się z przygotowanego wejścia (P1).
+        # Obserwacja, która nie przeszła przez `merge_stages` (testy, korpus), jest
+        # własną decyzją, czyli ma podstawę natywną.
+        "link_basis": str(getattr(p, "link_basis", None) or LINK_NATIVE_ID),
+        "linked_stage_ids": sorted(str(x) for x in
+            (getattr(p, "linked_stage_ids", None)
+             or getattr(p, "lifecycle_stage_ids", None) or [own_id])),
     }
 
 
@@ -1284,9 +1329,37 @@ def _czas_glosu(p: Any) -> float:
 
 
 def _lifecycle_key(p: Any) -> str:
-    """Identyfikator cyklu decyzji, do którego należy obserwacja. Obserwacja
-    spoza `merge_stages` (testy, korpus) jest własnym cyklem."""
-    return str(getattr(p, "lifecycle_id", None) or getattr(p, "id", "") or id(p))
+    """Klucz GRUPOWANIA obserwacji w jedną decyzję - do zliczania obciążenia.
+
+    To nie jest tożsamość cyklu zapisywana w manifeście. Od 11.09 (P3) te dwie
+    rzeczy są rozdzielone: `lifecycle_id` bez dowodu powiązania jest tożsamością
+    natywną etapu, bo kanoniczny identyfikator oparty na zbieżności nazwy zmieniałby
+    się wraz z zakresem skanu. Zliczanie ma jednak dalej traktować jedną decyzję jako
+    jedno zdarzenie, więc grupuje po ZAPISANYM ZWIĄZKU (`linked_stage_ids`), a nie po
+    tożsamości - najmniejszy identyfikator związku jest stabilny wobec kolejności,
+    w jakiej odpowiedziały źródła.
+
+    Obserwacja spoza `merge_stages` (testy, korpus) jest własną decyzją. Zapasowe
+    `id(p)` zostało usunięte: adres obiektu w pamięci nie jest stabilny między
+    uruchomieniami, więc wynik mógł zależeć od tego, jak Python rozmieścił obiekty.
+    Bez identyfikatora i bez związku klucz powstaje z wartości obserwacji.
+    """
+    zwiazek = [str(x) for x in (getattr(p, "linked_stage_ids", None) or []) if str(x)]
+    # Związek rozstrzyga tylko wtedy, gdy faktycznie wiąże WIĘCEJ niż jedną obserwację.
+    # Jednoelementowy związek to zapis „nic tu nie scalono" i nie może przesłonić
+    # przynależności podanej wprost (`lifecycle_id`) - tak robią testy i korpus, które
+    # nie przechodzą przez `merge_stages`. Pierwsza wersja tej funkcji tego nie
+    # rozróżniała i rozbijała cykle podane w danych wejściowych: `novelty` spadało
+    # z 1,0 na 0,5, bo jedna wcześniejsza decyzja liczyła się jako dwie.
+    if len(zwiazek) > 1:
+        return min(zwiazek)
+    wlasne = str(getattr(p, "lifecycle_id", None) or getattr(p, "id", "") or "")
+    if wlasne:
+        return wlasne
+    return "~" + _sha(json.dumps([
+        getattr(p, "title", None) or "", getattr(p, "body", None) or "",
+        int(getattr(p, "start", 0) or 0), int(getattr(p, "end", 0) or 0),
+    ], ensure_ascii=False))
 
 
 def _stage_id(p: Any) -> str:
@@ -1462,16 +1535,82 @@ def merge_stages(votes: List[Any], okno_dni: int = 45) -> List[Any]:
         for cykl in rodzina:
             ids = [_stage_id(s) for s in cykl]
             pierwszy = cykl[0]
-            surowe = f"{_klucz_decyzji(pierwszy)}|{int(_czas_glosu(pierwszy))}|{ids[0]}"
-            lifecycle_id = "lc:" + hashlib.sha256(surowe.encode()).hexdigest()[:16]
+            podstawa, dowod = _podstawa_powiazania(cykl)
+
+            # TOŻSAMOŚĆ CYKLU NIE MOŻE ZALEŻEĆ OD ZAKRESU SKANU (P3, plan z 11.09).
+            # Do 11.09 `lifecycle_id` liczył się z klucza decyzji, czasu PIERWSZEGO
+            # etapu i jego identyfikatora - więc skan, który nie objął starszego etapu,
+            # oddawał tę samą decyzję pod innym identyfikatorem. `measurement_id`
+            # dziedziczy po tej wartości, czyli dwa pomiary tej samej rzeczy nie dawały
+            # się porównać.
+            #
+            # Teraz identyfikator powstaje z DOWODU, nie z tego, co akurat widzieliśmy:
+            #  - jeden etap: tożsamość natywna tej obserwacji;
+            #  - powiązanie z dowodem: skrót zbioru identyfikatorów, których dowód
+            #    dotyczy (zbiór jest wtedy własnością decyzji, nie okna);
+            #  - powiązanie po tytule: WŁASNA tożsamość każdego etapu plus jawny zapis
+            #    niepewnego związku. Plan, sekcja 4: "jeżeli nie istnieje stabilna
+            #    tożsamość cyklu oparta na dowodzie źródłowym, używamy tożsamości
+            #    obserwacji natywnych i przechowujemy związek jako niepewny, zamiast
+            #    tworzyć zmienny kanoniczny identyfikator".
+            if podstawa in (LINK_EXPLICIT_REFERENCE, LINK_VERIFIED_MAPPING):
+                surowe = "|".join(sorted(ids))
+                lifecycle_id = "lc:" + hashlib.sha256(surowe.encode()).hexdigest()[:16]
+            else:
+                lifecycle_id = None     # ustawiany per etap niżej
+
             for i, s in enumerate(cykl, start=1):
                 # Etap NIE dostaje niczego od innych etapów - ani treści, ani
-                # kategorii, ani czasu. Tylko przynależność.
-                s.lifecycle_id = lifecycle_id
+                # kategorii, ani czasu. Tylko przynależność i jej podstawę.
+                #
+                # ROZDZIAŁ TOŻSAMOŚCI OD ZLICZANIA (P3). Bez dowodu `lifecycle_id`
+                # jest tożsamością natywną tego etapu, bo kanoniczny identyfikator
+                # cyklu zbudowany na zbieżności nazwy byłby zmienny: zależałby od tego,
+                # które etapy objął skan. Związek NIE ginie - stoi w `linked_stage_ids`
+                # i to po nim grupuje zliczanie obciążenia (`_lifecycle_key`), więc
+                # jedna decyzja nadal jest jednym zdarzeniem w oknie volume.
+                # Werdykt osobno mówi, że taki pomiar nie wchodzi do analizy głównej.
+                s.lifecycle_id = lifecycle_id or _stage_id(s)
                 s.lifecycle_stage_ids = list(ids)
+                s.linked_stage_ids = list(ids)
+                s.link_basis = podstawa
+                s.link_evidence = dowod
                 s.stage_index = i
                 s.stages = len(cykl)
                 s.lifecycle_started_at = int(_czas_glosu(pierwszy))
                 s.stage_ids = [_stage_id(s)]
                 wynik.append(s)
     return wynik
+
+
+def _podstawa_powiazania(cykl: List[Any]) -> Tuple[str, str]:
+    """Na czym stoi powiązanie etapów w jedną decyzję i jaki jest dowód.
+
+    Jeden etap to jedna obserwacja - podstawa natywna, bez powiązania. Dla dwóch
+    i więcej szukamy dowodu MOCNIEJSZEGO niż zbieżność nazwy: czy któryś etap cytuje
+    w treści natywny identyfikator innego. Wiążąca propozycja w Arbitrum zwykle podaje
+    identyfikator swojej sondy nastrojów, więc dowód bywa dostępny - tam, gdzie go nie
+    ma, powiązanie zostaje domysłem i pomiar to mówi.
+    """
+    if len(cykl) < 2:
+        return LINK_NATIVE_ID, f"single observation {_stage_id(cykl[0])}"
+
+    identyfikatory = {}
+    for s in cykl:
+        for pole in ("native_proposal_id", "id"):
+            wartosc = str(getattr(s, pole, "") or "")
+            if len(wartosc) >= 6:
+                identyfikatory[wartosc] = _stage_id(s)
+
+    for s in cykl:
+        tresc = ((getattr(s, "body", None) or "") + " "
+                 + (getattr(s, "title", None) or "")).lower()
+        for wartosc, wlasciciel in identyfikatory.items():
+            if wlasciciel == _stage_id(s):
+                continue            # cytat z siebie nie jest dowodem powiązania
+            if wartosc.lower() in tresc:
+                return (LINK_EXPLICIT_REFERENCE,
+                        f"stage {_stage_id(s)} cites {wartosc} of stage {wlasciciel}")
+
+    return (LINK_TITLE_HEURISTIC,
+            f"normalized title match only: {_klucz_decyzji(cykl[0])!r}")

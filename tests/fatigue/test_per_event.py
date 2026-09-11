@@ -18,7 +18,9 @@ from dataclasses import dataclass
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from app.services.fatigue_engine import FatigueEngine
+from app.services.fatigue_engine import (
+    LINK_TITLE_HEURISTIC, FatigueEngine, _lifecycle_key,
+)
 
 
 @dataclass
@@ -454,7 +456,15 @@ def test_merge_stages_collects_stage_ids(now):
     etapy = merge_stages([a, b])
 
     assert len(etapy) == 2, "each stage stays a frozen observation"
-    assert {e.lifecycle_id for e in etapy} == {etapy[0].lifecycle_id}
+    # ZMIANA 2026-09-11 (P3): wspólnego, kanonicznego `lifecycle_id` NIE MA, gdy
+    # powiązanie stoi wyłącznie na zbieżności znormalizowanego tytułu. Taki identyfikator
+    # zależałby od zakresu skanu - skan bez starszego etapu oddawał tę samą decyzję pod
+    # inną wartością, a `measurement_id` po niej dziedziczy. Związek zapisany jest
+    # w `linked_stage_ids`, podstawa w `link_basis`, a zliczanie obciążenia grupuje po
+    # związku, więc jedna decyzja nadal jest jednym zdarzeniem.
+    assert {e.link_basis for e in etapy} == {LINK_TITLE_HEURISTIC}
+    assert len({_lifecycle_key(e) for e in etapy}) == 1, "zliczanie widzi jedną decyzję"
+    assert sorted(etapy[0].linked_stage_ids) == ["chain-B", "snap-A"]
     assert sorted(etapy[0].lifecycle_stage_ids) == ["chain-B", "snap-A"]
     assert all(e.stages == 2 for e in etapy)
     assert all(e.stage_ids == [e.id] for e in etapy)
