@@ -44,6 +44,7 @@ Design Principles
 
 import hashlib
 import json
+from functools import lru_cache
 import os
 import re
 import subprocess
@@ -187,6 +188,54 @@ NOVELTY_BASES = (NOVELTY_COMPLETE, NOVELTY_NO_PRIOR, NOVELTY_TARGET_UNKNOWN,
 NOVELTY_BASES_PRIMARY = (NOVELTY_COMPLETE, NOVELTY_NO_PRIOR)
 
 
+# TOZSAMOSC ARTEFAKTU WYKONAWCZEGO (plan domkniecia z 11.09, P7; punkt 8 recenzji 78179).
+# Sam commit opisuje kod zrodlowy, nie to, co policzylo liczbe: dwa uruchomienia z tego
+# samego commitu moga rozniac sie wersja zaleznosci albo polityka kwalifikacji.
+#
+# Pakiety, ktorych wersja moze zmienic WYNIK, nie tylko wygodę pracy. Lista jest krotka
+# swiadomie - slad ma rozrozniac artefakty, a nie zmieniac sie przy kazdej aktualizacji
+# narzedzi deweloperskich.
+_ZALEZNOSCI_ISTOTNE = ("pyyaml", "httpx", "sqlalchemy", "fastapi", "pydantic")
+
+
+def _wersje_zaleznosci() -> Dict[str, str]:
+    """Wersje pakietow, ktore moga wplynac na wynik, plus wersja Pythona."""
+    import platform
+    from importlib import metadata
+
+    out: Dict[str, str] = {"python": platform.python_version()}
+    for nazwa in _ZALEZNOSCI_ISTOTNE:
+        try:
+            out[nazwa] = metadata.version(nazwa)
+        except Exception:  # noqa: BLE001 - brak pakietu tez jest informacja o artefakcie
+            out[nazwa] = "brak"
+    return out
+
+
+@lru_cache(maxsize=1)
+def _runtime_digest() -> str:
+    """Skrot srodowiska wykonawczego - odpowiednik digestu obrazu, liczony bez Dockera.
+
+    Gdy obraz jest budowany w potoku, jego digest wchodzi przez `PA_BUILD_DIGEST` i staje
+    sie czescia skrotu. Bez tej zmiennej slad opiera sie na wersjach zaleznosci i Pythona,
+    co wystarcza do odbioru z planu: dwa uruchomienia z tego samego commitu i inna
+    zaleznoscia MUSZA byc rozroznialne.
+    """
+    dane = dict(_wersje_zaleznosci())
+    dane["build_image_digest"] = os.environ.get("PA_BUILD_DIGEST", "")
+    return "rt:" + _sha(json.dumps(dane, sort_keys=True))[:16]
+
+
+def _wersja_polityki_kwalifikacji(config: Dict[str, Any]) -> str:
+    """Wersja polityki kwalifikacji ze SKROTU regul, nie z recznego numeru.
+
+    Polityka jest czescia instrumentu (plan, P9), a recznego numeru nie da sie nie zapomniec
+    podbic. Skrot zmienia sie dokladnie wtedy, gdy zmieniaja sie reguly.
+    """
+    reguly = (config or {}).get("eligibility") or {}
+    return "pol:" + _sha(json.dumps(reguly, sort_keys=True, default=str))[:16]
+
+
 @dataclass
 class SourceReceipt:
     """What one source could and could not deliver for THIS measurement."""
@@ -319,6 +368,13 @@ class MeasurementIdentity:
     identity_schema_version: str = ""            # rule that produced measurement_id
     # P6 (11.09): na czym stoi `novelty` i ile mianownika znamy. Bez tych pol liczba 0,0
     # opisywala jednocześnie "delegat robi to stale" i "nie wiemy nic o kategoriach".
+    # P7 (11.09): tozsamosc ARTEFAKTU, nie tylko kodu zrodlowego.
+    eligibility_policy_version: str = ""         # skrot regul kwalifikacji
+    runtime_digest: str = ""                     # wersje zaleznosci + digest obrazu
+    # Digest obrazu STOI OSOBNO, a nie tylko w skrocie: pusty mowi wprost "policzone poza
+    # zbudowanym obrazem" (lokalnie, w testach, z katalogu roboczego). Schowany w skrocie
+    # bylby nieodroznialny od obrazu o jakims digescie - a to inny stan wiedzy.
+    build_image_digest: str = ""
     novelty_basis: str = ""                      # NOVELTY_* - patrz staly wyzej
     category_coverage: Dict[str, Any] = field(default_factory=dict)
     taxonomy_snapshot_id: str = ""               # zamrozony zbior kategorii tego pomiaru
@@ -823,6 +879,9 @@ class FatigueEngine:
             novelty_basis=novelty_basis,
             category_coverage=category_coverage,
             taxonomy_snapshot_id=taxonomy_snapshot_id,
+            eligibility_policy_version=_wersja_polityki_kwalifikacji(self.config),
+            runtime_digest=_runtime_digest(),
+            build_image_digest=os.environ.get("PA_BUILD_DIGEST", ""),
             measurement_id=_sha(json.dumps(manifest_core, sort_keys=True))[:32],
         )
 
@@ -949,6 +1008,13 @@ class FatigueEngine:
             reasons.append(
                 f"novelty basis {novelty_basis} - the component's denominator is partial "
                 "or the target category is unknown, so the value is not a primary measure")
+        # P7: brak tozsamosci kodu to brak dowodu, nie pominieta metadana. Wynik traktowany
+        # jako odtwarzalny musi wiedziec, JAKI artefakt go policzyl - inaczej dwa builda
+        # staja sie nieodroznialne na warstwie tozsamosci.
+        if str(getattr(self, "code_commit", "") or "") in ("", "unknown"):
+            reasons.append(
+                "code identity missing (code_commit unknown) - the measurement cannot say "
+                "which build produced it, so it is not reproducible evidence")
         # Rejestr taksonomii ZYJE: bez identyfikatora zamrozonego snapshotu nie da sie
         # powiedziec, jaki zbior kategorii zbudowal ten pomiar, ani powtorzyc go pozniej.
         if "taxonomy" in required and not taxonomy_snapshot_id:

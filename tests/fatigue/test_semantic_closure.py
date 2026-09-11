@@ -552,8 +552,15 @@ def test_PI_wynik_niesie_pelna_tozsamosc_artefaktu(silnik, teraz):
     konfiguracji - pozostałych trzech nie ma.
     """
     manifest = licz(silnik, teraz).identity.manifest()
+    # Plan wymaga `build_image_digest` ALBO RÓWNOWAŻNEGO digestu artefaktu. Rolę
+    # równoważnika pełni `runtime_digest` (wersje zależności, wersja Pythona i digest
+    # obrazu, gdy istnieje) - liczony bez Dockera, więc dostępny także wtedy, gdy pomiar
+    # idzie z katalogu roboczego. Samo `build_image_digest` stoi w manifeście osobno
+    # i bywa puste; pusta wartość znaczy „policzone poza zbudowanym obrazem" i jest
+    # informacją, nie brakiem.
     brakujace = [
-        p for p in ("build_image_digest", "eligibility_policy_version", "taxonomy_snapshot_id")
+        p for p in ("runtime_digest", "eligibility_policy_version", "taxonomy_snapshot_id")
         if not manifest.get(p)
     ]
     assert not brakujace, f"manifest nie niesie tożsamości artefaktu: {brakujace}"
+    assert "build_image_digest" in manifest, "pole digestu obrazu musi istnieć, choćby puste"
