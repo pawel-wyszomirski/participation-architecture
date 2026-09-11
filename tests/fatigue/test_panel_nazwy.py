@@ -76,3 +76,19 @@ def test_labels_are_not_internal_keys():
     """A label identical to the key means the rename never happened."""
     for klucz, etykieta in _weight_rows().items():
         assert etykieta != klucz, f"'{klucz}' is shown under its internal name"
+
+
+def test_panel_pokazuje_werdykt_kwalifikacji():
+    """P10: pomiar niekwalifikowany nie moze wygladac na panelu jak pierwszorzedny.
+
+    Do 2026-09-11 `dashboard.html` nie mial ani jednego wystapienia `eligibility` - a panel
+    widzieli uczestnicy Fazy A i B, wiec liczba bez werdyktu byla im pokazywana jako gotowy
+    wynik. Uczestnik P04 powiedzial o panelu "I just see a lot of numbers here"; jedna z tych
+    liczb mogla nie miec prawa wejsc do analizy i nikt by tego nie zobaczyl.
+    """
+    tresc = DASHBOARD.read_text(encoding="utf-8")
+    assert "renderEligibility" in tresc, "panel nie ma sekcji werdyktu"
+    assert "eligibility_reasons" in tresc, "panel nie pokazuje powodow dyskwalifikacji"
+    assert "PRIMARY_ELIGIBLE" in tresc, "panel nie rozpoznaje werdyktu pierwszorzednego"
+    # Sekcja musi byc SKLADANA, nie tylko zdefiniowana - funkcja bez wywolania nic nie pokaze.
+    assert "renderEligibility(data)" in tresc, "sekcja werdyktu nie jest wstawiana do panelu"

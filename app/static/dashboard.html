@@ -105,7 +105,17 @@
   .dfi-score-dec { font-size: 30px; fill: var(--muted); font-weight: 600; }
 
   .dfi-status-line { font-family: var(--inter); font-size: 15px; color: var(--muted); }
-  .dfi-status-token {
+  .dfi-eligibility {
+  border: 1px solid #b45309;
+  background: #fffbeb;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0 0 16px;
+  color: #7c2d12;
+  font-size: 14px;
+}
+.dfi-eligibility ul { margin: 6px 0 0; padding-left: 18px; }
+.dfi-status-token {
     font-family: var(--sora);
     font-weight: 600;
     letter-spacing: 0.08em;
@@ -684,9 +694,33 @@ function mount(nodes) {
   (Array.isArray(nodes) ? nodes : [nodes]).forEach(function (n) { if (n) shell.appendChild(n); });
 }
 
+/* Werdykt kwalifikacji NA PANELU (P10, plan domkniecia z 2026-09-11).
+ *
+ * Do 11.09 panel nie pokazywal pola `eligibility` w ogole - pomiar niekwalifikowany
+ * wygladal identycznie jak pierwszorzedny. Panel widzieli uczestnicy Fazy A i B, wiec
+ * liczba bez werdyktu byla im pokazywana jako gotowy wynik. Plan, sekcja 11: wynik
+ * niekwalifikowany moze byc pokazany, ale MUSI nazywac swoj stan i powod.
+ */
+function renderEligibility(data) {
+  const werdykt = data.eligibility || "";
+  if (!werdykt || werdykt === "PRIMARY_ELIGIBLE") return null;
+  const powody = ((data.identity || {}).eligibility_reasons) || [];
+  return el("div", { class: "dfi-eligibility", role: "note" }, [
+    el("strong", { text: "Not usable for the confirmatory analysis" }),
+    el("p", {
+      text: "The number below was computed, but the instrument found the evidence "
+            + "behind it incomplete. It stays out of the primary dataset."
+    }),
+    powody.length
+      ? el("ul", {}, powody.slice(0, 4).map(function (r) { return el("li", { text: r }); }))
+      : null,
+  ]);
+}
+
 function renderDashboard(data) {
   mount([
     renderHeader(data),
+    renderEligibility(data),
     renderGauge(data.fatigue_score, data.status),
     renderBreakdown(data.components, data.metrics),
     renderHowCalculated(data.formula, data.weights),

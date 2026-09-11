@@ -490,13 +490,24 @@ def test_PF_wynik_niekwalifikowany_nie_udaje_pierwszorzednego(silnik, teraz):
     kwalifikowany.
     """
     niekwalifikowany = licz(silnik, teraz, receipts=pokwitowania({"taxonomy": ERROR}))
-    ma_bramke = hasattr(FatigueEngine, "promote_to_primary") or hasattr(
-        niekwalifikowany, "primary_usable"
-    )
-    assert ma_bramke, (
-        "brak jednej bramki promocji: skład zbioru pierwszorzędnego zależy od tego, "
-        "czy konsument pamięta o sprawdzeniu pola eligibility"
-    )
+
+    # ZMIANA 2026-09-11 (P10): brama mieszka w `app.services.promocja`, nie jako metoda
+    # silnika. Własność pilnuje tego, co miała pilnować od początku - że istnieje JEDNA
+    # droga do zbioru pierwszorzędnego i że przepuszcza wyłącznie dowiedzione pomiary.
+    # Miejsce bramy jest decyzją projektową: silnik liczy, promocja rozstrzyga o użyciu.
+    from app.services.promocja import promote_to_primary
+
+    odmowa = promote_to_primary(niekwalifikowany.identity.manifest())
+    assert not odmowa.dopuszczony, "niekwalifikowany pomiar przeszedł bramę promocji"
+    assert odmowa.powody, "odmowa bez powodu jest bezużyteczna"
+    assert odmowa.wiersz["primary_usable"] is False
+
+    kwalifikowany = licz(silnik, teraz)
+    assert kwalifikowany.identity.eligibility == "PRIMARY_ELIGIBLE"
+    zgoda = promote_to_primary(kwalifikowany.identity.manifest())
+    assert zgoda.dopuszczony, (
+        f"brama odrzuciła dowiedziony pomiar - to implementacja „odrzuć wszystko”: "
+        f"{zgoda.powody}")
 
 
 # ---------------------------------------------------------------------------
