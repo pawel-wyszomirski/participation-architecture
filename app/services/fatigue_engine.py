@@ -246,17 +246,32 @@ def _plik_manifestow(katalog: Path, znacznik: Optional[str] = None) -> Path:
     return katalog / f"pomiary-{data}.jsonl"
 
 
-def dopisz_manifest(manifest: Dict[str, Any], katalog: Optional[Path] = None) -> bool:
-    """Dopisuje manifest pomiaru. Zwraca `True`, gdy wiersz doszedl.
+# Stany zapisu kopii manifestu (D6=A, 11.09). Do tej daty funkcja zwracala `bool`, a `False`
+# opisywalo DWA rozne stany swiata: awarie zapisu ORAZ manifest, ktory juz tam byl - czyli
+# sukces idempotencji. Oparcie kwalifikacji na tej wartosci odbieraloby ja kazdemu powtornemu
+# pomiarowi. To ta sama klasa bledu, ktora projekt sciga od recenzji 78179: jedna
+# reprezentacja na dwa stany, ktore nizej wymagaja przeciwnych decyzji.
+MANIFEST_ZAPISANY = "ZAPISANY"
+MANIFEST_JUZ_BYL = "JUZ_BYL"          # idempotencja - kopia istnieje, to jest SUKCES
+MANIFEST_BLAD = "BLAD"                # awaria zapisu albo brak tozsamosci pomiaru
+MANIFEST_STANY_OK = (MANIFEST_ZAPISANY, MANIFEST_JUZ_BYL)
+
+
+def dopisz_manifest(manifest: Dict[str, Any], katalog: Optional[Path] = None) -> str:
+    """Dopisuje kopie manifestu poza baza. Zwraca MANIFEST_ZAPISANY / JUZ_BYL / BLAD.
 
     Idempotentny po `measurement_id`: rejestracja jest idempotentna, wiec eksport tez musi
-    byc - inaczej liczba wierszy przestalaby cokolwiek znaczyc. Blad zapisu NIE przerywa
-    pomiaru: eksport jest zabezpieczeniem, a nie warunkiem policzenia liczby.
+    byc - inaczej liczba wierszy przestalaby cokolwiek znaczyc.
+
+    Blad zapisu NIE przerywa pomiaru (awaria dysku nie ma prawa odebrac mozliwosci
+    zmierzenia czegokolwiek), ale od D6=A NIE JEST tez bez znaczenia: pomiar bez kopii
+    poza baza nie jest odtwarzalny po jej utracie, wiec nie wchodzi do analizy
+    konfirmacyjnej. Rozstrzyga to brama promocji, nie ta funkcja.
     """
     katalog = Path(katalog or KATALOG_MANIFESTOW)
     mid = str(manifest.get("measurement_id") or "")
     if not mid:
-        return False
+        return MANIFEST_BLAD
     try:
         katalog.mkdir(parents=True, exist_ok=True)
         plik = _plik_manifestow(katalog, str(manifest.get("computed_at") or ""))
@@ -264,13 +279,48 @@ def dopisz_manifest(manifest: Dict[str, Any], katalog: Optional[Path] = None) ->
             with plik.open(encoding="utf-8") as f:
                 for linia in f:
                     if f'"measurement_id": "{mid}"' in linia or f'"{mid}"' in linia:
-                        return False
+                        return MANIFEST_JUZ_BYL
         with plik.open("a", encoding="utf-8") as f:
             f.write(json.dumps(manifest, sort_keys=True, ensure_ascii=False) + "\n")
-        return True
+        return MANIFEST_ZAPISANY
     except OSError as e:  # noqa: BLE001
         print(f"⚠ manifest nie zapisany: {e}")
+        return MANIFEST_BLAD
+
+
+def manifest_ma_kopie(measurement_id: str, computed_at: str = "",
+                      katalog: Optional[Path] = None) -> bool:
+    """Czy kopia manifestu tego pomiaru LEŻY na dysku (D6=A, 11.09).
+
+    Brama promocji pyta o FAKT, nie o flagę zapamiętaną w chwili zapisu. Flaga opisywałaby
+    to, co wydarzyło się przy rejestracji; ten odczyt opisuje stan dzisiaj - a pytanie
+    brzmi „czy ten pomiar da się odtworzyć po utracie bazy", nie „czy zapis wtedy wrócił
+    bez błędu". Plik skasowany po rejestracji musi dać tę samą odpowiedź, co niezapisany.
+
+    Szukamy najpierw w pliku miesiąca pomiaru, a gdy `computed_at` nie jest znane -
+    we wszystkich. Brak katalogu znaczy brak kopii, nie awarię.
+    """
+    mid = str(measurement_id or "").strip()
+    if not mid:
         return False
+    katalog = Path(katalog or KATALOG_MANIFESTOW)
+    if not katalog.exists():
+        return False
+    pliki = []
+    if computed_at:
+        wskazany = _plik_manifestow(katalog, computed_at)
+        if wskazany.exists():
+            pliki.append(wskazany)
+    pliki.extend(p for p in sorted(katalog.glob("pomiary-*.jsonl")) if p not in pliki)
+    for plik in pliki:
+        try:
+            with plik.open(encoding="utf-8") as f:
+                for linia in f:
+                    if f'"measurement_id": "{mid}"' in linia or f'"{mid}"' in linia:
+                        return True
+        except OSError:
+            continue
+    return False
 
 
 def odczytaj_manifesty(katalog: Optional[Path] = None) -> List[Dict[str, Any]]:

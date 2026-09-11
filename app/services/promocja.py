@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from app.services.fatigue_engine import (
-    ELIGIBLE, NOVELTY_BASES_PRIMARY, WINDOW_BASES_PRIMARY,
+    ELIGIBLE, NOVELTY_BASES_PRIMARY, WINDOW_BASES_PRIMARY, manifest_ma_kopie,
 )
 
 # Wersja kontraktu analitycznego. Zmienia się, gdy zmienia się ZNACZENIE zbioru
@@ -64,7 +64,8 @@ class WynikPromocji:
 
 
 def promote_to_primary(manifest: Optional[Dict[str, Any]],
-                       wynik: Optional[Dict[str, Any]] = None) -> WynikPromocji:
+                       wynik: Optional[Dict[str, Any]] = None,
+                       katalog_manifestow: Optional[Any] = None) -> WynikPromocji:
     """Jedyna brama do zbioru H_val.
 
     `manifest` to tożsamość pomiaru (`MeasurementIdentity.manifest()` albo kolumna
@@ -116,6 +117,25 @@ def promote_to_primary(manifest: Optional[Dict[str, Any]],
         if podstawa and podstawa not in WINDOW_BASES_PRIMARY:
             powody.append(f"exposure window basis {podstawa} - okno bez dowodu")
             break
+
+    # D6=A (11.09): pomiar bez KOPII manifestu poza bazą nie jest odtwarzalny po jej
+    # utracie, więc nie wchodzi do analizy konfirmacyjnej.
+    #
+    # Do tej decyzji nieudany zapis kopii nie miał ŻADNEGO skutku: `dopisz_manifest`
+    # zwracało `False`, a `main.py` ignorowało tę wartość. Dokumentacja mówiła, że manifest
+    # jest dowodem mocniejszym niż baza, a jednocześnie jego brak nie zmieniał niczego -
+    # to było napięcie semantyczne, nie decyzja. Wskazał je recenzent zewnętrzny.
+    #
+    # Brama pyta o FAKT - czy kopia leży na dysku - a nie o flagę z chwili zapisu: plik
+    # skasowany po rejestracji ma dać tę samą odpowiedź, co nigdy niezapisany. Pomiar nadal
+    # się LICZY i zapisuje do bazy; awaria dysku nie odbiera możliwości zmierzenia
+    # czegokolwiek, odbiera wyłącznie prawo wejścia do H_val.
+    mid = str(manifest.get("measurement_id") or "").strip()
+    if mid and not manifest_ma_kopie(mid, str(manifest.get("computed_at") or ""),
+                                     katalog=katalog_manifestow):
+        powody.append(
+            "brak kopii manifestu poza bazą - pomiar nie byłby odtwarzalny po jej utracie, "
+            "więc nie wchodzi do analizy konfirmacyjnej (D6=A)")
 
     wiersz = {
         "measurement_id": manifest.get("measurement_id", ""),

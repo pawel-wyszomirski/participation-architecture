@@ -480,7 +480,7 @@ def test_PF_werdykt_i_powody_przezywaja_serializacje_wyniku(silnik, teraz):
     assert manifest.get("eligibility_reasons"), "manifest nie niesie powodów dyskwalifikacji"
 
 
-def test_PF_wynik_niekwalifikowany_nie_udaje_pierwszorzednego(silnik, teraz):
+def test_PF_wynik_niekwalifikowany_nie_udaje_pierwszorzednego(silnik, teraz, tmp_path):
     """Liczba bez prawa wejścia do analizy musi być rozpoznawalna po samym wyniku.
 
     CZERWONA do P10: dziś niekwalifikowany pomiar niesie `fatigue_score` tak samo
@@ -496,15 +496,24 @@ def test_PF_wynik_niekwalifikowany_nie_udaje_pierwszorzednego(silnik, teraz):
     # droga do zbioru pierwszorzędnego i że przepuszcza wyłącznie dowiedzione pomiary.
     # Miejsce bramy jest decyzją projektową: silnik liczy, promocja rozstrzyga o użyciu.
     from app.services.promocja import promote_to_primary
+    from app.services.fatigue_engine import dopisz_manifest
 
-    odmowa = promote_to_primary(niekwalifikowany.identity.manifest())
+    # Kopia manifestu poza bazą jest od D6=A warunkiem promocji, więc własność musi
+    # przechodzić TĄ SAMĄ drogą co produkcja: zapis kopii, potem pytanie bramy. Inaczej
+    # sprawdzałaby zachowanie przy awarii dysku i „odrzuć wszystko" wyglądałoby poprawnie.
+    kopie = tmp_path / "manifesty"
+
+    odmowa = promote_to_primary(niekwalifikowany.identity.manifest(),
+                                katalog_manifestow=kopie)
     assert not odmowa.dopuszczony, "niekwalifikowany pomiar przeszedł bramę promocji"
     assert odmowa.powody, "odmowa bez powodu jest bezużyteczna"
     assert odmowa.wiersz["primary_usable"] is False
 
     kwalifikowany = licz(silnik, teraz)
     assert kwalifikowany.identity.eligibility == "PRIMARY_ELIGIBLE"
-    zgoda = promote_to_primary(kwalifikowany.identity.manifest())
+    dopisz_manifest(kwalifikowany.identity.manifest(), katalog=kopie)
+    zgoda = promote_to_primary(kwalifikowany.identity.manifest(),
+                               katalog_manifestow=kopie)
     assert zgoda.dopuszczony, (
         f"brama odrzuciła dowiedziony pomiar - to implementacja „odrzuć wszystko”: "
         f"{zgoda.powody}")
