@@ -208,8 +208,11 @@ def test_PB_permutacja_wejscia_nie_zmienia_niczego(silnik, teraz):
     eco = ekspozycja(teraz, 4)
     wzorzec = licz(silnik, teraz, hist=hist, eco=eco)
 
+    # Sto permutacji to warunek odbioru P1 z planu domknięcia, nie okrągła liczba:
+    # przy pięciu rekordach historii i czterech ekspozycji przestrzeń jest większa niż
+    # to, co da się wyliczyć wyczerpująco, a wynik ma być niezależny od każdej z nich.
     rng = random.Random(20260911)
-    for _ in range(25):
+    for _ in range(100):
         h = hist[:]
         e = eco[:]
         rng.shuffle(h)

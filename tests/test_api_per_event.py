@@ -342,3 +342,131 @@ def test_post_zapisuje_wejscie_do_odtworzenia_offline(client, monkeypatch):
     assert restored.components.novelty == row.comp_novelty
     assert restored.identity.measurement_id == row.measurement_id
     assert restored.identity.input_conflicts == manifest['input_conflicts']
+
+
+# ---------------------------------------------------------------------------
+# P1 (plan domknięcia, sekcja 2, "Race path"): ścieżka wyścigu musi używać
+# DOKŁADNIE tej samej funkcji porównującej co zwykła ponowna rejestracja,
+# a inny błąd integralności nie może udawać idempotentnego sukcesu.
+# ---------------------------------------------------------------------------
+
+def _slepy_pierwszy_odczyt(monkeypatch):
+    """Symuluje wyścig: oba zapisy sprawdzają bazę, zanim którykolwiek zdążył zapisać.
+
+    Pierwszy odczyt w żądaniu nie widzi wiersza (jak u konkurenta, który jeszcze nie
+    zatwierdził), kolejne widzą. Unikalny indeks na `measurement_id` rozstrzyga przy
+    zatwierdzeniu - i dopiero tam zaczyna się ścieżka, którą ten test bada.
+    """
+    prawdziwe = main._znajdz_pomiar
+    stan = {"n": 0}
+
+    def slepy(db, mid):
+        stan["n"] += 1
+        return None if stan["n"] == 1 else prawdziwe(db, mid)
+
+    monkeypatch.setattr(main, "_znajdz_pomiar", slepy)
+
+
+def test_wyscig_zapisu_z_rozjazdem_konczy_sie_konfliktem(client, monkeypatch):
+    """Wyścig nie jest furtką obok kontraktu tożsamości.
+
+    Do 11.09 `except IntegrityError` robił `rollback()` i zwracał wynik przeliczony
+    przed chwilą z `persisted=False` (`app/main.py:989-993`) - bez odczytu wiersza,
+    który właśnie zapisał konkurent, i bez porównania ośmiu pól. Dwa równoległe
+    zapisy tego samego pomiaru mogły więc oddać dwie różne liczby pod jednym
+    `measurement_id`: dokładnie stan, którego zakazuje kontrakt, tylko wpuszczony
+    ścieżką wyjątku.
+    """
+    pierwszy = client.post(f"/delegates/{ADDR}/per-event-fatigue").json()
+    mid = pierwszy["measurement_id"]
+    with main.SessionLocal() as db:
+        row = db.query(FatigueSnapshot).filter(FatigueSnapshot.measurement_id == mid).first()
+        row.fatigue_score = (pierwszy["fatigue_score"] or 0) + 7.0
+        db.commit()
+
+    _slepy_pierwszy_odczyt(monkeypatch)
+    odp = client.post(f"/delegates/{ADDR}/per-event-fatigue")
+
+    assert odp.status_code == 409, (
+        f"ścieżka wyścigu oddała {odp.status_code} zamiast konfliktu - wołający dostał "
+        f"liczbę, której nie ma w rejestrze"
+    )
+    detail = odp.json()["detail"]
+    assert detail["error"] == "MEASUREMENT_IDENTITY_CONFLICT"
+    assert detail["persisted_score"] != detail["recomputed_score"]
+
+    with main.SessionLocal() as db:
+        db.query(FatigueSnapshot).filter(FatigueSnapshot.measurement_id == mid).delete()
+        db.commit()
+
+
+def test_wyscig_zapisu_bez_rozjazdu_oddaje_zapisany_wiersz(client, monkeypatch):
+    """Zgodny wyścig kończy się odpowiedzią z WIERSZA i `persisted=False`.
+
+    Własność P-D w miniaturze: naprawa nie ma prawa zamienić zgodnego wyścigu
+    w błąd. Rozpoznanie „z wiersza, nie z przeliczenia" idzie po `computed_at`,
+    bo tego pola porównanie tożsamości nie obejmuje.
+    """
+    pierwszy = client.post(f"/delegates/{ADDR}/per-event-fatigue").json()
+    mid = pierwszy["measurement_id"]
+
+    _slepy_pierwszy_odczyt(monkeypatch)
+    odp = client.post(f"/delegates/{ADDR}/per-event-fatigue")
+
+    assert odp.status_code == 200, odp.text
+    body = odp.json()
+    assert body["persisted"] is False
+    assert body["measurement_id"] == mid
+    assert body["fatigue_score"] == pierwszy["fatigue_score"]
+    assert len([r for r in _rows() if r.measurement_id == mid]) == 1
+
+    with main.SessionLocal() as db:
+        db.query(FatigueSnapshot).filter(FatigueSnapshot.measurement_id == mid).delete()
+        db.commit()
+
+
+def test_inny_blad_integralnosci_nie_udaje_idempotencji(client, monkeypatch):
+    """`IntegrityError` bez wiersza o tej tożsamości to awaria zapisu, nie „już jest".
+
+    Do 11.09 każdy błąd integralności - naruszenie NOT NULL, inny unikalny indeks,
+    uszkodzona migracja - kończył się odpowiedzią 200 z `persisted=False`. Pomiar
+    nie trafiał wtedy do rejestru, a wołający dostawał potwierdzenie, że wiersz
+    istnieje. `prep-dataset.py` woła ten endpoint po to, żeby liczba wchodząca do
+    analizy stała w rejestrze; cichy sukces odbiera temu wywołaniu sens.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    monkeypatch.setattr(main, "_znajdz_pomiar", lambda db, mid: None)
+
+    class _SesjaZWybuchem:
+        """Sesja, której zatwierdzenie zawsze odbija błędem integralności.
+
+        Podmiana idzie przez zależność endpointu, nie przez klasę `Session`: patch
+        na klasie psuł sprzątanie po teście (fixture `fakes` też woła `commit`),
+        więc porażka jednego testu zatruwała plik - ta sama pułapka, którą opisuje
+        komentarz przy `fakes`.
+        """
+
+        def __init__(self, inner):
+            self._inner = inner
+
+        def __getattr__(self, nazwa):
+            return getattr(self._inner, nazwa)
+
+        def commit(self):
+            raise IntegrityError(
+                "NOT NULL constraint failed: fatigue_snapshots.status", None, None)
+
+    def _db_z_wybuchem():
+        db = main.SessionLocal()
+        try:
+            yield _SesjaZWybuchem(db)
+        finally:
+            db.close()
+
+    main.app.dependency_overrides[main.get_db] = _db_z_wybuchem
+    try:
+        with pytest.raises(IntegrityError):
+            client.post(f"/delegates/{ADDR}/per-event-fatigue")
+    finally:
+        main.app.dependency_overrides.pop(main.get_db, None)

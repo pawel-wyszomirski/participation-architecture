@@ -593,8 +593,13 @@ class FatigueEngine:
         identity_raw = f"{address.lower()}|{own_id}|{now_ts}"
         vote_event_id = hashlib.sha256(identity_raw.encode()).hexdigest()[:16]
 
-        receipts = [r.to_dict() if isinstance(r, SourceReceipt) else dict(r)
-                    for r in (source_receipts or [])]
+        # Pokwitowania do kwalifikacji biorą się z przygotowanego wejścia - `source_receipts`
+        # w tej funkcji to już `data["receipts"]` (linia wyżej w `_compute_prepared`), więc
+        # wymaganie P1 "wejście kanoniczne jest jedynym wejściem także dla eligibility" było
+        # spełnione przed planem domknięcia. Znika tylko konwersja `SourceReceipt -> dict`:
+        # sugerowała, że na tej warstwie mogą pojawić się obiekty z parametru wywołania, choć
+        # za granicą wejścia są wyłącznie słowniki. Kontrakt czytelny zamiast domyślanego.
+        receipts = list(source_receipts or [])
         cel_domena = str(getattr(target_proposal, "source_domain", "")
                          or getattr(target_proposal, "source", "") or "")
         eligibility, reasons, notes = self._eligibility(

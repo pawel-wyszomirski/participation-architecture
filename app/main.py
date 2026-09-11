@@ -744,6 +744,52 @@ def _cel_z_manifestu(manifest: Dict[str, Any], pole: str, zapasowo):
     return wartosc if wartosc not in (None, "") else zapasowo
 
 
+def _znajdz_pomiar(db: Session, mid: str) -> Optional[FatigueSnapshot]:
+    """Jedna droga odczytu zapisanego pomiaru po tożsamości.
+
+    Obie ścieżki rejestracji - ponowne wywołanie i wyścig dwóch równoległych
+    zapisów - muszą pytać bazy tak samo. Do 11.09 ścieżka wyścigu nie pytała
+    w ogóle (`app/main.py:989`): po `IntegrityError` zwracała wynik przeliczony
+    przed chwilą, więc wołający dostawał liczbę, której w rejestrze nie ma.
+    """
+    return db.query(FatigueSnapshot).filter(FatigueSnapshot.measurement_id == mid).first()
+
+
+def _rozstrzygnij_zapisany(row, result, target, ref_time, mid: str):
+    """Jedna droga dla KAŻDEGO spotkania z już zapisanym pomiarem.
+
+    Wołana z dwóch miejsc: przy ponownym wywołaniu, gdy wiersz był widoczny od razu,
+    i po `IntegrityError`, gdy wiersz zapisał równoległy zapis. Do 11.09 druga ścieżka
+    nie przechodziła tą drogą - oddawała wynik przeliczony przed chwilą, więc kontrakt
+    tożsamości miał furtkę w postaci wyjątku (plan domknięcia, P1 "Race path").
+
+    I2 (2026-09-09): oddajemy ZAPISANY pomiar, nigdy świeżego - inaczej rejestr trzyma
+    jedną liczbę, a wołający dostaje inną, obie pod jednym identyfikatorem.
+
+    Rozbieżność NIE jest tu wygładzana. Ta sama tożsamość przy innym wyniku znaczy, że
+    kontrakt jest naruszony, i musi być widoczna. Porównanie obejmuje CAŁY wynik
+    kanoniczny, nie sam `fatigue_score`: do 10.09 sprawdzana była jedna liczba, więc
+    rozjazd składników, statusu albo kwalifikacji przechodził jako zgodność, o ile
+    zaokrąglony wynik się zgadzał (wskazał to Codex `gpt-6-astra` w recenzji z 10.09).
+    """
+    rozjazdy = _rozjazd_zapisanego_i_przeliczonego(row, result)
+    if rozjazdy:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "MEASUREMENT_IDENTITY_CONFLICT",
+                "measurement_id": mid,
+                "rozjazdy": rozjazdy,
+                "persisted_score": row.fatigue_score,
+                "recomputed_score": result.fatigue_score,
+                "identity_schema_version": getattr(
+                    result.identity, "identity_schema_version", ""),
+                "message": ("stored and recomputed results differ under one identity - "
+                            "the identity does not bind everything the score depends on"),
+            })
+    return _per_event_response_z_wiersza(row, result, target, ref_time)
+
+
 def _rozjazd_zapisanego_i_przeliczonego(row, result) -> List[Dict[str, Any]]:
     """Które pola zapisanego pomiaru różnią się od przeliczonego przed chwilą.
 
@@ -927,36 +973,9 @@ async def register_per_event_fatigue(
     """
     result, target, ref_time = await _measure_per_event(address, proposal_id)
     mid = result.identity.measurement_id
-    existing = db.query(FatigueSnapshot).filter(FatigueSnapshot.measurement_id == mid).first()
+    existing = _znajdz_pomiar(db, mid)
     if existing is not None:
-        # I2 (2026-09-09): przy istniejącym wierszu oddajemy ZAPISANY pomiar, nigdy wyniku
-        # przeliczonego przed chwilą. Do 09.09 zwracany był świeży `result`, więc rejestr mógł
-        # trzymać jedną liczbę, a wołający dostawał inną - obie pod jednym identyfikatorem.
-        #
-        # Rozbieżność między zapisanym a świeżym wynikiem NIE jest tu wygładzana. Ta sama
-        # tożsamość przy innym wyniku znaczy, że kontrakt tożsamości jest naruszony, i musi to
-        # być widoczne, a nie schowane za cichym zwrotem starego wiersza.
-        # Porównanie obejmuje CAŁY wynik kanoniczny, nie sam `fatigue_score`. Do 10.09
-        # sprawdzana była jedna liczba, więc rozjazd składników, statusu albo
-        # kwalifikacji przechodził jako zgodność, o ile zaokrąglony wynik się zgadzał -
-        # a to jest dokładnie ten stan, którego kontrakt tożsamości zabrania. Wskazał
-        # to Codex (gpt-6-astra) w recenzji z 10.09, `app/main.py:892`.
-        rozjazdy = _rozjazd_zapisanego_i_przeliczonego(existing, result)
-        if rozjazdy:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "error": "MEASUREMENT_IDENTITY_CONFLICT",
-                    "measurement_id": mid,
-                    "rozjazdy": rozjazdy,
-                    "persisted_score": existing.fatigue_score,
-                    "recomputed_score": result.fatigue_score,
-                    "identity_schema_version": getattr(
-                        result.identity, "identity_schema_version", ""),
-                    "message": ("stored and recomputed results differ under one identity - "
-                                "the identity does not bind everything the score depends on"),
-                })
-        return _per_event_response_z_wiersza(existing, result, target, ref_time)
+        return _rozstrzygnij_zapisany(existing, result, target, ref_time, mid)
 
     snapshot = FatigueSnapshot(
         address=result.address,
@@ -987,10 +1006,21 @@ async def register_per_event_fatigue(
     try:
         db.commit()
     except IntegrityError:
-        # Two concurrent registrations of the same measurement: the unique
-        # index decides, this call reports the row as already present.
+        # Wyścig dwóch równoległych rejestracji: unikalny indeks rozstrzyga, a ta
+        # gałąź przechodzi DOKŁADNIE tą samą drogą co ponowne wywołanie wyżej
+        # (plan domknięcia z 11.09, P1 "Race path"). Do 11.09 zwracany był tu wynik
+        # przeliczony przed chwilą, bez odczytu wiersza konkurenta i bez porównania
+        # ośmiu pól - czyli kontrakt tożsamości miał furtkę w postaci wyjątku.
         db.rollback()
-        return _per_event_response(result, target, ref_time, persisted=False)
+        rywal = _znajdz_pomiar(db, mid)
+        if rywal is None:
+            # Błąd integralności, który NIE jest konfliktem tożsamości: naruszenie
+            # NOT NULL, inny unikalny indeks, uszkodzona migracja. Pomiar nie trafił
+            # do rejestru, więc odpowiedź „wiersz już jest" byłaby nieprawdą -
+            # a `prep-dataset.py` woła ten endpoint właśnie po to, żeby liczba
+            # wchodząca do analizy stała w rejestrze.
+            raise
+        return _rozstrzygnij_zapisany(rywal, result, target, ref_time, mid)
     return _per_event_response(result, target, ref_time, persisted=True)
 
 
