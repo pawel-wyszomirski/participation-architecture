@@ -78,7 +78,7 @@ TERAZ = 1_780_000_000
 def tor(monkeypatch):
     """Atrapa łańcucha. `zakresy` zapisuje granice KAŻDEGO skanu - to nimi mierzymy,
     czy okno kotwiczy się w mierzonej chwili, czy w HEAD."""
-    stan = {"zakresy": [], "logi": {}, "bledy": set()}
+    stan = {"zakresy": [], "logi": {}, "anulowania": {}, "bledy": set()}
 
     async def _block_number(self, client):
         return HEAD
@@ -91,6 +91,13 @@ def tor(monkeypatch):
         stan["zakresy"].append((rola, first, last))
         if rola in stan["bledy"]:
             raise RuntimeError("HTTP 403")
+        # Atrapa ROZROZNIA zdarzenia (od 11.09, P4). Przedtem oddawala te same logi na
+        # kazde zapytanie, wiec skan anulowan czytal zdarzenia utworzenia jako anulowania
+        # i propozycja otwarta wypadala z ekspozycji. Atrapa, ktora nie rozroznia tego,
+        # co rozroznia zrodlo, mierzy sama siebie.
+        if topics and topics[0] == gc.TOPIC_PROPOSAL_CANCELED:
+            return [l for b, l in stan.get("anulowania", {}).get(rola, [])
+                    if first <= b <= last]
         return [l for b, l in stan["logi"].get(rola, []) if first <= b <= last]
 
     async def _block_time(self, client, block_hex):

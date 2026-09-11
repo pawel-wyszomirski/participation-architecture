@@ -40,6 +40,8 @@ def etap(id_, dni_temu, *, title="ArbOS 61 Elara", body="tresc " * 50, domena="s
         start=t - 86_400, end=t + 86_400, voted_at=t, cast_at=t,
         category=kategoria, source_domain=domena, source=domena,
         source_vote_id=f"v-{id_}", native_proposal_id=id_, voter="0xA",
+        # Okno z dowodem (P4): test dotyczy powiązania etapów, nie podstawy okna.
+        window_basis="SNAPSHOT_EXACT", window_uncertainty_reason="",
     )
 
 

@@ -53,6 +53,9 @@ def _obs(id_, days_ago, title="Proposal", body="word " * 300, domain="snapshot")
     # Kategoria z taksonomii - WARTOŚĆ rekordu, nie jego identyfikator. Test tożsamości
     # zmienia ją przy niezmienionych identyfikatorach (regresja kontrprzykładu z 09.09).
     p.category = _Fakes.category
+    # Podstawa okna (P4, 11.09): atrapa zrodla deklaruje dowod tak jak warstwa produkcyjna.
+    p.window_basis = "SNAPSHOT_EXACT"
+    p.window_uncertainty_reason = ""
     return p
 
 

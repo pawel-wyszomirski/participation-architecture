@@ -50,6 +50,9 @@ class Obs:
     source_domain: str = "snapshot"
     source_vote_id: str = ""
     native_proposal_id: str = ""
+    # Podstawa okna od 11.09 (P4): warstwy produkcyjne ja deklaruja, wiec atrapy tez.
+    window_basis: str = "SNAPSHOT_EXACT"
+    window_uncertainty_reason: str = ""
 
 
 @pytest.fixture
@@ -66,6 +69,9 @@ def obs(id_, days_ago, now, **kw):
     t = int((now - timedelta(days=days_ago)).timestamp())
     kw.setdefault("start", t)
     kw.setdefault("end", t + 3 * DZIEN)
+    # Podstawa okna od 11.09 (P4): warstwy produkcyjne ja deklaruja, wiec atrapy tez.
+    # Test badajacy okno bez dowodu przekazuje `window_basis` sam.
+    kw.setdefault("window_basis", "SNAPSHOT_EXACT")
     return Obs(id=id_, voted_at=t, **kw)
 
 

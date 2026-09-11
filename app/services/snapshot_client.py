@@ -13,6 +13,7 @@ from app.db.session import SessionLocal, engine, Base
 from app.db.models import Proposal, Vote
 from app.services.fatigue_engine import (
     SourceReceipt, HEALTHY_COMPLETE, HEALTHY_EMPTY, TRUNCATED, UNAVAILABLE, ERROR,
+    WINDOW_SNAPSHOT_EXACT,
 )
 from sqlalchemy import func
 
@@ -222,6 +223,11 @@ class SnapshotClient:
                 end=p.get("end"),
             )
             prop.source = "snapshot"
+            # Podstawa okna (P4, 11.09): Snapshot podaje `start` i `end` wprost, wiec
+            # to dowod, nie oszacowanie - w odroznieniu od okna odtwarzanego ze zdarzen
+            # kontraktu, gdzie wchodzi sredni czas bloku i wspolczesny parametr.
+            prop.window_basis = WINDOW_SNAPSHOT_EXACT
+            prop.window_uncertainty_reason = ""
             out.append(prop)
         if not out:
             state = HEALTHY_EMPTY
@@ -229,7 +235,9 @@ class SnapshotClient:
             state = TRUNCATED
         else:
             state = HEALTHY_COMPLETE
-        return out, SourceReceipt("ecosystem", state, events=len(out), limit=100)
+        return out, SourceReceipt("ecosystem", state, events=len(out), limit=100,
+                                  record_count=len(raw), page_count=1,
+                                  limit_hit=len(raw) >= 100)
 
     async def fetch_proposals_active_at(
         self, at_ts: int, space: str = ARBITRUM_SPACE

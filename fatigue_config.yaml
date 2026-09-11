@@ -12,7 +12,7 @@
 #   DFI = (w_volume×volume + w_concurrency×concurrency + w_burstiness×burstiness
 #          + w_reading_time×reading_time + w_novelty×novelty) × 100
 
-version: "1.4.0"
+version: "1.5.0"
 
 # Component weights (must sum to 1.0)
 weights:

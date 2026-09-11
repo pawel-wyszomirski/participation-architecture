@@ -44,6 +44,7 @@ from app.services.snapshot_client import Proposal
 from app.services.fatigue_engine import (
     SourceReceipt, HEALTHY_COMPLETE, HEALTHY_EMPTY, PARTIAL, TRUNCATED,
     UNAVAILABLE, ERROR,
+    WINDOW_ESTIMATED, WINDOW_REGISTRY_EXACT, WINDOW_UNKNOWN,
 )
 
 # Arbitrum One runs TWO governors and a delegate's workload spans both.
@@ -79,6 +80,15 @@ RPC_ENDPOINTS = [
 # keccak256 of the event signatures
 TOPIC_VOTE_CAST = "0xb8e138887d0aa13bab447e82de9d5c1777041ecd21ca36ba824ff1e6c07ddda4"
 TOPIC_PROPOSAL_CREATED = "0x7d84a6263ae0d98d3329bd7b46bb4e8d6f98cd35a7adb45c274c8b7fd5ebd5e0"
+# ProposalCanceled(uint256) - dołożone 2026-09-11 (P4, sekcja 5.3): do tego dnia skan
+# obejmował wyłącznie utworzenie propozycji, więc anulowana liczyła się jako otwarta do
+# WYLICZONEGO zamknięcia i zawyżała współbieżność każdego głosu w tym okresie.
+#
+# Wartość POLICZONA, nie wzięta z pamięci: keccak256 sygnatury, sprawdzone zgodnością
+# dwóch topiców wyżej, które działają na produkcji od sierpnia. Powtórzenie pomiaru:
+#   python3 -c "from Crypto.Hash import keccak; h=keccak.new(digest_bits=256); \
+#     h.update(b'ProposalCanceled(uint256)'); print('0x'+h.hexdigest())"
+TOPIC_PROPOSAL_CANCELED = "0x789cf55be980739dad1d0699b93b58e806b51c9d96619bfa8fe0a28abaa7b30c"
 
 # Arbitrum One produces roughly 4 blocks per second.
 BLOCKS_PER_DAY = 4 * 60 * 60 * 24
@@ -257,8 +267,8 @@ class GovernorClient:
             # przeliczenie czasu na blok jest przybliżeniem - stąd zapas po prawej stronie.
             last = min(head, blok_chwili + MARGINES_BLOKOW)
             first = max(0, blok_chwili - days_back * BLOCKS_PER_DAY)
-            voting_delay = await self._voting_delay(client)
             czasy: Dict[str, int] = {}
+            bez_okna = 0
 
             for rola, adres in GOVERNORS.items():
                 klient = GovernorClient(address=adres, endpoints=self.endpoints)
@@ -269,6 +279,39 @@ class GovernorClient:
                     stany.append(ERROR)
                     szczegoly.append(f"{rola}: ProposalCreated scan: {e}"[:200])
                     continue
+                # PARAMETR PER KONTRAKT (P4, 11.09). Do dziś `votingDelay` czytano RAZ,
+                # przed pętlą, i stosowano do obu wdrożeń - jedna liczba opisywała dwa
+                # różne kontrakty. Wartość nadal jest WSPÓŁCZESNA, bo historyczna wymaga
+                # węzła archiwalnego; dlatego okno z niej policzone jest oszacowaniem.
+                try:
+                    voting_delay = await klient._voting_delay(client)
+                except Exception as e:  # noqa: BLE001
+                    voting_delay = 0
+                    szczegoly.append(f"{rola}: votingDelay: {e}"[:120])
+                # ANULOWANIA (P4, sekcja 5.3). Skanowany był wyłącznie `ProposalCreated`,
+                # więc propozycja anulowana w drugim dniu liczyła się jako otwarta do
+                # WYLICZONEGO zamknięcia i zawyżała współbieżność każdego głosu w tym
+                # okresie. Anulowanie skraca okno do chwili, w której się stało.
+                anulowane: Dict[str, int] = {}
+                try:
+                    for log in await klient._logs(client, [TOPIC_PROPOSAL_CANCELED],
+                                                  first, last):
+                        # Filtr topicu robi wezel, ale sprawdzamy takze u siebie: log
+                        # o innym zdarzeniu zinterpretowany jako anulowanie ZAMKNALBY
+                        # propozycje, ktora byla otwarta - czyli zanizylby wspolbieznosc.
+                        # Dane ze zrodla sprawdza sie na wejsciu, nie po skutkach.
+                        tematy = log.get("topics") or []
+                        if tematy and tematy[0].lower() != TOPIC_PROPOSAL_CANCELED:
+                            continue
+                        blok_hex = log["blockNumber"]
+                        if blok_hex not in czasy:
+                            czasy[blok_hex] = await klient._block_time(client, blok_hex)
+                        anulowane[str(_word(log["data"], 0))] = czasy[blok_hex]
+                except Exception as e:  # noqa: BLE001
+                    # Brak wiedzy o anulowaniach zawyża ekspozycję, więc nie jest
+                    # drobiazgiem: cała warstwa idzie jako częściowa.
+                    stany.append(PARTIAL)
+                    szczegoly.append(f"{rola}: ProposalCanceled scan: {e}"[:200])
                 stany.append(HEALTHY_COMPLETE if created else HEALTHY_EMPTY)
                 for log in created:
                     pid = _word(log["data"], 0)
@@ -279,10 +322,28 @@ class GovernorClient:
                     okno = rejestr.window(pid)
                     if okno:
                         opens, closes = okno
+                        podstawa = WINDOW_REGISTRY_EXACT
+                        powod = ""
                     else:
                         span = _word(log["data"], 7) - _word(log["data"], 6)
                         opens = created_at + voting_delay * L1_BLOCK_SECONDS
                         closes = opens + max(span, 0) * L1_BLOCK_SECONDS
+                        if span <= 0:
+                            # Zerowa rozpiętość bloków: okna nie da się odtworzyć.
+                            # Pominięcie w ciszy wyglądałoby jak „nie było otwarte".
+                            podstawa = WINDOW_UNKNOWN
+                            powod = "startBlock == endBlock - voting span not recoverable"
+                        else:
+                            podstawa = WINDOW_ESTIMATED
+                            powod = (f"reconstructed from block time and current "
+                                     f"votingDelay={voting_delay} at {L1_BLOCK_SECONDS}s/block")
+                    anulowane_o = anulowane.get(str(pid))
+                    if anulowane_o is not None and anulowane_o < closes:
+                        closes = anulowane_o
+                        powod = (powod + "; " if powod else "") + "canceled onchain"
+                    if podstawa == WINDOW_UNKNOWN:
+                        bez_okna += 1
+                        continue
                     if not (opens <= at_ts <= closes):
                         continue
                     opis = _string_at(log["data"], 8)
@@ -291,6 +352,8 @@ class GovernorClient:
                                  state="active", start=opens, end=closes)
                     p.source_domain = f"governor:{rola}"
                     p.native_proposal_id = str(pid)
+                    p.window_basis = podstawa
+                    p.window_uncertainty_reason = powod
                     otwarte.append(p)
 
         if not stany:
@@ -310,7 +373,14 @@ class GovernorClient:
                                        detail="; ".join(szczegoly)[:200])
         if stan == HEALTHY_EMPTY and otwarte:
             stan = HEALTHY_COMPLETE
+        if bez_okna:
+            # Propozycja bez odtwarzalnego okna wypada z ekspozycji, wiec suma po
+            # ekosystemie jest zanizona o ZNANA liczbe - i ta liczba musi byc widoczna,
+            # nie schowana w ciszy. PARTIAL mowi wolajacemu, ze pokrycie jest niepelne.
+            stan = PARTIAL
+            szczegoly.append(f"{bez_okna} proposals with no recoverable voting window")
         return otwarte, SourceReceipt("ecosystem_governor", stan, events=len(otwarte),
+                                      unknown_window=bez_okna,
                                       detail="; ".join(szczegoly)[:200])
 
     async def _block_time(self, client: httpx.AsyncClient, block_hex: str) -> int:

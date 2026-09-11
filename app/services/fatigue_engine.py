@@ -150,6 +150,23 @@ LINK_BASES = (LINK_NATIVE_ID, LINK_EXPLICIT_REFERENCE, LINK_VERIFIED_MAPPING,
 # na domyśle. Cykl jednoetapowy ma `NATIVE_ID` i nie jest tym dotknięty.
 LINK_BASES_PRIMARY = (LINK_NATIVE_ID, LINK_EXPLICIT_REFERENCE, LINK_VERIFIED_MAPPING)
 
+# NA CZYM STOI OKNO GŁOSOWANIA (plan domknięcia z 11.09, P4; punkt 4 recenzji 78179).
+# Współbieżność liczy propozycje otwarte w mierzonej chwili, więc wynik zależy od okien.
+# Okno wzięte z rejestru i okno policzone ze ŚREDNIEGO czasu bloku wyglądały w pomiarze
+# identycznie, a oba wchodziły do składnika o wadze 0,25.
+WINDOW_SNAPSHOT_EXACT = "SNAPSHOT_EXACT"    # `start`/`end` wprost z warstwy Snapshot
+WINDOW_REGISTRY_EXACT = "REGISTRY_EXACT"    # okno z rejestru taksonomii DAO
+WINDOW_GOVERNOR_EXACT = "GOVERNOR_EXACT"    # historyczny dowód start/end z łańcucha
+WINDOW_ESTIMATED = "ESTIMATED"              # odtworzone z czasu bloku i parametru
+WINDOW_UNKNOWN = "UNKNOWN"                  # nie wiemy, kiedy było otwarte
+WINDOW_BASES = (WINDOW_SNAPSHOT_EXACT, WINDOW_REGISTRY_EXACT, WINDOW_GOVERNOR_EXACT,
+                WINDOW_ESTIMATED, WINDOW_UNKNOWN)
+
+# Do pomiaru konfirmacyjnego wchodzą wyłącznie okna z dowodem. `GOVERNOR_EXACT` wymaga
+# historycznej wartości parametrów dla WŁAŚCIWEGO wdrożenia kontraktu - średni czas bloku
+# i dzisiejszy `votingDelay` się nie kwalifikują, choćby skan zdarzeń się udał.
+WINDOW_BASES_PRIMARY = (WINDOW_SNAPSHOT_EXACT, WINDOW_REGISTRY_EXACT, WINDOW_GOVERNOR_EXACT)
+
 
 @dataclass
 class SourceReceipt:
@@ -685,11 +702,20 @@ class FatigueEngine:
             for p in [target_proposal, *frozen_history]
             if str(getattr(p, "link_basis", "") or LINK_NATIVE_ID) not in LINK_BASES_PRIMARY
         })
+        # Okna EKSPOZYCJI bez dowodu (P4, sekcja 5.2). Wspolbieznosc liczy propozycje
+        # otwarte w mierzonej chwili, wiec kazde okno oszacowane wchodzi do wyniku tak
+        # samo jak dowiedzione. Cel i historia nie sa tu sprawdzane: ich okna nie licza
+        # sie do wspolbieznosci, a `reading_time` i `novelty` biora sie z tresci.
+        okna_bez_dowodu = sorted({
+            str(getattr(p, "window_basis", "") or WINDOW_UNKNOWN)
+            for p in (ecosystem_proposals or [])
+            if str(getattr(p, "window_basis", "") or WINDOW_UNKNOWN) not in WINDOW_BASES_PRIMARY
+        })
         eligibility, reasons, notes = self._eligibility(
             receipts, concurrency_source, now_ts,
             ekspozycja_pusta=(ecosystem_proposals is not None and not ecosystem_proposals),
             cel_kontraktowy=cel_domena.startswith("governor"),
-            podstawy_bez_dowodu=domysly)
+            podstawy_bez_dowodu=domysly, okna_bez_dowodu=okna_bez_dowodu)
 
         title = getattr(target_proposal, "title", None) or ""
         body = getattr(target_proposal, "body", None) or ""
@@ -809,6 +835,7 @@ class FatigueEngine:
                      now_ts: int, ekspozycja_pusta: bool = False,
                      cel_kontraktowy: bool = False,
                      podstawy_bez_dowodu: Optional[List[str]] = None,
+                     okna_bez_dowodu: Optional[List[str]] = None,
                      ) -> Tuple[str, List[str], List[str]]:
         """Fail closed (closure review points 2 and 6, plan domknięcia P2):
         pomiar konfirmacyjny jest `PRIMARY_ELIGIBLE` tylko wtedy, gdy każde wymagane
@@ -872,6 +899,10 @@ class FatigueEngine:
         # P3: powiązanie etapów bez dowodu nie może wpłynąć na liczbę wchodzącą do
         # analizy konfirmacyjnej. `volume` i `burstiness` liczą się po cyklach, więc
         # cykl zbudowany na zbieżności nazwy jest domysłem w mianowniku obciążenia.
+        for okno in (okna_bez_dowodu or []):
+            reasons.append(
+                f"exposure window basis {okno} - concurrency counts proposals open at the "
+                "measured moment, and this one's window is reconstructed, not evidenced")
         for podstawa in (podstawy_bez_dowodu or []):
             reasons.append(
                 f"stage linking basis {podstawa} - one decision was assembled without "
@@ -1213,6 +1244,11 @@ def _wejscie_kanoniczne(p: Any) -> Dict[str, Any]:
         # granicę wejścia - kwalifikacja liczy się z przygotowanego wejścia (P1).
         # Obserwacja, która nie przeszła przez `merge_stages` (testy, korpus), jest
         # własną decyzją, czyli ma podstawę natywną.
+        # P4 (11.09): podstawa okna rozstrzyga o werdykcie, wiec musi przejsc granice
+        # wejscia. Obserwacja bez podstawy pochodzi z warstwy, ktora jej nie podala -
+        # to stan NIEZNANY, nie domyslnie dobry.
+        "window_basis": str(getattr(p, "window_basis", None) or ""),
+        "window_uncertainty_reason": str(getattr(p, "window_uncertainty_reason", None) or ""),
         "link_basis": str(getattr(p, "link_basis", None) or LINK_NATIVE_ID),
         "linked_stage_ids": sorted(str(x) for x in
             (getattr(p, "linked_stage_ids", None)

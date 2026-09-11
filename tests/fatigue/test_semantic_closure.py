@@ -69,6 +69,11 @@ class Obserwacja:
     source_domain: str = "snapshot"
     voter: str = ""
     lifecycle_id: str = ""
+    # Podstawa okna - od 11.09 (P4) rozstrzyga o wejściu do współbieżności pierwszorzędnej.
+    # Atrapy deklarują dowód, bo warstwy produkcyjne go deklarują: Snapshot podaje okno
+    # wprost, rejestr taksonomii również. Test badający BRAK dowodu ustawia pole sam.
+    window_basis: str = "SNAPSHOT_EXACT"
+    window_uncertainty_reason: str = ""
 
 
 @pytest.fixture
