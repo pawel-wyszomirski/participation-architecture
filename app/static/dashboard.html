@@ -176,6 +176,12 @@
   .dfi-bar-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
   .dfi-bar-label { font-size: 14px; color: var(--ink); }
   .dfi-bar-val { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  /* Component measured but outside the score (config 1.8.0): the bar stays, the badge
+     says so, and the fill is muted so the row does not read as a driver of the number. */
+  .dfi-bar-excluded { font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--muted); border: 1px solid var(--line); border-radius: 3px;
+    padding: 1px 5px; margin-right: 8px; white-space: nowrap; }
+  .dfi-bar-row.is-excluded .dfi-bar-fill { background: var(--line); }
   .dfi-bar-track { height: 6px; background: var(--line); border-radius: 2px; overflow: hidden; }
   .dfi-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.7s cubic-bezier(0.22,1,0.36,1); }
   .dfi-bar-detail { margin: 9px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); max-width: 46ch; }
@@ -377,8 +383,13 @@ const FRAMING = {
 const COMPLEXITY = [
   { key: "reading_time", label: "Reading length", tip: "How long this proposal was to read",
     hint: "How much text this proposal asked you to read, against a typical Arbitrum proposal." },
-  { key: "novelty", label: "Novelty", tip: "Whether this was a new kind of decision",
-    hint: "How unlike your recent proposals this one was — a familiar decision type scores low." },
+  /* Novelty is MEASURED and shown, but since config 1.8.0 it does NOT enter the score
+     (decision of 2026-09-11): the DAO's category registry does not cover enough of a
+     delegate's history to make the component identifiable in the field. Leaving the bar
+     unmarked would tell the reader that it moved their number, which is now false. */
+  { key: "novelty", label: "Novelty", tip: "Measured, but not part of this score",
+    hint: "How unlike your recent proposals this one was. Shown for completeness — it is NOT part of the score, because the DAO's category registry covers too little of most voting histories to measure it reliably.",
+    excluded: true },
 ];
 const PARALLEL = [
   { key: "volume", label: "Recent volume", tip: "How many votes you cast recently",
@@ -533,7 +544,9 @@ function renderBarRow(spec, value, metrics) {
     },
   }, [
     el("span", { class: "dfi-bar-label", text: spec.label }),
-    el("span", { class: "dfi-bar-right" }, [valSpan, caret]),
+    el("span", { class: "dfi-bar-right" }, spec.excluded
+      ? [el("span", { class: "dfi-bar-excluded", text: "not in score" }), valSpan, caret]
+      : [valSpan, caret]),
   ]);
   const hint = spec.hint ? el("p", { class: "dfi-bar-hint", text: spec.hint }) : null;
   const fill = el("div", { class: "dfi-bar-fill" }); fill.style.width = "0%";
@@ -543,7 +556,8 @@ function renderBarRow(spec, value, metrics) {
   }, [fill]);
   if (prefersReduced) fill.style.width = (value * 100) + "%";
   else setTimeout(function () { fill.style.width = (value * 100) + "%"; }, 60);
-  return el("div", { class: "dfi-bar-row" }, hint ? [head, trackDiv, hint, detail] : [head, trackDiv, detail]);
+  return el("div", { class: "dfi-bar-row" + (spec.excluded ? " is-excluded" : "") },
+            hint ? [head, trackDiv, hint, detail] : [head, trackDiv, detail]);
 }
 function renderBreakdown(components, metrics) {
   const grid = el("div", { class: "dfi-breakdown-grid" }, [
@@ -576,11 +590,21 @@ function formulaWithLabels(formula) {
   }, formula || "");
 }
 
-function renderHowCalculated(formula, weights) {
+/* Weight column has to show the weight that ACTUALLY built the number. Since config
+   1.8.0 the per-event score is DFI-core: four components, each divided by their total
+   (0.95), so the printed shares sum to 100% and novelty reads "not counted" instead of
+   "5%". Printing the raw 5% would say the component moved the score - it does not. */
+function renderHowCalculated(formula, weights, primaryComponents) {
+  const primary = (primaryComponents && primaryComponents.length)
+    ? primaryComponents : WEIGHT_ROWS.map(function (r) { return r[0]; });
+  const total = primary.reduce(function (s, k) { return s + (weights[k] || 0); }, 0) || 1;
   const tbody = el("tbody", {}, WEIGHT_ROWS.map(function (r) {
+    const liczy = primary.indexOf(r[0]) !== -1;
     return el("tr", {}, [
       el("td", { text: r[1] }),
-      el("td", { class: "dfi-num", text: Math.round((weights[r[0]] || 0) * 100) + "%" }),
+      el("td", { class: "dfi-num",
+                 text: liczy ? Math.round((weights[r[0]] || 0) / total * 100) + "%"
+                             : "not counted" }),
     ]);
   }));
   const table = el("table", { class: "dfi-weights" }, [
@@ -723,7 +747,8 @@ function renderDashboard(data) {
     renderEligibility(data),
     renderGauge(data.fatigue_score, data.status),
     renderBreakdown(data.components, data.metrics),
-    renderHowCalculated(data.formula, data.weights),
+    renderHowCalculated(data.formula, data.weights,
+                        (data.identity || {}).primary_components),
     renderFooter(data),
     renderResearchNote(),
   ]);

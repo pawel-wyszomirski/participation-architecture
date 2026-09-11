@@ -90,8 +90,25 @@ def promote_to_primary(manifest: Optional[Dict[str, Any]],
     # ze starszej wersji instrumentu. Sprawdzamy je jeszcze raz U BRAMY, bo brama jest
     # ostatnim miejscem przed analizą: pomiar zapisany pod inną polityką nie przestaje być
     # zapisem, ale nie zna reguł, które obowiązują dziś.
+    # ZAKRES POMIARU CZYTAMY Z MANIFESTU, nie zakładamy go (D1=B, 11.09).
+    #
+    # Do 1.8.0 stał tu bezwarunkowy zakaz: każda podstawa `novelty` inna niż pełna odbierała
+    # promocję. Po wyjęciu składnika z DFI-core silnik zaczął wydawać `PRIMARY_ELIGIBLE`,
+    # a ta brama odrzucała te same pomiary z powodu składnika, który do wyniku nie wchodzi -
+    # smoke na 40 delegatach pokazał **23 kwalifikowalne i 0 przepuszczonych**.
+    #
+    # To jest dokładnie *recursive semantic regression* z recenzji 78179: naprawa na jednej
+    # warstwie, a warstwę niżej druga kopia tej samej reguły odtwarza stan sprzed naprawy.
+    # Kopia zostaje - jest potrzebna dla manifestów zapisanych pod inną polityką - ale musi
+    # pytać o ZAKRES, tak samo jak pyta o niego silnik.
+    #
+    # Manifest BEZ pola `primary_components` pochodzi sprzed tej decyzji, czyli z czasu,
+    # gdy `novelty` była składnikiem wyniku: wtedy zakaz obowiązuje. Fail-closed.
     novelty = str(manifest.get("novelty_basis") or "")
-    if novelty and novelty not in NOVELTY_BASES_PRIMARY:
+    zakres = manifest.get("primary_components")
+    novelty_wchodzi_do_wyniku = (
+        "novelty" in zakres if isinstance(zakres, list) and zakres else True)
+    if novelty_wchodzi_do_wyniku and novelty and novelty not in NOVELTY_BASES_PRIMARY:
         powody.append(f"novelty basis {novelty} - mianownik składnika nie jest pełny")
 
     for propozycja in ((manifest.get("prepared_input") or {}).get("ecosystem") or []):
@@ -110,6 +127,11 @@ def promote_to_primary(manifest: Optional[Dict[str, Any]],
         "instrument_hash": manifest.get("instrument_hash", ""),
         "eligibility_policy_version": manifest.get("eligibility_policy_version", ""),
         "novelty_basis": novelty,
+        # Zakres jedzie do zbioru analitycznego, bo analiza musi wiedzieć, z czego
+        # policzono kolumnę `dfi` - inaczej dwa wiersze o różnym zakresie wyglądałyby
+        # jak dwa pomiary tej samej wielkości.
+        "primary_components": ";".join(str(c) for c in (zakres or [])),
+        "sensitivity_score": manifest.get("sensitivity_score"),
         "taxonomy_snapshot_id": manifest.get("taxonomy_snapshot_id", ""),
         "runtime_digest": manifest.get("runtime_digest", ""),
         "code_commit": manifest.get("code_commit", ""),

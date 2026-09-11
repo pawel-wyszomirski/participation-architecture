@@ -275,6 +275,16 @@ class MeasurementIdentityResponse(BaseModel):
         "Rule that produced measurement_id. '1' bound id sets and could give one identity "
         "to two different scores; '2' binds a projection; '3' binds the input consumed by components. Empty "
         "means a measurement taken before the field existed"))
+    # Zakres pomiaru pierwszorzędnego (D1=B, config 1.8.0). Bez tych dwóch pól odpowiedź
+    # nie mówi, KTÓRE składniki zbudowały `fatigue_score` - a panel i eksport pokazywały
+    # wszystkie pięć razem z wagami, więc czytający miał prawo sądzić, że każdy z nich
+    # wchodzi do wyniku.
+    primary_components: List[str] = Field(default_factory=list, description=(
+        "Components that make up fatigue_score. Since config 1.8.0 novelty is NOT among "
+        "them: it is computed and recorded for the pre-registered sensitivity analysis"))
+    sensitivity_score: Optional[float] = Field(None, description=(
+        "The same measurement computed with ALL five components - sensitivity analysis "
+        "only, never the confirmatory value"))
     measurement_id: str = Field("", description=(
         "Digest of the complete measurement identity; persistence is idempotent on it"))
 
@@ -287,8 +297,16 @@ class PerEventFatigueResponse(FatigueResponse):
 
     reading_time/novelty describe the rated proposal (intrinsic load);
     volume/concurrency/burstiness describe the delegate's context around the vote.
+
+    Since config 1.8.0 the score is DFI-core: novelty is computed and reported, but
+    does NOT enter fatigue_score. `identity.primary_components` names what does, and
+    `identity.sensitivity_score` carries the all-five value.
     """
     mode: str = Field(default="per_event", description="Always 'per_event'")
+    formula: str = Field(
+        default=FatigueEngine.FORMULA_PER_EVENT,
+        description="Exact formula used to compute fatigue_score in the per-event variant"
+    )
     target_proposal_id: str = Field(..., description="Snapshot id of the rated proposal")
     target_proposal_title: str = Field(..., description="Title of the rated proposal")
     as_of: datetime = Field(..., description="Vote timestamp used as the DFI reference point")
@@ -860,7 +878,7 @@ def _per_event_response_z_wiersza(row, result, target, ref_time) -> "PerEventFat
         weights=FatigueWeightsResponse(**result.weights),
         config_version=row.config_version,
         computed_at=row.computed_at,
-        formula=FatigueEngine.FORMULA,
+        formula=FatigueEngine.FORMULA_PER_EVENT,
         mode=result.mode,
         # Cel opisujemy z ZAPISANEGO wejścia, nie z obiektu, który przyszedł ze źródła
         # przy tym wywołaniu. Do 10.09 szły tu `target.id` i `target.title` z surowego
@@ -904,7 +922,7 @@ def _per_event_response(result, target, ref_time, persisted: Optional[bool]) -> 
         weights=FatigueWeightsResponse(**result.weights),
         config_version=result.config_version,
         computed_at=result.computed_at,
-        formula=FatigueEngine.FORMULA,
+        formula=FatigueEngine.FORMULA_PER_EVENT,
         mode=result.mode,
         target_proposal_id=target.id,
         target_proposal_title=(getattr(target, "title", None) or ""),

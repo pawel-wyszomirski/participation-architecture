@@ -92,3 +92,78 @@ def test_panel_pokazuje_werdykt_kwalifikacji():
     assert "PRIMARY_ELIGIBLE" in tresc, "panel nie rozpoznaje werdyktu pierwszorzednego"
     # Sekcja musi byc SKLADANA, nie tylko zdefiniowana - funkcja bez wywolania nic nie pokaze.
     assert "renderEligibility(data)" in tresc, "sekcja werdyktu nie jest wstawiana do panelu"
+
+
+def test_panel_nie_przedstawia_novelty_jako_czesci_wyniku():
+    """Panel widzi uczestnik PRZED wypełnieniem ankiety - i czyta go sam.
+
+    Od config 1.8.0 (D1=B) `novelty` jest liczona i pokazywana, ale nie wchodzi do
+    `fatigue_score`. Pasek bez oznaczenia i wiersz „5%" w tabeli wag mówiłyby czytającemu,
+    że składnik przesunął jego liczbę - a to nieprawda. To ta sama klasa błędu, którą
+    projekt naprawia w kodzie: etykieta niezgodna z faktem.
+
+    Test jest statyczny (czyta stronę i konfigurację), więc chodzi bez przeglądarki.
+    """
+    html = DASHBOARD.read_text(encoding="utf-8")
+    config = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+    pierwszorzedne = set(config["primary_components_per_event"])
+    poza = set(config["weights"]) - pierwszorzedne
+    assert poza, "test straciłby moc: każdy składnik wchodzi do wyniku"
+
+    for skladnik in poza:
+        wpis = re.search(r'\{\s*key:\s*"%s".*?\}' % skladnik, html, re.S)
+        assert wpis, f"składnik {skladnik} zniknął z indeksu panelu"
+        assert "excluded: true" in wpis.group(0), (
+            f"{skladnik} nie wchodzi do wyniku, a panel pokazuje go jak każdy inny "
+            "składnik - czytający ma prawo sądzić, że przesunął jego liczbę")
+
+    # Tabela wag ma liczyć udziały wobec składników pierwszorzędnych, a nie wobec 1,0.
+    assert "not counted" in html, (
+        "tabela wag nie oznacza składnika spoza wyniku")
+    assert re.search(r"primary\s*\.indexOf|indexOf\(r\[0\]\)", html), (
+        "tabela wag nie pyta o zakres pomiaru - pokaże wagę surową dla każdego składnika")
+
+
+def test_wzor_na_panelu_opisuje_wariant_per_event():
+    """Panel per-event pokazuje wzór, którym policzono TĘ liczbę.
+
+    API wysyłało wzór wariantu ekosystemowego na obu ścieżkach, więc po zmianie zakresu
+    uczestnik zobaczyłby pięcioskładnikowy wzór pod czteroskładnikowym wynikiem."""
+    silnik = ENGINE.read_text(encoding="utf-8")
+    main = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+
+    assert "FORMULA_PER_EVENT" in silnik, "brak wzoru wariantu per-event"
+    wzor = re.search(r"FORMULA_PER_EVENT = \(\s*(.*?)\)\s*\n", silnik, re.S).group(1)
+    assert "novelty" not in wzor, "wzór per-event nadal wymienia novelty"
+    assert "0.95" in wzor, "wzór per-event nie pokazuje dzielnika"
+
+    # Każda ścieżka per-event w API musi wysyłać ten wzór, nie ekosystemowy.
+    per_event = re.findall(r"formula=FatigueEngine\.(\w+),\s*\n\s*mode=", main)
+    assert per_event, "nie znaleziono ścieżek per-event w API"
+    assert set(per_event) == {"FORMULA_PER_EVENT"}, per_event
+
+
+def test_panel_dostaje_zakres_z_ODPOWIEDZI_nie_zaklada_go():
+    """Tabela wag musi liczyć udziały wobec zakresu z odpowiedzi API.
+
+    Wartość domyślna „wszystkie składniki" jest w kodzie po to, żeby stary zapis nie
+    wywracał strony - ale gdyby wywołanie nie przekazało zakresu, panel LICZYŁBY z niej
+    zawsze i pokazywał 5% przy składniku spoza wyniku. Tę pomyłkę widać wyłącznie
+    w miejscu wywołania, nie w samej funkcji."""
+    html = DASHBOARD.read_text(encoding="utf-8")
+    # Pierwsza wersja tego warunku trafiała w DEFINICJĘ funkcji (ma parametr o tej nazwie)
+    # i przechodziła niezależnie od tego, co robi wywołanie. Szukamy wywołania: argumenty
+    # pochodzące z odpowiedzi API, czyli z `data.`.
+    wywolania = [m for m in re.findall(r"renderHowCalculated\((.*?)\)[,;]", html, re.S)
+                 if "data." in m]
+    assert wywolania, "panel nie renderuje tabeli wag z danych odpowiedzi"
+    assert all("primary_components" in w for w in wywolania), (
+        f"wywołanie nie przekazuje zakresu pomiaru - tabela pokaże wagi surowe: {wywolania}")
+
+
+def test_pasek_skladnika_spoza_wyniku_jest_oznaczony_na_stronie():
+    """Sama flaga w indeksie nic nie zmienia, dopóki nie trafi do renderowanego wiersza."""
+    html = DASHBOARD.read_text(encoding="utf-8")
+    assert "spec.excluded" in html, "flaga `excluded` nie dociera do paska"
+    assert "dfi-bar-excluded" in html, "brak widocznego oznaczenia przy pasku"
+    assert ".dfi-bar-excluded {" in html, "oznaczenie nie ma stylu - wyjdzie jako goły tekst"

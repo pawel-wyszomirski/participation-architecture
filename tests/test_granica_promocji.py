@@ -67,6 +67,61 @@ def zmierz(taxonomy_state=HEALTHY_COMPLETE):
 # Brama przepuszcza dowiedzione, odrzuca resztę
 # ---------------------------------------------------------------------------
 
+def test_brama_i_silnik_zgadzaja_sie_co_do_ZAKRESU_skladnikow():
+    """Pomiar, który silnik uznał za pierwszorzędny, ma przejść bramę. Bez wyjątków.
+
+    POWÓD POWSTANIA - regresja zmierzona 11.09, nie hipoteza. Po wyjęciu `novelty`
+    z DFI-core (D1=B) smoke na 40 delegatach z ramy 3121 dał **23 PRIMARY_ELIGIBLE
+    i 0 przepuszczonych przez tę bramę**: silnik przestał dyskwalifikować za niepełną
+    podstawę `novelty`, a brama trzymała własną, bezwarunkową kopię tej reguły.
+
+    To jest *recursive semantic regression* z recenzji 78179 - naprawa na jednej warstwie,
+    a warstwę niżej druga kopia reguły odtwarza stan sprzed naprawy. Ten warunek jest
+    czerwoną linią między warstwami: rozjazd werdyktów ma wywalać test, nie cichnąć
+    w statystyce smoke'u.
+
+    Odtworzony jest kształt z terenu: kategoria celu nieznana u 37 z 40 zbadanych."""
+    eng = FatigueEngine("fatigue_config.yaml")
+    cel = obs("target", 0, kategoria="")          # jak u większości delegatów w polu
+    wynik = eng.compute_per_event(
+        address="0xA", target_proposal=cel, voted_history=[cel, obs("h1", 10)],
+        now=datetime.fromtimestamp(T, timezone.utc),
+        ecosystem_proposals=[obs("eco-1", 1)],
+        source_receipts=pokwitowania())
+
+    assert wynik.identity.eligibility == "PRIMARY_ELIGIBLE", wynik.identity.eligibility_reasons
+    assert wynik.identity.novelty_basis not in ("COMPLETE", ""), (
+        "test stracił moc: podstawa novelty jest pełna, więc nie sprawdza rozjazdu")
+
+    p = promote_to_primary(wynik.identity.manifest(), {"fatigue_score": wynik.fatigue_score})
+    assert p.dopuszczony, (
+        f"silnik: PRIMARY_ELIGIBLE, brama: odmowa - {p.powody}")
+    assert p.wiersz["primary_components"], "zbiór analityczny nie niesie zakresu pomiaru"
+
+
+def test_stary_manifest_bez_zakresu_nadal_podlega_zakazowi_novelty():
+    """Manifest bez `primary_components` pochodzi sprzed D1=B, czyli z czasu, gdy `novelty`
+    BYŁA składnikiem wyniku. Brama ma go wtedy odrzucić - fail-closed.
+
+    Bez tego warunku naprawa rozjazdu zamieniłaby się w ciche wpuszczenie starych pomiarów
+    liczonych inną regułą."""
+    eng = FatigueEngine("fatigue_config.yaml")
+    cel = obs("target", 0, kategoria="")
+    wynik = eng.compute_per_event(
+        address="0xA", target_proposal=cel, voted_history=[cel, obs("h1", 10)],
+        now=datetime.fromtimestamp(T, timezone.utc),
+        ecosystem_proposals=[obs("eco-1", 1)],
+        source_receipts=pokwitowania())
+
+    stary = dict(wynik.identity.manifest())
+    stary.pop("primary_components", None)          # kształt manifestu sprzed 1.8.0
+    p = promote_to_primary(stary, {"fatigue_score": wynik.fatigue_score})
+
+    assert not p.dopuszczony
+    assert any("novelty" in x for x in p.powody), p.powody
+    assert p.do_wrazliwosci, "odrzucony pomiar ma zostać materiałem analizy wrażliwości"
+
+
 def test_pomiar_kwalifikowany_przechodzi_brame():
     """Pierwsze świadomie: brama bez tego testu byłaby implementacją „odrzuć wszystko"."""
     r = zmierz()
@@ -112,15 +167,33 @@ def test_brak_manifestu_to_odmowa_nie_wyjatek():
 def test_brama_sprawdza_podstawy_skladnikow_jeszcze_raz():
     """Manifest ze starszej wersji instrumentu nie zna dzisiejszych reguł.
 
-    Brama jest ostatnim miejscem przed analizą, więc podstawy `novelty` i okien sprawdza
+    Brama jest ostatnim miejscem przed analizą, więc podstawy składników sprawdza
     ponownie - nawet gdy werdykt w manifeście mówi `PRIMARY_ELIGIBLE`.
-    """
+
+    ZMIANA OD 1.8.0 (D1=B): powtórne sprawdzenie `novelty` pyta najpierw o ZAKRES pomiaru.
+    Do tej wersji zakaz był bezwarunkowy i to on powodował, że po wyjęciu składnika z
+    DFI-core brama odrzucała 23 z 23 pomiarów, które silnik uznał za pierwszorzędne.
+    Zakaz obowiązuje tam, gdzie `novelty` faktycznie buduje wynik - a więc dla manifestów
+    sprzed decyzji (bez pola) i dla instrumentu z przywróconym składnikiem.
+
+    Warunek o oknach ekspozycji zostaje bez zmian: te wchodzą do `concurrency`, czyli do
+    składnika pierwszorzędnego."""
+    # novelty: zakaz pyta o zakres
     manifest = zmierz().identity.manifest()
     manifest["novelty_basis"] = "HISTORY_COVERAGE_INCOMPLETE"
+    manifest["primary_components"] = ["volume", "concurrency", "burstiness",
+                                      "reading_time", "novelty"]
     p = promote_to_primary(manifest)
     assert not p.dopuszczony
     assert any("novelty" in x for x in p.powody)
 
+    poza_zakresem = zmierz().identity.manifest()
+    poza_zakresem["novelty_basis"] = "HISTORY_COVERAGE_INCOMPLETE"
+    assert "novelty" not in poza_zakresem["primary_components"]
+    assert promote_to_primary(poza_zakresem).dopuszczony, (
+        "składnik spoza zakresu nie ma prawa odbierać promocji pomiarowi")
+
+    # okna ekspozycji: zakaz bezwarunkowy, bo niosą `concurrency`
     manifest2 = zmierz().identity.manifest()
     manifest2["prepared_input"]["ecosystem"][0]["window_basis"] = "ESTIMATED"
     p2 = promote_to_primary(manifest2)
