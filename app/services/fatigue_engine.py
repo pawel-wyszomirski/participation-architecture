@@ -44,6 +44,7 @@ Design Principles
 
 import hashlib
 import json
+import datetime as dt
 from functools import lru_cache
 import os
 import re
@@ -224,6 +225,76 @@ def _runtime_digest() -> str:
     dane = dict(_wersje_zaleznosci())
     dane["build_image_digest"] = os.environ.get("PA_BUILD_DIGEST", "")
     return "rt:" + _sha(json.dumps(dane, sort_keys=True))[:16]
+
+
+# EKSPORT MANIFESTOW APPEND-ONLY (plan domkniecia z 11.09, P8, sekcja 9 punkt 4).
+#
+# Baza pomiarow zyje dzis WEWNATRZ obrazu kontenera (`pa/DEPLOY-prywatny.md`): Dockerfile
+# robi `COPY . .`, wiec kazde `docker build` zapieka plik z drzewa roboczego, a zapisy
+# runtime gina przy wdrozeniu. Dlatego dwoch pomiarow Fazy B nie da sie odtworzyc.
+#
+# Eksport wierszowy jest kopia POZA baza i poza obrazem, a zapisany manifest wystarcza do
+# odtworzenia pelnego wyniku bez sieci (`replay`). Format wierszowy wybrany swiadomie:
+# uszkodzenie ogona pliku - przerwany zapis, pelny dysk - zostawia wczesniejsze wiersze
+# czytelnymi, w odroznieniu od jednego duzego dokumentu JSON.
+KATALOG_MANIFESTOW = Path(__file__).resolve().parents[2] / "data" / "manifests"
+
+
+def _plik_manifestow(katalog: Path, znacznik: Optional[str] = None) -> Path:
+    """Jeden plik na miesiac - kopia zapasowa nie rosnie w jeden nierozdzielny blok."""
+    data = (znacznik or dt.datetime.now(dt.timezone.utc).isoformat())[:7]
+    return katalog / f"pomiary-{data}.jsonl"
+
+
+def dopisz_manifest(manifest: Dict[str, Any], katalog: Optional[Path] = None) -> bool:
+    """Dopisuje manifest pomiaru. Zwraca `True`, gdy wiersz doszedl.
+
+    Idempotentny po `measurement_id`: rejestracja jest idempotentna, wiec eksport tez musi
+    byc - inaczej liczba wierszy przestalaby cokolwiek znaczyc. Blad zapisu NIE przerywa
+    pomiaru: eksport jest zabezpieczeniem, a nie warunkiem policzenia liczby.
+    """
+    katalog = Path(katalog or KATALOG_MANIFESTOW)
+    mid = str(manifest.get("measurement_id") or "")
+    if not mid:
+        return False
+    try:
+        katalog.mkdir(parents=True, exist_ok=True)
+        plik = _plik_manifestow(katalog, str(manifest.get("computed_at") or ""))
+        if plik.exists():
+            with plik.open(encoding="utf-8") as f:
+                for linia in f:
+                    if f'"measurement_id": "{mid}"' in linia or f'"{mid}"' in linia:
+                        return False
+        with plik.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(manifest, sort_keys=True, ensure_ascii=False) + "\n")
+        return True
+    except OSError as e:  # noqa: BLE001
+        print(f"⚠ manifest nie zapisany: {e}")
+        return False
+
+
+def odczytaj_manifesty(katalog: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """Wszystkie zapisane manifesty. Uszkodzony wiersz jest POMIJANY, nie wywraca odczytu.
+
+    Jeden zepsuty wiersz to jeden utracony pomiar - nie caly plik i nie cala kopia.
+    """
+    katalog = Path(katalog or KATALOG_MANIFESTOW)
+    out: List[Dict[str, Any]] = []
+    if not katalog.exists():
+        return out
+    for plik in sorted(katalog.glob("pomiary-*.jsonl")):
+        try:
+            for linia in plik.read_text(encoding="utf-8").splitlines():
+                linia = linia.strip()
+                if not linia:
+                    continue
+                try:
+                    out.append(json.loads(linia))
+                except ValueError:
+                    continue
+        except OSError:
+            continue
+    return out
 
 
 def _wersja_polityki_kwalifikacji(config: Dict[str, Any]) -> str:

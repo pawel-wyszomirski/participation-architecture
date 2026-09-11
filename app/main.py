@@ -26,6 +26,7 @@ from app.services.rule_engine import (
 from app.services.fatigue_engine import (
     FatigueEngine, InstrumentInvalid, merge_stages, reconcile_observations,
     scal_ekspozycje,
+    dopisz_manifest,
 )
 from app.services.arbdata_client import ArbdataClient
 from app.services.governor_client import GovernorClient
@@ -1005,6 +1006,12 @@ async def register_per_event_fatigue(
     db.add(snapshot)
     try:
         db.commit()
+        # KOPIA POZA BAZA (P8, plan z 11.09). Baza pomiarow zyla w obrazie kontenera, wiec
+        # przebudowa kasowala zapisy - dlatego dwoch pomiarow Fazy B nie da sie odtworzyc.
+        # Manifest dopisany wierszem wystarcza do odtworzenia pelnego wyniku bez sieci.
+        # Blad zapisu kopii NIE przerywa rejestracji: to zabezpieczenie, nie warunek pomiaru
+        # (inaczej awaria dysku zabralaby mozliwosc zmierzenia czegokolwiek).
+        dopisz_manifest(result.identity.manifest())
     except IntegrityError:
         # Wyścig dwóch równoległych rejestracji: unikalny indeks rozstrzyga, a ta
         # gałąź przechodzi DOKŁADNIE tą samą drogą co ponowne wywołanie wyżej

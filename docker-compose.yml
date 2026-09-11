@@ -32,5 +32,28 @@ services:
       db:
         condition: service_healthy
 
+  # Wariant badawczy (doktorat): SQLite na WOLUMENIE, nie w obrazie.
+  #
+  # Do 2026-09-11 baza pomiarow lezala w /app/participation.db wewnatrz obrazu, bo
+  # Dockerfile robi `COPY . .`. Kazde `docker build` zapiekalo plik z drzewa roboczego,
+  # wiec zapisy runtime gynely przy wdrozeniu - dlatego dwoch pomiarow Fazy B nie da sie
+  # odtworzyc. Wolumen `pa_data` trzyma baze POZA obrazem, a `data/manifests` dostaje
+  # kopie append-only kazdego zarejestrowanego pomiaru.
+  api-badawcze:
+    build: .
+    container_name: pa-api-badawcze
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "127.0.0.1:8001:8000"
+    environment:
+      DATABASE_URL: sqlite:////app/data/participation.db
+    volumes:
+      - pa_data:/app/data
+    profiles: ["badawcze"]
+
 volumes:
   postgres_data:
+  # Pomiary doktoratu. `docker compose down` BEZ `-v` ich nie usuwa; `-v` usuwa,
+  # dlatego kopia append-only manifestow lezy w tym samym wolumenie i jest kopiowana
+  # poza niego skryptem (patrz scripts/kopia-pomiarow.sh).
+  pa_data:

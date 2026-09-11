@@ -1,0 +1,23 @@
+# Co NIE MOZE trafic do obrazu (P8, plan domkniecia z 2026-09-11).
+#
+# Dockerfile robi `COPY . .`, wiec kazdy plik z drzewa roboczego jest zapiekany w obraz.
+# Dla bazy pomiarow znaczylo to dwie rzeczy naraz: `docker build` nadpisywal dane produkcji
+# snapshotem z repozytorium, a zapisy runtime ginely przy kazdym wdrozeniu. Dlatego dwoch
+# pomiarow Fazy B nie da sie odtworzyc (rejestr pomiarow, `uwaga_trwalosc`).
+participation.db
+participation.db-journal
+participation.db-wal
+participation.db-shm
+data/
+*.sqlite
+*.sqlite3
+
+# Smieci, ktore tylko puchna obraz
+.git/
+.pytest_cache/
+__pycache__/
+*.pyc
+.venv/
+venv/
+tests/
+korpus-*.json

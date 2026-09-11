@@ -475,3 +475,35 @@ def test_inny_blad_integralnosci_nie_udaje_idempotencji(client, monkeypatch):
             client.post(f"/delegates/{ADDR}/per-event-fatigue")
     finally:
         main.app.dependency_overrides.pop(main.get_db, None)
+
+
+def test_rejestracja_dopisuje_manifest_poza_baze(client, tmp_path, monkeypatch):
+    """P8: kazdy zarejestrowany pomiar dostaje kopie append-only poza baza.
+
+    Baza pomiarow zyla w obrazie kontenera, wiec przebudowa kasowala zapisy - dlatego
+    dwoch pomiarow Fazy B nie da sie odtworzyc. Kopia wierszowa wystarcza do odtworzenia
+    pelnego wyniku bez sieci, wiec utrata bazy przestaje byc utrata danych badawczych.
+    """
+    from app.services.fatigue_engine import FatigueEngine, odczytaj_manifesty
+    import app.services.fatigue_engine as silnik_modul
+
+    katalog = tmp_path / "manifests"
+    monkeypatch.setattr(silnik_modul, "KATALOG_MANIFESTOW", katalog)
+
+    odp = client.post(f"/delegates/{ADDR}/per-event-fatigue")
+    assert odp.status_code == 200, odp.text
+    mid = odp.json()["measurement_id"]
+
+    wpisy = odczytaj_manifesty(katalog)
+    assert [w["measurement_id"] for w in wpisy] == [mid], (
+        "rejestracja nie dopisala manifestu poza baze")
+
+    # Kopia musi WYSTARCZAC: odtworzenie bez bazy i bez sieci daje ten sam pelny wynik.
+    odtworzony = FatigueEngine.replay(wpisy[0])
+    assert odtworzony.identity.measurement_id == mid
+    assert odtworzony.fatigue_score == odp.json()["fatigue_score"]
+
+    # Ponowny POST jest idempotentny, wiec eksport tez - inaczej liczba wierszy
+    # przestalaby cokolwiek znaczyc.
+    client.post(f"/delegates/{ADDR}/per-event-fatigue")
+    assert len(odczytaj_manifesty(katalog)) == 1
