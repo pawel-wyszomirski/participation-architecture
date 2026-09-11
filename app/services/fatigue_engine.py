@@ -53,7 +53,7 @@ import yaml
 import logging
 from types import SimpleNamespace
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Sequence, Tuple
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 
@@ -449,6 +449,14 @@ class MeasurementIdentity:
     novelty_basis: str = ""                      # NOVELTY_* - patrz staly wyzej
     category_coverage: Dict[str, Any] = field(default_factory=dict)
     taxonomy_snapshot_id: str = ""               # zamrozony zbior kategorii tego pomiaru
+    # ZAKRES POMIARU PIERWSZORZEDNEGO (D1=B, 11.09). Bez tego pola rejestr nie
+    # odpowiadalby na pytanie, ktore skladniki zbudowaly liczbe wchodzaca do H_val -
+    # a to jest pierwsze pytanie recenzenta o kazdy wynik konfirmacyjny.
+    primary_components: List[str] = field(default_factory=list)
+    # Analiza wrazliwosci: ta sama chwila policzona PELNA piatka skladnikow.
+    # Stoi w manifescie, a nie w osobnym pliku, bo inaczej rozjechalaby sie z pomiarem
+    # przy kazdym przeliczeniu - to ten sam blad, co trzymanie wyniku poza rejestrem.
+    sensitivity_score: Optional[float] = None
     measurement_id: str = ""                     # digest of the whole manifest
 
     def manifest(self) -> Dict[str, Any]:
@@ -485,9 +493,16 @@ class FatigueEngine:
     Pass `now` explicitly in compute() to enable reproducible testing.
     """
 
+    # Wariant ekosystemowy (wydanie grantowe) - NIETKNIĘTY.
     FORMULA = (
         "DFI = (0.40×volume + 0.25×concurrency + 0.20×burstiness "
         "+ 0.10×reading_time + 0.05×novelty) × 100"
+    )
+    # Wariant per-event (pomiar doktoratu) od 1.8.0 - zakres z
+    # `primary_components_per_event`, dzielnik = suma ich wag.
+    FORMULA_PER_EVENT = (
+        "DFI-core = (0.40×volume + 0.25×concurrency + 0.20×burstiness "
+        "+ 0.10×reading_time) × 100 / 0.95"
     )
 
     # Every key the frozen instrument needs. A config missing any of them is
@@ -582,13 +597,34 @@ class FatigueEngine:
                 v = ref.get(k)
                 if not isinstance(v, (int, float)) or isinstance(v, bool) or v <= 0:
                     problems.append(f"{section}.{k} missing or not a positive number")
-        thr = config.get("thresholds")
-        if not isinstance(thr, dict):
-            problems.append("missing thresholds")
-        else:
+        for section in ("thresholds", "thresholds_per_event"):
+            thr = config.get(section)
+            if not isinstance(thr, dict):
+                problems.append(f"missing {section}")
+                continue
             for k in cls.REQUIRED_THRESHOLDS:
                 if not isinstance(thr.get(k), (int, float)) or isinstance(thr.get(k), bool):
-                    problems.append(f"threshold {k} missing or not numeric")
+                    problems.append(f"{section}.{k} missing or not numeric")
+        # Zakres pomiaru pierwszorzędnego jest CZĘŚCIĄ INSTRUMENTU (D1=B, 11.09), więc
+        # brak tej listy albo nazwa składnika, którego instrument nie liczy, to
+        # INSTRUMENT_INVALID - nie "weź wszystkie pięć". Domyślna wartość wpisana tutaj
+        # sprawiłaby, że wdrożenie starego pliku konfiguracji po cichu przywróciłoby
+        # `novelty` do H_val, a to jest dokładnie ta klasa błędu, którą zamyka P10.
+        primary = config.get("primary_components_per_event")
+        if not isinstance(primary, list) or not primary:
+            problems.append("missing primary_components_per_event (non-empty list)")
+        else:
+            nieznane = [c for c in primary if c not in cls.REQUIRED_WEIGHTS]
+            if nieznane:
+                problems.append(
+                    "primary_components_per_event names components the instrument does "
+                    f"not compute: {', '.join(map(str, nieznane))}")
+            elif len(set(primary)) != len(primary):
+                problems.append("primary_components_per_event has duplicates")
+            elif isinstance(weights, dict) and not problems:
+                suma = sum(float(weights[c]) for c in primary)
+                if suma <= 0:
+                    problems.append("primary_components_per_event weights sum to zero")
         return problems
 
     # ------------------------------------------------------------------
@@ -824,8 +860,20 @@ class FatigueEngine:
             novelty=novelty,
         )
 
-        fatigue_score = self._aggregate_score(components, weights)
-        status = self._determine_status(fatigue_score)
+        # DFI-core (D1=B, 11.09): pomiar PIERWSZORZĘDNY liczy się bez `novelty`.
+        # Pełna piątka liczy się dalej i jedzie obok jako prerejestrowana analiza
+        # wrażliwości - oba pytania mają zostać sprawdzalne, więc obie liczby są
+        # zapisywane. Nie jest to "dwie wersje wyniku": `fatigue_score` jest wynikiem
+        # pomiaru, `sensitivity_score` odpowiada wyłącznie na pytanie, co by było,
+        # gdyby składnik dało się zmierzyć w terenie.
+        # Kanonizacja kolejności przy odczycie, nie przy użyciu: ta lista wchodzi do
+        # manifestu, więc przestawienie nazw w YAML-u nie ma prawa dać innej tożsamości
+        # pomiarowi liczonemu z tych samych składników.
+        wybor = set(self.config["primary_components_per_event"])
+        skladniki_pierwszorzedne = [c for c in self.REQUIRED_WEIGHTS if c in wybor]
+        fatigue_score = self._aggregate_score(components, weights, skladniki_pierwszorzedne)
+        status = self._determine_status(fatigue_score, "thresholds_per_event")
+        sensitivity_score = self._aggregate_score(components, weights)
 
         # Measurement identity (review point 4): THIS vote-event - its own
         # stage id plus the vote timestamp - bound to the instrument, the code
@@ -903,6 +951,12 @@ class FatigueEngine:
                                    if ecosystem_proposals is not None else ""),
             "canonical_input_digest": wejscie.digest(),
             "eligibility": eligibility,
+            # ZAKRES pomiaru pierwszorzędnego wchodzi do tożsamości jawnie (D1=B).
+            # Chroni go już `instrument_hash`, bo lista stoi w pliku konfiguracji - ale
+            # to ochrona przez okoliczność, nie przez kontrakt. Ten sam wynik liczony
+            # z innego zakresu składników musi mieć inną tożsamość, niezależnie od tego,
+            # skąd zakres przyszedł.
+            "primary_components": skladniki_pierwszorzedne,
         }
         identity = MeasurementIdentity(
             vote_event_id=vote_event_id,
@@ -950,6 +1004,8 @@ class FatigueEngine:
             novelty_basis=novelty_basis,
             category_coverage=category_coverage,
             taxonomy_snapshot_id=taxonomy_snapshot_id,
+            primary_components=skladniki_pierwszorzedne,
+            sensitivity_score=sensitivity_score,
             eligibility_policy_version=_wersja_polityki_kwalifikacji(self.config),
             runtime_digest=_runtime_digest(),
             build_image_digest=os.environ.get("PA_BUILD_DIGEST", ""),
@@ -1075,10 +1131,24 @@ class FatigueEngine:
         # P6: `novelty` policzona na czesciowym mianowniku albo bez znanej kategorii celu
         # nie jest pomiarem pierwszorzednym. Iloraz z jednego procenta sklasyfikowanych
         # decyzji opisuje ten procent i milczy o pozostalych dziewiecdziesieciu dziewieciu.
+        #
+        # OD 1.8.0 (D1=B) warunek DYSKWALIFIKUJE TYLKO WTEDY, gdy `novelty` jest skladnikiem
+        # pierwszorzednym. Jesli nie jest - jego podstawa idzie do NOTATKI, bo opisuje liczbe,
+        # ktora nie wchodzi do H_val, tylko do analizy wrazliwosci. To nie jest zlagodzenie
+        # bramki: zakres pomiaru zwezil sie decyzja badacza, a bramka pilnuje tego, co w tym
+        # zakresie zostalo. Przywrocenie `novelty` do `primary_components_per_event`
+        # NATYCHMIAST przywraca dyskwalifikacje - dlatego warunek pyta o zakres, zamiast
+        # zostac skasowany.
         if novelty_basis and novelty_basis not in NOVELTY_BASES_PRIMARY:
-            reasons.append(
+            powod_novelty = (
                 f"novelty basis {novelty_basis} - the component's denominator is partial "
                 "or the target category is unknown, so the value is not a primary measure")
+            if "novelty" in set(self.config.get("primary_components_per_event") or ()):
+                reasons.append(powod_novelty)
+            else:
+                notes.append(
+                    powod_novelty + " (component excluded from DFI-core by design decision "
+                    "of 2026-09-11; it enters the pre-registered sensitivity analysis only)")
         # P7: brak tozsamosci kodu to brak dowodu, nie pominieta metadana. Wynik traktowany
         # jako odtwarzalny musi wiedziec, JAKI artefakt go policzyl - inaczej dwa builda
         # staja sie nieodroznialne na warstwie tozsamosci.
@@ -1238,19 +1308,33 @@ class FatigueEngine:
 
     @staticmethod
     def _aggregate_score(
-        components: "FatigueComponents", weights: Dict[str, float]
+        components: "FatigueComponents", weights: Dict[str, float],
+        skladniki: Optional[Sequence[str]] = None,
     ) -> float:
         """Weighted aggregate of component scores -> DFI in [0, 100].
         Shared by compute() and compute_per_event() so the formula
-        lives in exactly one place."""
-        raw = (
-            weights["volume"]        * components.volume
-            + weights["concurrency"]  * components.concurrency
-            + weights["burstiness"]   * components.burstiness
-            + weights["reading_time"] * components.reading_time
-            + weights["novelty"]      * components.novelty
-        )
-        return round(min(raw * 100, 100.0), 1)
+        lives in exactly one place.
+
+        `skladniki` wybiera ZAKRES pomiaru (D1=B, 11.09). Suma wag wybranych
+        składników jest dzielnikiem, więc skala zostaje 0-100 niezależnie od
+        tego, ile składników wchodzi. Dzielnik jest stałą dodatnią: nie zmienia
+        RANG, czyli test H_val (Spearman) jest na niego obojętny.
+
+        Pominięcie parametru liczy pełną piątkę i dzieli przez 1,0 - wariant
+        ekosystemowy (wydanie grantowe) zachowuje się co do bitu tak jak przedtem.
+
+        Kolejność sumowania jest KANONICZNA (`REQUIRED_WEIGHTS`), nie taka, jak
+        w pliku konfiguracji. Suma zmiennoprzecinkowa zależy od kolejności, a wynik
+        pomiaru nie ma prawa zależeć od tego, w jakiej kolejności ktoś wypisał
+        składniki w YAML-u - to ta sama klasa błędu co permutacja historii."""
+        wybrane = (tuple(c for c in FatigueEngine.REQUIRED_WEIGHTS if c in set(skladniki))
+                   if skladniki is not None else FatigueEngine.REQUIRED_WEIGHTS)
+        dzielnik = sum(float(weights[c]) for c in wybrane)
+        if dzielnik <= 0:
+            raise InstrumentInvalid(
+                "INSTRUMENT_INVALID: primary components carry zero total weight")
+        raw = sum(float(weights[c]) * float(getattr(components, c)) for c in wybrane)
+        return round(min(raw * 100 / dzielnik, 100.0), 1)
 
     # ------------------------------------------------------------------
     # Metrics computation
@@ -1401,13 +1485,22 @@ class FatigueEngine:
     # Status mapping
     # ------------------------------------------------------------------
 
-    def _determine_status(self, score: float) -> str:
-        t = self.config.get("thresholds", {})
-        if score < t.get("low", 30):
+    def _determine_status(self, score: float, sekcja: str = "thresholds") -> str:
+        """Pasmo obciążenia. `sekcja` wybiera zestaw progów, bo od 1.8.0 wariant
+        per-event liczy na innej skali (DFI-core dzieli przez sumę wag składników
+        pierwszorzędnych) i te same liczby graniczne znaczyłyby na niej co innego.
+
+        Brak sekcji jest błędem instrumentu, nie powodem do zejścia na stare progi -
+        wartości domyślne przywróciłyby pasma wariantu ekosystemowego pomiarowi
+        doktoratu i nikt by tego nie zobaczył w wyniku."""
+        t = self.config.get(sekcja)
+        if not isinstance(t, dict):
+            raise InstrumentInvalid(f"INSTRUMENT_INVALID: missing {sekcja}")
+        if score < t["low"]:
             return "LOW"
-        elif score < t.get("moderate", 70):
+        elif score < t["moderate"]:
             return "MODERATE"
-        elif score < t.get("high", 85):
+        elif score < t["high"]:
             return "HIGH"
         return "CRITICAL"
 

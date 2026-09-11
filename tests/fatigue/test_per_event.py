@@ -87,7 +87,12 @@ def test_variance_from_novelty(engine, now):
     )
     assert novel.components.novelty == 1.0
     assert routine.components.novelty == 0.0
-    assert novel.fatigue_score > routine.fatigue_score
+    # Od config 1.8.0 (D1=B, 11.09) `novelty` nie wchodzi do DFI-core, więc różnica
+    # przenosi się na analizę wrażliwości. Składnik jest nadal LICZONY - warunki wyżej
+    # pilnują, że decyzja o zakresie nie zabrała go z pomiaru w ogóle.
+    assert novel.fatigue_score == routine.fatigue_score, (
+        "novelty wpływa na DFI-core - wróciła do składników pierwszorzędnych")
+    assert novel.identity.sensitivity_score > routine.identity.sensitivity_score
 
 
 def test_context_from_history(engine, now):

@@ -34,7 +34,11 @@ def test_remis_okien_dokladny_kontrprzyklad():
     assert first.identity.measurement_id == second.identity.measurement_id
     assert asdict(first) == asdict(second)
     assert first.metrics.voted_concurrent == 0
-    assert first.fatigue_score == 22.2
+    # Kotwice wartości: DFI-core na skali z dzielnikiem 0,95 (config 1.8.0, D1=B)
+    # i ta sama chwila policzona pełną piątką jako analiza wrażliwości. Do 1.7.0
+    # pierwsza z nich wynosiła 22,2 - czyli dokładnie tyle, ile dziś druga.
+    assert first.fatigue_score == 23.3
+    assert first.identity.sensitivity_score == 22.2
 
 
 def test_czas_rozne_znaczenie_rozne_id():

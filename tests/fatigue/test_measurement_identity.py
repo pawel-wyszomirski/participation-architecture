@@ -54,20 +54,27 @@ class Propozycja:
 BAZA = 1_780_000_000
 
 
-def zbuduj(kategorie_historii, kategoria_celu="treasury", domena="snapshot"):
-    """Cel i historia o STAŁYCH identyfikatorach - zmienne są tylko wartości kategorii."""
+def zbuduj(kategorie_historii, kategoria_celu="treasury", domena="snapshot",
+           odstepy_dni=None):
+    """Cel i historia o STAŁYCH identyfikatorach - zmienne są tylko WARTOŚCI pól.
+
+    `odstepy_dni` przesuwa chwile głosów przy niezmienionych `id`. Służy do
+    kontrprzykładu na składniku PIERWSZORZĘDNYM (volume/burstiness); kategorie
+    różnicują wyłącznie `novelty`, czyli od 1.8.0 sam wynik analizy wrażliwości.
+    """
     cel = Propozycja(
         id="prop-target", title="Authorize PGA", body="treść " * 300,
         start=BAZA - 600_000, end=BAZA + 100, voted_at=BAZA, created_at=BAZA - 700_000,
         category=kategoria_celu, native_proposal_id="0xtarget", source_domain=domena,
     )
+    przesuniecia = odstepy_dni or [i + 1 for i in range(len(kategorie_historii))]
     historia = [
         Propozycja(
             id=f"prop-{i}", title=f"Proposal {i}", body="słowo " * 200,
-            start=BAZA - (i + 1) * 86_400 - 500_000,
-            end=BAZA - (i + 1) * 86_400 + 100,
-            voted_at=BAZA - (i + 1) * 86_400,
-            created_at=BAZA - (i + 1) * 86_400 - 600_000,
+            start=BAZA - przesuniecia[i] * 86_400 - 500_000,
+            end=BAZA - przesuniecia[i] * 86_400 + 100,
+            voted_at=BAZA - przesuniecia[i] * 86_400,
+            created_at=BAZA - przesuniecia[i] * 86_400 - 600_000,
             category=k, native_proposal_id=f"0x{i:04x}",
         )
         for i, k in enumerate(kategorie_historii)
@@ -75,8 +82,9 @@ def zbuduj(kategorie_historii, kategoria_celu="treasury", domena="snapshot"):
     return cel, historia
 
 
-def zmierz(silnik, kategorie, ekosystem=None, domena="snapshot", stan_eko="HEALTHY_COMPLETE"):
-    cel, historia = zbuduj(kategorie, domena=domena)
+def zmierz(silnik, kategorie, ekosystem=None, domena="snapshot", stan_eko="HEALTHY_COMPLETE",
+           odstepy_dni=None):
+    cel, historia = zbuduj(kategorie, domena=domena, odstepy_dni=odstepy_dni)
     eko = ekosystem if ekosystem is not None else [Propozycja(id="eco-1", start=0, end=2_000_000_000)]
     pokwitowania = [
         {"source": s, "state": "HEALTHY_COMPLETE", "events": len(historia)}
@@ -101,14 +109,21 @@ def silnik():
 # --- I1: ta sama tożsamość znaczy ten sam wynik -----------------------------
 
 def test_rozne_wartosci_przy_tych_samych_identyfikatorach_daja_rozne_id(silnik):
-    """Kontrprzykład z 09.09: identyczne rekordy, inne kategorie, inny wynik.
+    """Kontrprzykład z 09.09: identyczne rekordy, inne wartości, inny wynik.
 
     Historia ma te same `id` i `native_proposal_id` w obu przebiegach - różni je
-    wyłącznie WARTOŚĆ pola `category`. Wynik jest jej funkcją przez składnik
-    `novelty`, więc jeden identyfikator na dwa wyniki jest kolizją, nie zaokrągleniem.
+    wyłącznie WARTOŚĆ pola `voted_at`, którą czytają `volume` i `burstiness`.
+    Jeden identyfikator na dwa wyniki jest kolizją, nie zaokrągleniem.
+
+    Kontrprzykład przeniesiony ze składnika `novelty` na składniki pierwszorzędne
+    (D1=B, 11.09). Poprzednia wersja różnicowała przebiegi kategoriami, więc od chwili
+    wyjęcia `novelty` z DFI-core obie strony dawały tę samą liczbę i test przestawał
+    mierzyć kolizję - wyłapał to własny warunek utraty mocy niżej, nie przegląd.
+    Wersja na kategoriach zostaje jako osobny test, bo tożsamość ma widzieć również
+    wejścia analizy wrażliwości.
     """
-    a = zmierz(silnik, ["treasury", "treasury", "protocol"])
-    b = zmierz(silnik, ["treasury", "protocol", "protocol"])
+    a = zmierz(silnik, ["treasury", "treasury", "protocol"], odstepy_dni=[1, 2, 3])
+    b = zmierz(silnik, ["treasury", "treasury", "protocol"], odstepy_dni=[1, 2, 25])
 
     assert a.fatigue_score != b.fatigue_score, (
         "test stracił moc: wejścia przestały różnić wynik, więc nie sprawdza już kolizji"
@@ -116,6 +131,28 @@ def test_rozne_wartosci_przy_tych_samych_identyfikatorach_daja_rozne_id(silnik):
     assert a.identity.measurement_id != b.identity.measurement_id, (
         f"kolizja: DFI {a.fatigue_score} i {b.fatigue_score} pod jednym "
         f"{a.identity.measurement_id}"
+    )
+
+
+def test_tozsamosc_widzi_wejscia_analizy_wrazliwosci(silnik):
+    """Ta sama chwila, inne kategorie historii: DFI-core jest identyczny (kategorie
+    go nie dotyczą od 1.8.0), ale `sensitivity_score` się różni - a skoro różni się
+    LICZBA ZAPISANA W MANIFEŚCIE, tożsamość musi to widzieć.
+
+    Bez tego warunku wyjęcie `novelty` z pomiaru pierwszorzędnego zabrałoby ochronę
+    tożsamości wszystkiemu, co zostało w analizie wrażliwości."""
+    a = zmierz(silnik, ["treasury", "treasury", "protocol"])
+    b = zmierz(silnik, ["treasury", "protocol", "protocol"])
+
+    assert a.fatigue_score == b.fatigue_score, (
+        "kategorie wpływają na DFI-core - `novelty` wróciło do składników pierwszorzędnych"
+    )
+    assert a.identity.sensitivity_score != b.identity.sensitivity_score, (
+        "test stracił moc: kategorie przestały różnić analizę wrażliwości"
+    )
+    assert a.identity.measurement_id != b.identity.measurement_id, (
+        f"kolizja: wrażliwość {a.identity.sensitivity_score} i "
+        f"{b.identity.sensitivity_score} pod jednym {a.identity.measurement_id}"
     )
 
 

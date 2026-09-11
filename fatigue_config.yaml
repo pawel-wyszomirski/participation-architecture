@@ -8,11 +8,16 @@
 #   - Reading Time: Fogg Ability reduction via cognitive cost (dissertation 2.2.1)
 #   - Novelty:      novel vs. routine cognitive processing cost (CLT, dissertation 1.4)
 #
-# Formula:
+# Formula (wariant ekosystemowy, `compute` - wydanie grantowe, NIETKNIĘTE):
 #   DFI = (w_volume×volume + w_concurrency×concurrency + w_burstiness×burstiness
 #          + w_reading_time×reading_time + w_novelty×novelty) × 100
+#
+# Formula (wariant per-event, `compute_per_event` - pomiar doktoratu, od 1.8.0):
+#   DFI-core = (w_volume×volume + w_concurrency×concurrency + w_burstiness×burstiness
+#               + w_reading_time×reading_time) × 100 / 0,95
+# Patrz `primary_components_per_event` niżej.
 
-version: "1.7.0"
+version: "1.8.0"
 
 # Component weights (must sum to 1.0)
 weights:
@@ -21,6 +26,33 @@ weights:
   burstiness: 0.20    # Spikes disrupt regularity needed for habit formation
   reading_time: 0.10  # Cognitive cost proxy via word count
   novelty: 0.05       # Novel domains require more cognitive effort than routine items
+
+# SKŁADNIKI POMIARU PIERWSZORZĘDNEGO W WARIANCIE PER-EVENT (D1=B, 11.09.2026).
+#
+# Rozstrzygnięcie należy do badacza, nie do instrumentu, i brzmi: `novelty` wychodzi
+# z pomiaru konfirmacyjnego, zostaje jako PREREJESTROWANA ANALIZA WRAŻLIWOŚCI.
+#
+# Dlaczego - pomiar wykonalności próby (P12, dziennik D38), próbka losowa z ramy 3121
+# adresów: `PRIMARY_ELIGIBLE` 0 z 15, a po wyjęciu `novelty` 8 z 15. Kategoria celu jest
+# nieznana u 15 z 15, mediana pokrycia historii taksonomią to 25,5%. Składnik nie jest
+# identyfikowalny w terenie przy standardzie kompletności, którego wymaga reszta kontraktu
+# (pre-confirmatory feasibility testing). Wkład `novelty` do wariancji DFI zmierzono
+# wcześniej na -0,1% (diagnostyka składników 28.08), więc pomiar nie traci informacji -
+# traci warunek, który zerował całą próbę.
+#
+# Dzielnik 0,95 to suma wag składników pierwszorzędnych. Przywraca skalę 0-100 i NIE
+# ZMIENIA RANG, bo jest stałą dodatnią - korelacja Spearmana, czyli test H_val, jest na
+# niego obojętna. Zapis przez dzielnik zamiast przeskalowanych wag jest świadomy: widać,
+# że to te same wagi bez jednego składnika, a nie nowy zestaw.
+#
+# Droga powrotna jest ZAMKNIĘTA. Uzupełnienie rejestru przez dostawcę NIE przywraca
+# `novelty` do pomiaru pierwszorzędnego w tej rundzie - inaczej decyzja o zakresie
+# zależałaby od tego, co akurat pokaże źródło, czyli byłaby rozluźnieniem bramki po
+# zobaczeniu wyniku. Zmiana wymaga nowej wersji instrumentu i wpisu w rejestrze pomiarów.
+#
+# Składnik jest nadal LICZONY i zapisywany (`novelty_basis`, `category_coverage`,
+# `sensitivity_score`) - analiza wrażliwości potrzebuje obu wartości.
+primary_components_per_event: [volume, concurrency, burstiness, reading_time]
 
 # Reference values: what counts as "normal" governance load
 # These are calibrated for Arbitrum-scale governance (adjust per DAO)
@@ -213,6 +245,25 @@ thresholds:
   moderate: 70   # 30-69: MODERATE - elevated but sustainable
   high: 85       # 70-84: HIGH     - significant cognitive burden
                  # 85+:   CRITICAL - highest observed workload band
+
+# PROGI WARIANTU PER-EVENT (od 1.8.0). Osobne, bo skala się zmieniła.
+#
+# „Progi nie przenoszą się automatycznie" jest twierdzeniem o ARYTMETYCE, nie ostrożnością:
+# DFI-core dzieli przez 0,95, więc ten sam poziom obciążenia daje liczbę wyższą o 5,26%.
+# Zostawienie 30/70/85 na nowej skali przesunęłoby ludzi w górę pasm bez żadnego powodu
+# merytorycznego - zmiana normalizacji udawałaby wzrost obciążenia.
+#
+# Przeliczenie: próg × 1/0,95. Warunek, który to wybiera: pasmo opisuje poziom obciążenia
+# z czterech składników, więc pomiar o `novelty` = 0 - a taki jest KAŻDY z piętnastu
+# zmierzonych w P12 - musi wylądować w tym samym paśmie, co na 1.7.0. Pomiary z `novelty`
+# powyżej zera zmieniają pasmo i to jest zamierzony skutek D1, nie efekt uboczny.
+#
+# Progi pozostają pasmami obciążenia i niczym więcej - nie są progiem klinicznym ani
+# statystycznym. Górne pasmo NIE orzeka wypalenia (punkt recenzji z 03.08, `cxclrfx`).
+thresholds_per_event:
+  low: 31.6      # 30 / 0,95
+  moderate: 73.7 # 70 / 0,95
+  high: 89.5     # 85 / 0,95
 
 # Keywords used to classify proposals as novel vs. routine for the novelty component.
 # Novel = genuinely new decision types requiring extra cognitive effort.
