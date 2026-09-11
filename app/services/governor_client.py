@@ -162,6 +162,11 @@ class GovernorClient:
         self.address = address
         self.endpoints = endpoints or RPC_ENDPOINTS
         self._endpoint: Optional[str] = None
+        # Dowód pokrycia OSTATNIEGO skanu zdarzeń (D5=A, 11.09): ile okien zakresu
+        # wysłano i ile z nich faktycznie odpowiedziało. Bez tego `COMPLETE` dla tego
+        # źródła było wnioskiem z „wywołanie nie rzuciło wyjątku", a nie dowodem objęcia
+        # zakresu bloków, o który pytaliśmy.
+        self._ostatni_skan: Dict[str, int] = {}
 
     async def _call(self, client: httpx.AsyncClient, method: str, params: list) -> dict:
         """One JSON-RPC call, falling back through endpoints on transport errors.
@@ -429,7 +434,7 @@ class GovernorClient:
 
         brama = asyncio.Semaphore(SCAN_CONCURRENCY)
 
-        async def jedno(zakres: "tuple[int, int]") -> List[dict]:
+        async def jedno(zakres: "tuple[int, int]") -> "tuple[List[dict], bool]":
             poczatek, koniec = zakres
             async with brama:
                 res = await self._call(client, "eth_getLogs", [{
@@ -438,12 +443,25 @@ class GovernorClient:
                     "fromBlock": hex(poczatek),
                     "toBlock": hex(koniec),
                 }])
-            return res.get("result") or []
+            # Odpowiedź BEZ pola `result` nie jest pustym wynikiem, tylko brakiem wyniku.
+            # `_call` rzuca, gdy żaden węzeł nie odpowiedział, ale węzeł potrafi zwrócić 200
+            # z ciałem bez `error` i bez `result` (zdarza się pośrednikom). Do 11.09
+            # `res.get("result") or []` sprowadzało oba stany do pustej listy, więc okno
+            # znikało po cichu, a skan wyglądał na kompletny. Drugi element mówi, czy to
+            # okno FAKTYCZNIE odpowiedziało - stąd bierze się dowód pokrycia zakresu.
+            wynik = res.get("result")
+            return (wynik or []), isinstance(wynik, list)
 
         wyniki = await asyncio.gather(*(jedno(z) for z in okna))
         out: List[dict] = []
-        for czesc in wyniki:
+        for czesc, _ in wyniki:
             out.extend(czesc)
+        self._ostatni_skan = {
+            "okien": len(okna),
+            "okien_z_odpowiedzia": sum(1 for _, ok in wyniki if ok),
+            "od_bloku": from_block,
+            "do_bloku": to_block,
+        }
         return out
 
     async def fetch_voted_proposals(self, address: str, days: int = 120,
@@ -484,14 +502,16 @@ class GovernorClient:
         stany: List[str] = []
         szczegoly: List[str] = []
         unknown_total = 0
+        dowody: List[dict] = []
         for rola, adres in GOVERNORS.items():
             klient = GovernorClient(address=adres, endpoints=self.endpoints)
             klient._endpoint = self._endpoint
-            glosy, stan, szczegol, unknown = await klient._votes_on_one_governor(
+            glosy, stan, szczegol, unknown, dowod = await klient._votes_on_one_governor(
                 address, days, limit, rola)
             wszystkie.extend(glosy)
             stany.append(stan)
             unknown_total += unknown
+            dowody.append(dowod)
             if szczegol:
                 szczegoly.append(f"{rola}: {szczegol}")
         wszystkie.sort(key=lambda p: p.voted_at or 0, reverse=True)
@@ -501,23 +521,36 @@ class GovernorClient:
         if stan == HEALTHY_EMPTY and wszystkie:
             stan = HEALTHY_COMPLETE
         oldest = min((p.cast_at for p in wszystkie if p.cast_at), default=None)
-        return wszystkie, SourceReceipt("governor", stan, events=len(wszystkie),
-                                        unknown_window=unknown_total, limit=limit,
-                                        detail="; ".join(szczegoly), oldest_cast_at=oldest)
+        # Dowód pokrycia dla ŹRÓDŁA to suma po obu kontraktach: historia delegata jest
+        # ich sumą, więc okno nieobjęte na jednym jest luką całego źródła.
+        okien = sum(d.get("okien", 0) for d in dowody)
+        z_odpowiedzia = sum(d.get("okien_z_odpowiedzia", 0) for d in dowody)
+        return wszystkie, SourceReceipt(
+            "governor", stan, events=len(wszystkie),
+            unknown_window=unknown_total, limit=limit,
+            detail="; ".join(szczegoly), oldest_cast_at=oldest,
+            page_count=okien,
+            record_count=sum(d.get("record_count", 0) for d in dowody),
+            limit_hit=any(d.get("limit_hit") for d in dowody) or z_odpowiedzia < okien)
 
     async def _votes_on_one_governor(self, address: str, days: int, limit: int,
-                                     rola: str) -> "tuple[List[Proposal], str, str, int]":
+                                     rola: str) -> "tuple[List[Proposal], str, str, int, dict]":
         """Jeden kontrakt. Wydzielone z `fetch_voted_proposals`, bo skan chodzi
         teraz po dwóch, a każdy ma własne `votingDelay()` i własny zbiór zdarzeń.
 
-        Zwraca (obserwacje, stan źródła, szczegół, liczba bez okna)."""
+        Zwraca (obserwacje, stan źródła, szczegół, liczba bez okna, DOWÓD POKRYCIA).
+
+        Dowód pokrycia (D5=A, 11.09) to `okien`, `okien_z_odpowiedzia`, `record_count`
+        i `limit_hit`. Bez niego `coverage_state` tego źródła powstawał z rzutu stanu
+        dostępności - czyli odpowiadał na pytanie „czy klient zadziałał", a nie „czy
+        objęliśmy zakres, o który pytaliśmy".""" 
         voter_topic = "0x" + "0" * 24 + address[2:].lower()
         async with httpx.AsyncClient() as client:
             try:
                 head = await self._block_number(client)
             except Exception as e:  # noqa: BLE001
                 print(f"❌ Governor RPC unreachable: {e}")
-                return [], UNAVAILABLE, f"RPC unreachable: {e}"[:200], 0
+                return [], UNAVAILABLE, f"RPC unreachable: {e}"[:200], 0, {}
             first = max(0, head - days * BLOCKS_PER_DAY)
 
             try:
@@ -525,10 +558,12 @@ class GovernorClient:
                     client, [TOPIC_VOTE_CAST, voter_topic], first, head)
             except Exception as e:  # noqa: BLE001
                 print(f"❌ Governor VoteCast scan failed: {e}")
-                return [], ERROR, f"VoteCast scan failed: {e}"[:200], 0
+                return [], ERROR, f"VoteCast scan failed: {e}"[:200], 0, {}
             if not vote_logs:
-                return [], HEALTHY_EMPTY, "", 0
+                return [], HEALTHY_EMPTY, "", 0, dict(self._ostatni_skan,
+                                                     record_count=0, limit_hit=False)
             truncated = len(vote_logs) > limit
+            vote_logs_surowe = list(vote_logs)     # liczba DOSTARCZONYCH rekordów
             vote_logs = vote_logs[-limit:]
 
             voted_ids = {_word(log["data"], 0) for log in vote_logs}
@@ -635,7 +670,19 @@ class GovernorClient:
                       f"known voting window (proposal created before the "
                       f"{days}-day scan) - excluded from concurrency")
             out.sort(key=lambda p: p.voted_at or 0, reverse=True)
-            if truncated:
+            # Dowód pokrycia zakresu (D5=A, 11.09): ile okien skanu wysłano i ile
+            # odpowiedziało. Okno bez odpowiedzi znaczy, że kawałek historii nie został
+            # obejrzany - a to jest luka w POKRYCIU, nie awaria dostępności.
+            dowod = dict(self._ostatni_skan)
+            dowod["record_count"] = len(vote_logs_surowe)
+            dowod["limit_hit"] = truncated
+            okien = dowod.get("okien", 0)
+            z_odpowiedzia = dowod.get("okien_z_odpowiedzia", 0)
+            if okien and z_odpowiedzia < okien:
+                stan = PARTIAL
+                szczegol = (f"{okien - z_odpowiedzia} z {okien} okien skanu nie zwróciło "
+                            "wyniku - zakres bloków nie został objęty w całości")
+            elif truncated:
                 stan, szczegol = TRUNCATED, f"more than {limit} VoteCast logs, oldest dropped"
             elif without_window or created_scan_failed:
                 stan = PARTIAL
@@ -643,7 +690,7 @@ class GovernorClient:
                     f"{without_window} of {len(out)} votes without a known voting window")
             else:
                 stan, szczegol = HEALTHY_COMPLETE, ""
-            return out, stan, szczegol, without_window
+            return out, stan, szczegol, without_window, dowod
 
 
 async def _demo(address: str) -> None:
