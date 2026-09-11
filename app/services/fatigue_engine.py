@@ -42,6 +42,7 @@ Design Principles
   Address parameter is forward-compatible for future per-delegate personalization.
 """
 
+import copy
 import hashlib
 import json
 import datetime as dt
@@ -1565,13 +1566,33 @@ class FatigueEngine:
     # ------------------------------------------------------------------
 
     def get_config_info(self) -> Dict[str, Any]:
-        return {
-            "version": self.version,
-            "formula": self.FORMULA,
-            "weights": self.config["weights"],
-            "reference_values": self.config["reference_values"],
-            "thresholds": self.config["thresholds"],
-        }
+        """Kontrakt pomiaru W CAŁOŚCI, nie ręcznie przepisana piątka pól.
+
+        Do dziś ta metoda wyliczała klucze z palca (`weights`, `reference_values`,
+        `thresholds`) i przez to NIE WIDZIAŁA niczego, co dołożyła nowsza wersja
+        instrumentu: `primary_components_per_event`, `thresholds_per_event`,
+        `reference_values_per_event`, `eligibility`, `stage_merge_window_days`
+        i obie listy słów kluczowych. `pa/sprawdz-wdrozenie.py` pytał produkcję
+        o zakres pomiaru i dostawał „brakuje" przy ZGODNYM numerze wersji - numer
+        jechał, a pola nie miały którędy wyjść.
+
+        Ta sama klasa błędu co schemat odpowiedzi gubiący pola manifestu (naprawiony
+        11.09): źródło ma wartość, warstwa ekspozycji niesie własną, ręcznie
+        utrzymywaną listę i rozjeżdża się przy pierwszej zmianie kontraktu. Dlatego
+        wyjściem jest KOPIA konfiguracji, a nie jej wybór - nowe pole instrumentu
+        jest widoczne z chwilą, w której powstaje, bez dotykania tego miejsca.
+
+        Kopia jest głęboka: wołający dostaje dane do obejrzenia, nie uchwyt do
+        zamrożonego instrumentu.
+
+        Wersja i formuły doklejane są NA KOŃCU i opisują KOD, nie plik - przy
+        kolizji nazw rozstrzygać ma to, czym silnik faktycznie liczy.
+        """
+        info: Dict[str, Any] = copy.deepcopy(self.config)
+        info["version"] = self.version
+        info["formula"] = self.FORMULA
+        info["formula_per_event"] = self.FORMULA_PER_EVENT
+        return info
 
 
 def _sha(text: str) -> str:
