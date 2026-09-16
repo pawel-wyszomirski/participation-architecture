@@ -86,3 +86,43 @@ async def test_powtorzony_rekord_nie_dubluje_zbioru():
                  _strona("proposals", [3, 4], None, 4)])
     rekordy, _, _ = await k._wszystkie_strony("q", {"filters": {}}, "proposals")
     assert len(rekordy) == 4, f"oczekiwano czterech unikatow, jest {len(rekordy)}"
+
+
+@pytest.mark.asyncio
+async def test_niepelne_GLOSY_tez_sa_urwaniem():
+    """Sprawdzenie krzyzowe z `pageInfo.count` obejmuje OBA zapytania, nie tylko propozycje.
+
+    Pierwsza wersja naprawy z 16.09 porownywala deklarowana liczbe wylacznie dla PROPOZYCJI,
+    a dla GLOSOW odrzucala ja podkreslnikiem - czyli ten sam mechanizm awarii, ktory commit
+    naprawial, zostawal otwarty o jedna sciezke dalej. Znalazl to przeglad kodu, nie test:
+    `fetch_voted_observations` testow nie mialo.
+
+    Rodzina bledu: poprawka jednej sciezki przy nietknietej drugiej.
+    """
+    strony = {}
+
+    class _Dwa(TallyClient):
+        def __init__(self):
+            self.url, self.key, self.headers = "", "x", {}
+            self.wywolania = 0
+
+        async def _post(self, query, variables):
+            self.wywolania += 1
+            # pierwsze zapytanie: propozycje komplet (2 z 2); drugie: glosy urwane (1 z 9)
+            if self.wywolania == 1:
+                return {"data": {"proposals": {
+                    "nodes": [{"id": "p1", "metadata": {"title": "A", "description": "x"},
+                               "start": {"timestamp": "2026-05-14T21:49:59Z"}},
+                              {"id": "p2", "metadata": {"title": "B", "description": "x"},
+                               "start": {"timestamp": "2026-05-14T21:49:59Z"}}],
+                    "pageInfo": {"lastCursor": None, "count": 2}}}}
+            return {"data": {"votes": {
+                "nodes": [{"id": "v1", "block": {"timestamp": "2026-05-20T10:00:00Z"},
+                           "proposal": {"id": "p1"}}],
+                "pageInfo": {"lastCursor": None, "count": 9}}}}
+
+    _, receipt = await _Dwa().fetch_voted_observations("0xA")
+    assert receipt.state == "TRUNCATED", (
+        f"jeden glos przy dziewieciu deklarowanych to zbior urwany, nie komplet: {receipt.state}")
+    assert "votes" in (receipt.detail or ""), (
+        f"powod ma nazwac, KTORE zapytanie jest niepelne: {receipt.detail!r}")

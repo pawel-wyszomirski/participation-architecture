@@ -234,7 +234,7 @@ class TallyClient:
             return [], SourceReceipt("tally", HEALTHY_EMPTY, detail="no proposals indexed")
 
         try:
-            vote_nodes, votes_urwane, _ = await self._wszystkie_strony(
+            vote_nodes, votes_urwane, votes_deklarowane = await self._wszystkie_strony(
                 _VOTES_QUERY,
                 {"filters": {"voter": voter, "proposalIds": list(props.keys())}}, "votes")
         except httpx.HTTPStatusError as e:
@@ -279,8 +279,18 @@ class TallyClient:
         # `len(vote_nodes) >= limit` opisywał świat, w którym serwer honoruje `limit` -
         # Tally oddaje najwyżej 20 na stronę, więc przy `limit=200` nie mógł trafić ani razu
         # i pokwitowanie mówiło HEALTHY_COMPLETE o jednej stronie wyniku.
-        urwane = prop_urwane or votes_urwane or (
-            prop_deklarowana is not None and len(nodes) < int(prop_deklarowana))
+        # SPRAWDZENIE KRZYŻOWE DLA OBU ZAPYTAŃ, NIE DLA JEDNEGO (przegląd kodu 16.09).
+        # Pierwsza wersja tej naprawy porównywała z `pageInfo.count` wyłącznie PROPOZYCJE,
+        # a deklarowaną liczbę GŁOSÓW odrzucała podkreślnikiem - czyli dokładnie ten sam
+        # mechanizm awarii, który commit naprawiał, zostawał otwarty o jedną ścieżkę dalej.
+        # Rodzina „poprawka jednej ścieżki przy nietkniętej drugiej"; tu znalazł ją przegląd,
+        # nie test, bo `fetch_voted_observations` testów nie miało.
+        def _niepelne(rekordy, deklarowane):
+            return deklarowane is not None and len(rekordy) < int(deklarowane)
+
+        urwane = (prop_urwane or votes_urwane
+                  or _niepelne(nodes, prop_deklarowana)
+                  or _niepelne(vote_nodes, votes_deklarowane))
         if not vote_nodes:
             state = HEALTHY_EMPTY
         elif urwane:
@@ -290,7 +300,9 @@ class TallyClient:
         detail = "; ".join(x for x in (
             f"{unknown} votes on proposals outside the fetched page" if unknown else "",
             (f"proposals: {len(nodes)} of {prop_deklarowana} declared"
-             if prop_deklarowana is not None and len(nodes) < int(prop_deklarowana) else ""),
+             if _niepelne(nodes, prop_deklarowana) else ""),
+            (f"votes: {len(vote_nodes)} of {votes_deklarowane} declared"
+             if _niepelne(vote_nodes, votes_deklarowane) else ""),
             "page ceiling hit while paging" if (prop_urwane or votes_urwane) else "",
             "index frozen since 2026-06-08 (known)",
         ) if x)
