@@ -970,9 +970,34 @@ class FatigueEngine:
         # Powiązania bez dowodu w tym, co WCHODZI DO LICZENIA: cel i zamrożona historia.
         # Sprawdzane na obserwacjach odtworzonych z przygotowanego wejścia, nie na surowych
         # obiektach - inaczej bramka pytałaby o inny zbiór niż ten, który opisuje pomiar.
+        # ZAKRES: TYLKO DECYZJE, Z KTORYCH LICZY SIE WYNIK (D1=A z 16.09).
+        #
+        # Do tej daty zbior powstawal z CALEJ historii delegata. Zglosil to Pawel jednym
+        # pytaniem: "NASA-TLX mierzy w krotkim okresie, a wywala nam decyzja sprzed 2 lat -
+        # to ma sens?". Nie ma. Zaden skladnik DFI-core nie siega dalej niz okno kontekstu:
+        # `proposals_7d` bierze tydzien, `proposals_30d` miesiac, `weekly_avg` liczy sie
+        # z tego samego miesiaca, `reading_time` z tresci celu, `concurrency` z ekspozycji
+        # w chwili glosu. Niepewne powiazanie sprzed roku nie moze zmienic ani jednej z tych
+        # liczb, a dyskwalifikowalo caly pomiar.
+        #
+        # To jest REGRESJA PO D1=B z 11.09, nie pierwotny zamysl: dopoki `novelty` liczylo
+        # udzial kategorii w calej wczesniejszej historii, szeroki zakres byl uzasadniony.
+        # Wyjecie `novelty` z pomiaru pierwszorzednego zawezilo zakres WYNIKU, a zakres
+        # bramki zostal szeroki.
+        #
+        # Skutek mierzalny (respondent z 16.09): skladniki liczyly z 5 decyzji, bramka
+        # sprawdzala 427, wszystkie 19 blokad lezalo 91-756 dni poza oknem. Im dluzsza
+        # historia delegata, tym pewniejsze odrzucenie - a badanie rekrutuje delegatow
+        # doswiadczonych. Rejestr: `zakres_bramki_kwalifikacji_2026_09_16`.
+        okno_wyniku = int((self.config.get("eligibility") or {}).get(
+            "context_window_days") or 30) * 86_400
+        granica_zakresu = now_ts - okno_wyniku
+        w_zakresie_wyniku = [target_proposal] + [
+            p for p in frozen_history if _czas_glosu(p) >= granica_zakresu
+        ]
         domysly = sorted({
             str(getattr(p, "link_basis", "") or LINK_NATIVE_ID)
-            for p in [target_proposal, *frozen_history]
+            for p in w_zakresie_wyniku
             if str(getattr(p, "link_basis", "") or LINK_NATIVE_ID) not in LINK_BASES_PRIMARY
         })
         # Okna EKSPOZYCJI bez dowodu (P4, sekcja 5.2). Wspolbieznosc liczy propozycje

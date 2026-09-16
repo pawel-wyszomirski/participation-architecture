@@ -216,3 +216,48 @@ def test_podstawa_powiazania_przechodzi_przez_wejscie_kanoniczne(silnik):
     wejscie = wynik.identity.manifest()["prepared_input"]
     assert wejscie["target"].get("link_basis"), "cel bez podstawy powiązania w wejściu"
     assert all(h.get("link_basis") for h in wejscie["history"]), "historia bez podstaw"
+
+
+# ---------------------------------------------------------------------------
+# Zakres bramki - D1=A z 2026-09-16
+# ---------------------------------------------------------------------------
+
+def test_niepewne_powiazanie_POZA_oknem_wyniku_nie_dyskwalifikuje(silnik):
+    """Decyzja sprzed roku nie wchodzi do żadnego składnika, więc nie może wywalić pomiaru.
+
+    Zgłoszenie Pawła (16.09): „NASA-TLX mierzy w krótkim okresie, a wywala nam decyzja
+    sprzed 2 lat - to ma sens?". Nie ma. `proposals_7d` bierze tydzień, `proposals_30d`
+    miesiąc, `weekly_avg` liczy się z tego samego miesiąca, `reading_time` z treści celu.
+    Niepewne powiązanie spoza okna nie zmienia ani jednej z tych liczb.
+
+    Pomiar na respondencie z 16.09: składniki liczyły z 5 decyzji, bramka sprawdzała 427,
+    wszystkie 19 blokad leżało 91-756 dni poza oknem.
+    """
+    cel = etap("governor:core:9", 0, domena="governor:core", body="")
+    stara_para = [etap("snap-old", 400, body=""), etap("snap-old-b", 395, body="")]
+    historia = merge_stages(stara_para + [cel])
+    assert any(e.link_basis == LINK_TITLE_HEURISTIC for e in historia), (
+        "materiał testu: stara para ma być powiązana bez dowodu")
+
+    wynik = silnik.compute_per_event(
+        address="0xA", target_proposal=cel, voted_history=historia, now=_teraz(),
+        ecosystem_proposals=[], source_receipts=pokwitowania())
+
+    assert not any("TITLE_HEURISTIC" in x for x in wynik.identity.eligibility_reasons), (
+        f"powiązanie spoza okna wyniku nie ma prawa dyskwalifikować: "
+        f"{wynik.identity.eligibility_reasons}")
+
+
+def test_niepewne_powiazanie_W_oknie_wyniku_nadal_dyskwalifikuje(silnik):
+    """Zawężenie zakresu nie jest zdjęciem bramki - w oknie wyniku działa jak przedtem.
+
+    Bez tego testu zmiana zakresu byłaby nie do odróżnienia od wyłączenia sprawdzenia.
+    """
+    cel = etap("governor:core:9", 0, domena="governor:core", body="")
+    historia = merge_stages([etap("snap-1", 10, body=""), etap("snap-1b", 8, body=""), cel])
+    wynik = silnik.compute_per_event(
+        address="0xA", target_proposal=cel, voted_history=historia, now=_teraz(),
+        ecosystem_proposals=[], source_receipts=pokwitowania())
+
+    assert any("TITLE_HEURISTIC" in x for x in wynik.identity.eligibility_reasons), (
+        f"powiązanie W oknie ma nadal dyskwalifikować: {wynik.identity.eligibility_reasons}")
