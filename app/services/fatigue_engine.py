@@ -377,6 +377,11 @@ class SourceReceipt:
     events: int = 0                   # records delivered
     detail: str = ""                  # human-readable cause (error text, limit)
     unknown_window: int = 0           # records without a usable voting window
+    # KIEDY, nie tylko ILE (16.09, D1=C). Sam licznik nie pozwala orzec, czy brak okna
+    # dotyczy danych wchodzących do wyniku. Znacznik najnowszego takiego rekordu pozwala:
+    # brak sprzed 117 dni nie zmienia składnika liczonego w oknie 7 i 30 dni.
+    # None znaczy „nie mierzono" i NIE jest dowodem, że wszystkie okna są znane.
+    unknown_window_newest_at: Optional[int] = None
     limit: Optional[int] = None       # page/scan limit the query ran with
     oldest_cast_at: Optional[int] = None  # oldest record delivered (epoch) - lets
                                           # eligibility tell whether a TRUNCATED
@@ -1205,8 +1210,42 @@ class FatigueEngine:
                     powod += f" (page limit {r.get('limit')} reached)"
                 if r.get("detail"):
                     powod += f" ({r['detail']})"
-                reasons.append(powod)
-                continue
+                # BRAK OKIEN SPOZA OKNA WYNIKU NIE DYSKWALIFIKUJE (16.09, D1=C).
+                #
+                # Zgłoszenie Pawła tego samego dnia, druga odsłona tej samej klasy co
+                # powiązanie etapów: pokwitowanie odrzucało pomiar z powodu niepełności,
+                # która nie może zmienić żadnej liczby. Okna głosowań z HISTORII delegata
+                # nie wchodzą do żadnego składnika - `concurrent_active` liczy się
+                # z `ecosystem_proposals`, osobnego źródła ekspozycji, a `volume`
+                # i `burstiness` liczą DATY głosów w oknie 7 i 30 dni.
+                #
+                # Przypadek, który to ujawnił: pomiar Manu blokował jeden głos z 2026-05-20,
+                # 117 dni przed mierzoną chwilą, którego propozycja powstała trzy dni przed
+                # granicą 120-dniowego skanu zdarzeń.
+                #
+                # Warunek jest CELOWO wąski. Wymaga, żeby brak okien był JEDYNYM problemem:
+                # `limit_hit` jest prawdą także wtedy, gdy okno skanu nie zwróciło wyniku,
+                # czyli gdy kawałek historii nie został obejrzany - a to luka innej klasy
+                # i ona dyskwalifikuje dalej. `unknown_window_newest_at` równe None znaczy
+                # „nie mierzono" i też nie przepuszcza.
+                najnowszy_brak = r.get("unknown_window_newest_at")
+                brak_poza_oknem = (
+                    coverage == COV_PARTIAL_DATA
+                    and (r.get("unknown_window") or 0) > 0
+                    and not r.get("limit_hit")
+                    and najnowszy_brak is not None
+                    and int(najnowszy_brak) < now_ts - window
+                )
+                if brak_poza_oknem:
+                    wiek = (now_ts - int(najnowszy_brak)) // 86_400
+                    notes.append(
+                        f"{name}: {r.get('unknown_window')} records without a voting window, "
+                        f"newest {wiek} days before the measured moment - outside the "
+                        f"{window // 86_400}-day window the components are computed from, "
+                        f"so it cannot change any of them")
+                else:
+                    reasons.append(powod)
+                    continue
             if r.get("oldest_cast_at") is not None \
                     and int(r["oldest_cast_at"]) <= now_ts - window:
                 notes.append(f"{name}: delivered records reach beyond the "

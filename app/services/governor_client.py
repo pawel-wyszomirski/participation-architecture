@@ -528,6 +528,8 @@ class GovernorClient:
         return wszystkie, SourceReceipt(
             "governor", stan, events=len(wszystkie),
             unknown_window=unknown_total, limit=limit,
+            unknown_window_newest_at=max(
+                (d.get("bez_okna_najnowszy_at") or 0 for d in dowody), default=0) or None,
             detail="; ".join(szczegoly), oldest_cast_at=oldest,
             page_count=okien,
             record_count=sum(d.get("record_count", 0) for d in dowody),
@@ -629,6 +631,7 @@ class GovernorClient:
 
             out: List[Proposal] = []
             without_window = 0
+            bez_okna_najnowszy = 0
             for log in vote_logs:
                 pid = _word(log["data"], 0)
                 block_hex = log["blockNumber"]
@@ -648,6 +651,12 @@ class GovernorClient:
                     title, body = "(proposal created before scan window)", ""
                     opens, closes = voted_at, None
                     without_window += 1
+                    # Znacznik czasu, nie tylko licznik (16.09, D1=C). Kwalifikacja musi
+                    # umieć orzec, CZY ten brak dotyczy danych wchodzących do wyniku:
+                    # głos sprzed 117 dni nie wpływa na żaden składnik liczony w oknie
+                    # 7 i 30 dni, a mimo to dyskwalifikował cały pomiar.
+                    if voted_at and voted_at > bez_okna_najnowszy:
+                        bez_okna_najnowszy = voted_at
                 # Prefix keeps ids from colliding with Tally and Snapshot on merge.
                 # The governor role goes in too: the same delegate can face a core
                 # and a treasury proposal at once, and the two must stay distinct.
@@ -683,6 +692,7 @@ class GovernorClient:
             dowod = dict(dowod_glosow)
             dowod["record_count"] = len(vote_logs_surowe)
             dowod["limit_hit"] = truncated
+            dowod["bez_okna_najnowszy_at"] = bez_okna_najnowszy or None
             okien = dowod.get("okien", 0)
             z_odpowiedzia = dowod.get("okien_z_odpowiedzia", 0)
             if okien and z_odpowiedzia < okien:
