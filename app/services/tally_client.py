@@ -63,10 +63,13 @@ query Props($in: ProposalsInput!) {
     nodes {
       ... on Proposal {
         id
+        onchainId
         metadata { title description }
         start { ... on Block { timestamp } }
+        end { ... on Block { timestamp } }
       }
     }
+    pageInfo { lastCursor count }
   }
 }
 """
@@ -81,6 +84,7 @@ query Votes($in: VotesInput!) {
         proposal { id }
       }
     }
+    pageInfo { lastCursor count }
   }
 }
 """
@@ -135,6 +139,48 @@ class TallyClient:
             }
         return out
 
+
+    async def _wszystkie_strony(self, query: str, filtry: dict, klucz: str,
+                                sufit_stron: int = 60):
+        """Wszystkie strony wyniku, stronicowane po `pageInfo.lastCursor`.
+
+        TALLY TNIE STRONĘ DO 20 POZYCJI NIEZALEŻNIE OD `limit`, a wynik obcięty wygląda
+        identycznie jak pełny. Warunek `len(nodes) >= 100`, którego ten klient używał do
+        16.09, nie mógł zadziałać ani razu: serwer nigdy nie oddawał stu rekordów, więc
+        pokwitowanie mówiło HEALTHY_COMPLETE przy jednej stronie.
+
+        Skutek był mierzalny: `fetch_arbitrum_proposals` widziało 20 propozycji z 87
+        deklarowanych przez `pageInfo.count`, a głos Manu z 20.05 - jedyny, który blokował
+        jego pomiar brakiem okna głosowania - leżał poza pierwszą stroną.
+
+        Zwraca `(rekordy, urwane, deklarowana_liczba)`. `urwane` jest prawdą TYLKO przy
+        sufitem stron, nie przy naturalnym końcu - to rozróżnienie decyduje o pokwitowaniu.
+        """
+        rekordy, kursor, strony, widziane = [], None, 0, set()
+        deklarowana = None
+        while strony < sufit_stron:
+            strona = {"limit": 20}
+            if kursor:
+                strona["afterCursor"] = kursor
+            dane = await self._post(query, {"in": {**filtry, "page": strona}})
+            if dane.get("errors"):
+                raise RuntimeError(str(dane["errors"][0].get("message", ""))[:200])
+            blok = (dane.get("data", {}) or {}).get(klucz) or {}
+            nodes = blok.get("nodes") or []
+            info = blok.get("pageInfo") or {}
+            if deklarowana is None:
+                deklarowana = info.get("count")
+            for n in nodes:
+                nid = str(n.get("id") or "")
+                if nid and nid not in widziane:
+                    widziane.add(nid)
+                    rekordy.append(n)
+            strony += 1
+            kursor = info.get("lastCursor")
+            if not nodes or not kursor:
+                return rekordy, False, deklarowana
+        return rekordy, True, deklarowana
+
     async def fetch_voted_proposals(
         self, voter: str, limit: int = 200
     ) -> List["Proposal"]:
@@ -160,22 +206,17 @@ class TallyClient:
             return [], SourceReceipt("tally", AUTH_MISSING, detail="TALLY_API_KEY missing")
 
         try:
-            data = await self._post(
-                _PROPOSALS_QUERY,
-                {"in": {"filters": {"organizationId": ARBITRUM_ORG_ID},
-                        "page": {"limit": 100}}},
-            )
+            nodes, prop_urwane, prop_deklarowana = await self._wszystkie_strony(
+                _PROPOSALS_QUERY, {"filters": {"organizationId": ARBITRUM_ORG_ID}}, "proposals")
         except httpx.HTTPStatusError as e:
             print(f"❌ Tally proposals HTTP: {e}")
             return [], SourceReceipt("tally", ERROR, detail=f"HTTP {e.response.status_code}")
+        except RuntimeError as e:
+            print(f"❌ Tally proposals GraphQL: {e}")
+            return [], SourceReceipt("tally", ERROR, detail=str(e)[:200])
         except Exception as e:  # noqa: BLE001
             print(f"❌ Tally proposals error: {e}")
             return [], SourceReceipt("tally", UNAVAILABLE, detail=f"{type(e).__name__}: {e}"[:200])
-        if data.get("errors"):
-            msg = str(data["errors"][0].get("message", ""))[:200]
-            print(f"❌ Tally proposals GraphQL: {msg}")
-            return [], SourceReceipt("tally", ERROR, detail=msg)
-        nodes = (data.get("data", {}).get("proposals", {}) or {}).get("nodes") or []
         props: Dict[str, Dict[str, Any]] = {}
         for p in nodes:
             m = p.get("metadata") or {}
@@ -185,30 +226,28 @@ class TallyClient:
                 "body": m.get("description") or "",
                 "start": _iso_to_epoch(st.get("timestamp")),
             }
-        proposals_truncated = len(nodes) >= 100
+        # Urwane = sufit stron, NIE „tyle, ile zmieściło się na stronie". Stary warunek
+        # `len(nodes) >= 100` nie mógł zadziałać, bo Tally oddaje najwyżej 20 na stronę.
+        proposals_truncated = prop_urwane or (
+            prop_deklarowana is not None and len(nodes) < int(prop_deklarowana))
         if not props:
             return [], SourceReceipt("tally", HEALTHY_EMPTY, detail="no proposals indexed")
 
         try:
-            data = await self._post(
+            vote_nodes, votes_urwane, _ = await self._wszystkie_strony(
                 _VOTES_QUERY,
-                {"in": {"filters": {"voter": voter, "proposalIds": list(props.keys())},
-                        "page": {"limit": limit}}},
-            )
+                {"filters": {"voter": voter, "proposalIds": list(props.keys())}}, "votes")
         except httpx.HTTPStatusError as e:
             print(f"❌ Tally votes HTTP: {e}")
             return [], SourceReceipt("tally", ERROR, limit=limit,
                                      detail=f"HTTP {e.response.status_code}")
+        except RuntimeError as e:
+            print(f"❌ Tally votes GraphQL: {e}")
+            return [], SourceReceipt("tally", ERROR, limit=limit, detail=str(e)[:200])
         except Exception as e:  # noqa: BLE001
             print(f"❌ Tally votes error: {e}")
             return [], SourceReceipt("tally", UNAVAILABLE, limit=limit,
                                      detail=f"{type(e).__name__}: {e}"[:200])
-        if data.get("errors"):
-            msg = str(data["errors"][0].get("message", ""))[:200]
-            print(f"❌ Tally votes GraphQL: {msg}")
-            return [], SourceReceipt("tally", ERROR, limit=limit, detail=msg)
-
-        vote_nodes = (data.get("data", {}).get("votes", {}) or {}).get("nodes") or []
         out: List[Proposal] = []
         unknown = 0
         for v in vote_nodes:
@@ -236,15 +275,23 @@ class TallyClient:
             prop.voter = voter
             prop.cast_at = prop.voted_at
             out.append(prop)
+        # URWANIE ORZEKA STRONICOWANIE, NIE DŁUGOŚĆ LISTY (16.09). Warunek
+        # `len(vote_nodes) >= limit` opisywał świat, w którym serwer honoruje `limit` -
+        # Tally oddaje najwyżej 20 na stronę, więc przy `limit=200` nie mógł trafić ani razu
+        # i pokwitowanie mówiło HEALTHY_COMPLETE o jednej stronie wyniku.
+        urwane = prop_urwane or votes_urwane or (
+            prop_deklarowana is not None and len(nodes) < int(prop_deklarowana))
         if not vote_nodes:
             state = HEALTHY_EMPTY
-        elif len(vote_nodes) >= limit or proposals_truncated:
+        elif urwane:
             state = TRUNCATED
         else:
             state = HEALTHY_COMPLETE
         detail = "; ".join(x for x in (
             f"{unknown} votes on proposals outside the fetched page" if unknown else "",
-            "proposal page full (100)" if proposals_truncated else "",
+            (f"proposals: {len(nodes)} of {prop_deklarowana} declared"
+             if prop_deklarowana is not None and len(nodes) < int(prop_deklarowana) else ""),
+            "page ceiling hit while paging" if (prop_urwane or votes_urwane) else "",
             "index frozen since 2026-06-08 (known)",
         ) if x)
         oldest = min((p.cast_at for p in out if p.cast_at), default=None)
@@ -264,6 +311,6 @@ class TallyClient:
         return out, SourceReceipt(
             "tally", state, events=len(out), limit=limit, detail=detail,
             oldest_cast_at=oldest, newest_record_at=newest,
-            record_count=len(vote_nodes), page_count=1,
-            limit_hit=bool(len(vote_nodes) >= limit or proposals_truncated),
+            record_count=len(vote_nodes), page_count=None,
+            limit_hit=bool(urwane),
             coverage_state=COV_PARTIAL_DATA)
