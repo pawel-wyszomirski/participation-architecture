@@ -71,10 +71,17 @@ CHAIN_ID = 42161
 
 # Public endpoints, tried in order. Public RPCs answer 403 when a getLogs range is
 # too wide, which is why the scan below walks the chain in windows.
+# Kolejnosc ustalona POMIAREM 2026-09-21, nie z pamieci - kazdy wpis sprawdzony
+# zadaniem eth_getLogs na zakresie archiwalnym:
+#   arb1.arbitrum.io/rpc        -> 200, zwraca wynik            (dziala)
+#   arbitrum-one.publicnode.com -> -32602 "Archive requests require a personal token"
+#   arbitrum.llamarpc.com       -> DNS: Name or service not known (domena nie istnieje)
+# Do 21.09 pierwszy w kolejnosci byl publicnode, ktory odmawia zadan archiwalnych,
+# a trzeci - domena bez rekordu DNS. Skan VoteCast konczyl sie komunikatem
+# "all RPC endpoints failed", choc endpoint dzialajacy byl na liscie.
 RPC_ENDPOINTS = [
-    "https://arbitrum-one.publicnode.com",
     "https://arb1.arbitrum.io/rpc",
-    "https://arbitrum.llamarpc.com",
+    "https://arbitrum-one.publicnode.com",   # odmawia archiwum bez tokenu - zapasowo
 ]
 
 # keccak256 of the event signatures

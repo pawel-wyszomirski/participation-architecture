@@ -376,7 +376,7 @@ class SnapshotClient:
         return left | right
 
     async def fetch_votes_by_voter(
-        self, voter: str, space: str = ARBITRUM_SPACE, limit: int = 200
+        self, voter: str, space: str = ARBITRUM_SPACE, limit: int = 1000
     ) -> List[Dict[str, Any]]:
         """
         Fetch a delegate's vote history from Snapshot (revealed activity).
@@ -388,9 +388,10 @@ class SnapshotClient:
         they cannot be mapped to a cognitive-load contribution.
         """
         query = """
-        query Votes($voter: String!, $space: String!, $first: Int!) {
+        query Votes($voter: String!, $space: String!, $first: Int!, $skip: Int!) {
           votes(
             first: $first,
+            skip: $skip,
             where: { voter: $voter, space: $space },
             orderBy: "created",
             orderDirection: desc
@@ -403,22 +404,42 @@ class SnapshotClient:
           }
         }
         """
-        variables = {"voter": voter, "space": space, "first": limit}
+        # Stronicowanie: bez niego zapytanie zwracalo maksymalnie `limit` rekordow
+        # i historia dluzszych delegatow byla ucinana bez sladu. Pomiar 2026-09-21:
+        # 25 z 40 delegatow korpusu mialo dokladnie 199 glosow, czyli sufit strony.
+        # Wynik obciety wygladal identycznie jak pelny, a wyznaczona z niego data
+        # pierwszego glosu byla zawyzona.
+        PAGE = min(limit, 1000)          # sufit strony po stronie Snapshota
+        SKIP_MAX = 5000                  # Snapshot odrzuca wieksze przesuniecie
+        raw: List[Dict[str, Any]] = []
+        skip = 0
 
         async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(
-                    self.url,
-                    json={"query": query, "variables": variables},
-                    headers=self.headers,
-                    timeout=60.0,
-                )
-                response.raise_for_status()
-                data = response.json()
-                raw = data.get("data", {}).get("votes") or []
-            except Exception as e:
-                print(f"❌ Connection Error (votes): {str(e)}")
-                return []
+            while skip < SKIP_MAX:
+                variables = {"voter": voter, "space": space,
+                             "first": PAGE, "skip": skip}
+                try:
+                    response = await client.post(
+                        self.url,
+                        json={"query": query, "variables": variables},
+                        headers=self.headers,
+                        timeout=60.0,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    strona = data.get("data", {}).get("votes") or []
+                except Exception as e:
+                    print(f"❌ Connection Error (votes): {str(e)}")
+                    return [] if not raw else raw
+                if not strona:
+                    break
+                raw.extend(strona)
+                skip += len(strona)
+                if len(strona) < PAGE:
+                    break
+            else:
+                print(f"⚠️  votes({voter[:10]}…): osiagnieto limit skip={SKIP_MAX} "
+                      f"- historia moze byc niepelna")
 
         out = []
         for v in raw:
