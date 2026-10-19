@@ -261,7 +261,7 @@ Returns last N persisted DFI computations (newest first).
 
 ## Delegate Fatigue Index
 
-The DFI is a deterministic, reproducible score (0-100) measuring governance workload burden.
+The DFI is a deterministic, reproducible score (0-100) describing observable governance conditions around voting: how many proposals arrive, how many run at the same time, how concentrated recent activity is, and how long the texts are. It is computed from public governance records only. It is **not** a measure of a delegate's cognitive load, fatigue, burnout or psychological state, and it has not been validated as a predictor of disengagement.
 
 ### Formula
 
@@ -275,18 +275,18 @@ DFI = (0.40*volume + 0.25*concurrency + 0.20*burstiness + 0.10*reading_time + 0.
 |---|---|---|
 | `volume` | 40% | Proposals/7d + proposals/30d normalized against reference |
 | `concurrency` | 25% | Simultaneous active proposals right now |
-| `burstiness` | 20% | This week's spike vs. 4-week rolling average |
-| `reading_time` | 10% | Average word count / baseline (cognitive cost proxy) |
+| `burstiness` | 20% | Relative concentration: this week's count vs. the rolling weekly average (not variability of intervals) |
+| `reading_time` | 10% | Average word count / baseline (reading-length proxy) |
 | `novelty` | 5% | Novel-domain proposals / total (new patterns cost more) |
 
 ### Status thresholds
 
 | Status | Score | Interpretation |
 |---|---|---|
-| `LOW` | < 30 | Healthy engagement, normal participation |
-| `MODERATE` | 30-69 | Elevated but manageable workload |
-| `HIGH` | 70-84 | Significant load - prioritize triage |
-| `CRITICAL` | >= 85 | Overload risk - consider batching proposals |
+| `LOW` | < 30 | Low observable demand |
+| `MODERATE` | 30-69 | Elevated observable demand |
+| `HIGH` | 70-84 | High observable demand - prioritize triage |
+| `CRITICAL` | >= 85 | Very high observable demand - consider batching proposals |
 
 ### Theoretical grounding
 
@@ -294,6 +294,8 @@ DFI = (0.40*volume + 0.25*concurrency + 0.20*burstiness + 0.10*reading_time + 0.
 - **Burstiness:** Habit disruption - irregular spikes prevent stable participation routines (Fogg B=MAP, 2.2.1)
 - **Reading time:** Direct Fogg Ability barrier proxy (2.2.1)
 - **Novelty:** Novel governance domains require more cognitive processing than routine items (CLT, 1.4)
+
+These are design rationales for the components, not evidence that the score measures the underlying construct. Status bands describe position in the observed distribution and do not diagnose the state of any person.
 
 See [Delegate Fatigue Index documentation](docs/delegate-fatigue-index.md) for full component documentation.
 
