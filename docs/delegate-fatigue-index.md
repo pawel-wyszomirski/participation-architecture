@@ -1,6 +1,8 @@
 # Delegate Fatigue Index (DFI)
 
-The Delegate Fatigue Index is a deterministic, reproducible score (0-100) measuring the cognitive workload that current governance activity imposes on DAO delegates.
+The Delegate Fatigue Index is a deterministic, reproducible score (0-100) describing observable governance conditions that current governance activity creates for DAO delegates: proposal volume, concurrency, concentration of recent activity and reading length.
+
+> **What the DFI is not.** The score is computed from public governance records only. It is not a measure of a delegate's cognitive load, fatigue, burnout or psychological state, and it has not been validated as a predictor of disengagement. The name is historical. Do not use it to rank, rate or reward individual delegates.
 
 ---
 
@@ -12,7 +14,7 @@ DAO governance suffers from **attention overload**: too many proposals, arriving
 - Participation quality declining as volume increases
 - Burnout and eventual disengagement from governance
 
-The DFI operationalizes this problem as a **measurable, auditable signal** that governance tools can use to triage workload and schedule reviews.
+The DFI turns the observable side of this problem into an **auditable signal** that governance tools can use to triage proposals and schedule reviews. It describes conditions, not the people exposed to them.
 
 ### Theoretical grounding
 
@@ -146,10 +148,10 @@ This is used directly as the component score (no additional normalization needed
 
 | Status | Score | Interpretation | Suggested action |
 |---|---|---|---|
-| `LOW` | < 30 | Healthy load, normal participation | All proposal types manageable |
-| `MODERATE` | 30-69 | Elevated but manageable | Focus on `deep_review` items first |
-| `HIGH` | 70-84 | Significant workload | Prioritize triage; fast-track routines |
-| `CRITICAL` | >= 85 | Overload risk | Consider batching proposals or extending voting periods |
+| `LOW` | < 30 | Low observable demand | All proposal types manageable |
+| `MODERATE` | 30-69 | Elevated observable demand | Focus on `deep_review` items first |
+| `HIGH` | 70-84 | High observable demand | Prioritize triage; fast-track routines |
+| `CRITICAL` | >= 85 | Very high observable demand | Consider batching proposals or extending voting periods |
 
 ---
 
