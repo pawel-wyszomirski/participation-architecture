@@ -1,0 +1,1281 @@
+{
+ "_about": "Join key for the arbdata registry after its move to the Entropy Data chart API. The chart rows carry proposal_number but not the on-chain proposal_id, governor or proposer_name. This map restores them from the last copy served by the old endpoint, and `frozen` holds that copy's content for the fields the instrument reads, so a later change at the source is detected rather than absorbed.",
+ "origin": {
+  "file": "data/cache/arbdata-registry.json",
+  "endpoint": "https://arbdata.com/api/governance-proposals",
+  "fetched_at": "2026-09-16T15:08:09+00:00",
+  "sha256": "f450acd580602b73fb2929225a5fd2830b298e2665701763b5adafc0da1ed2ce",
+  "rows": 90
+ },
+ "frozen_fields": [
+  "proposal_title",
+  "proposal_category",
+  "proposal_theme",
+  "proposal_type",
+  "creation_time",
+  "voting_end_time",
+  "outcome"
+ ],
+ "keys": {
+  "1": {
+   "proposal_id": "60371879178081104082641012273221287927865067413661362234634146098631763379427",
+   "governor": "core",
+   "proposer_name": "",
+   "frozen": {
+    "proposal_title": "Core Test Proposal",
+    "proposal_category": "Testing",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2023-03-23 21:05:12",
+    "voting_end_time": "2023-04-10 03:39:11",
+    "outcome": "Defeated"
+   }
+  },
+  "2": {
+   "proposal_id": "110793123084980773896129216551445203207286848914653873956746115694475823589450",
+   "governor": "treasury",
+   "proposer_name": "",
+   "frozen": {
+    "proposal_title": "Treasury test proposal",
+    "proposal_category": "Testing",
+    "proposal_theme": "",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2023-03-23 21:29:23",
+    "voting_end_time": "2023-04-10 04:03:23",
+    "outcome": "Defeated"
+   }
+  },
+  "3": {
+   "proposal_id": "79904733039853333959339953965823982558487956291458141923259498272549038367575",
+   "governor": "treasury",
+   "proposer_name": "L2BEAT",
+   "frozen": {
+    "proposal_title": "Lockup, Budget, Transparency",
+    "proposal_category": "Cancelled",
+    "proposal_theme": "",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2023-06-06 15:56:04",
+    "voting_end_time": "2023-06-23 21:04:59",
+    "outcome": "Cancelled"
+   }
+  },
+  "4": {
+   "proposal_id": "77049969659962393408182308518930939247285848107346513112985531885924337078488",
+   "governor": "core",
+   "proposer_name": "L2BEAT",
+   "frozen": {
+    "proposal_title": "Foundation and DAO Governance",
+    "proposal_category": "DAO Amendments",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2023-06-06 15:56:32",
+    "voting_end_time": "2023-06-23 21:05:35",
+    "outcome": "Passed"
+   }
+  },
+  "5": {
+   "proposal_id": "70545629960586317780628692755032548222173912190231545322320044688071893662480",
+   "governor": "treasury",
+   "proposer_name": "L2BEAT",
+   "frozen": {
+    "proposal_title": "Lockup, Budget, Transparency",
+    "proposal_category": "DAO Amendments",
+    "proposal_theme": "",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2023-06-07 23:18:54",
+    "voting_end_time": "2023-06-25 04:22:47",
+    "outcome": "Passed"
+   }
+  },
+  "6": {
+   "proposal_id": "71941171835710778457735937894689629320431683601089057868136768380925169329077",
+   "governor": "core",
+   "proposer_name": "yoav.eth",
+   "frozen": {
+    "proposal_title": "Activate support for account abstraction endpoint on One and Nova",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2023-06-28 20:35:25",
+    "voting_end_time": "2023-07-16 01:34:35",
+    "outcome": "Passed"
+   }
+  },
+  "7": {
+   "proposal_id": "52789605232046584393223454610845077119190920888046802640362214067679574612119",
+   "governor": "treasury",
+   "proposer_name": "bobrossi.eth",
+   "frozen": {
+    "proposal_title": "Arbitrum DAO Grants - Delegated Domain Allocation by Questbook",
+    "proposal_category": "Grants",
+    "proposal_theme": "Structured Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2023-07-17 19:46:53",
+    "voting_end_time": "2023-08-04 16:37:59",
+    "outcome": "Passed"
+   }
+  },
+  "8": {
+   "proposal_id": "48957903989337452494807960514286334301924688097662612089398341037722439754861",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Fund the Grants Framework Proposal Milestone 1",
+    "proposal_category": "Grants",
+    "proposal_theme": "Structured Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2023-07-28 16:57:19",
+    "voting_end_time": "2023-08-14 19:50:23",
+    "outcome": "Passed"
+   }
+  },
+  "9": {
+   "proposal_id": "94082931409036991607289748320100191193221627046136638381280146914481892861727",
+   "governor": "core",
+   "proposer_name": "Blockworks Research",
+   "frozen": {
+    "proposal_title": "Update Security Council Election Start Date to Ensure Time for Security Audit",
+    "proposal_category": "DAO Amendments",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2023-08-01 16:57:46",
+    "voting_end_time": "2023-08-18 19:55:47",
+    "outcome": "Passed"
+   }
+  },
+  "10": {
+   "proposal_id": "108413626736577087081818577238162267924459697981830202052718122463860611528602",
+   "governor": "core",
+   "proposer_name": "Blockworks Research",
+   "frozen": {
+    "proposal_title": "Security Council Elections Proposed Implementation Spec",
+    "proposal_category": "DAO Amendments",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2023-08-17 14:19:28",
+    "voting_end_time": "2023-09-05 13:15:11",
+    "outcome": "Passed"
+   }
+  },
+  "11": {
+   "proposal_id": "34046711258961804107485832473806122594109816095040829321732029304900488666630",
+   "governor": "core",
+   "proposer_name": "yoav.eth",
+   "frozen": {
+    "proposal_title": "Arbitrum One Governance Parameter Fixes",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2023-08-21 18:36:48",
+    "voting_end_time": "2023-09-08 12:44:47",
+    "outcome": "Passed"
+   }
+  },
+  "12": {
+   "proposal_id": "4339452689891418965907083940091891085726910948106830138993485564953310970308",
+   "governor": "treasury",
+   "proposer_name": "L2BEAT",
+   "frozen": {
+    "proposal_title": "Building the Future of NFTs: The Rarible Protocol - Arbitrum Integration",
+    "proposal_category": "Grants",
+    "proposal_theme": "Technology Development",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2023-09-15 18:45:32",
+    "voting_end_time": "2023-10-02 22:34:59",
+    "outcome": "Passed"
+   }
+  },
+  "13": {
+   "proposal_id": "92535731414466076465748260699234569033779695239254902723866669906112586724812",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Arbitrum Short-term Incentive Program (STIP)",
+    "proposal_category": "Incentives",
+    "proposal_theme": "Structured Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2023-09-22 22:45:37",
+    "voting_end_time": "2023-10-10 01:40:11",
+    "outcome": "Passed"
+   }
+  },
+  "14": {
+   "proposal_id": "13413460212244439965325761903593975061091934953503684497413508380387288651335",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Backfund Successful STIP Proposals",
+    "proposal_category": "Incentives",
+    "proposal_theme": "Structured Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2023-11-15 20:44:02",
+    "voting_end_time": "2023-12-02 23:57:47",
+    "outcome": "Passed"
+   }
+  },
+  "15": {
+   "proposal_id": "107148500545417261921864085816276971795902152093375547084153298266650813470763",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Empowering Early Contributors: The Community Arbiter Proposal",
+    "proposal_category": "Grants",
+    "proposal_theme": "Retroactive Allocations",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2023-11-17 18:21:58",
+    "voting_end_time": "2023-12-04 21:42:23",
+    "outcome": "Defeated"
+   }
+  },
+  "16": {
+   "proposal_id": "77069694702187027448745871790562515795432836429094222862498991082283032976814",
+   "governor": "core",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "ArbOS Version 11",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2023-12-22 00:25:34",
+    "voting_end_time": "2024-01-08 05:23:47",
+    "outcome": "Passed"
+   }
+  },
+  "17": {
+   "proposal_id": "13830398746784164287014809687499019395362322167304875665797507515532859950760",
+   "governor": "core",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Establish the Arbitrum Research & Development Collective",
+    "proposal_category": "Cancelled",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2024-01-03 16:30:40",
+    "voting_end_time": "2024-01-20 20:21:35",
+    "outcome": "Cancelled"
+   }
+  },
+  "18": {
+   "proposal_id": "55434268037459750836497365958054185343730937462615166912204494229415053613423",
+   "governor": "core",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Establish the Arbitrum Research & Development Collective",
+    "proposal_category": "Cancelled",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2024-01-03 17:01:21",
+    "voting_end_time": "2024-01-20 20:52:35",
+    "outcome": "Cancelled"
+   }
+  },
+  "19": {
+   "proposal_id": "35525013043870715946223420504118237039230172376655957921569389087285511330636",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Establish the Arbitrum Research & Development Collective",
+    "proposal_category": "Cancelled",
+    "proposal_theme": "",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-01-03 17:33:06",
+    "voting_end_time": "2024-01-20 21:24:35",
+    "outcome": "Cancelled"
+   }
+  },
+  "20": {
+   "proposal_id": "6269372711941757139042689495856382466058496535755800373140231592090274906424",
+   "governor": "core",
+   "proposer_name": "SEED Gov",
+   "frozen": {
+    "proposal_title": "Experimental Delegates Incentive System",
+    "proposal_category": "Cancelled",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2024-01-05 08:13:23",
+    "voting_end_time": "2024-01-22 12:16:11",
+    "outcome": "Cancelled"
+   }
+  },
+  "21": {
+   "proposal_id": "48996903531311678297225319178379421688557110940940578387634228127153623956997",
+   "governor": "core",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Establish the Arbitrum Research & Development Collective",
+    "proposal_category": "Cancelled",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2024-01-05 18:29:14",
+    "voting_end_time": "2024-01-22 22:33:47",
+    "outcome": "Cancelled"
+   }
+  },
+  "22": {
+   "proposal_id": "56002054155248055908873103086558103132748843103210580613728556162036150296506",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Establish the Arbitrum Research & Development Collective",
+    "proposal_category": "DAO Operations",
+    "proposal_theme": "DAO Development Services",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-01-05 18:29:55",
+    "voting_end_time": "2024-01-22 22:34:35",
+    "outcome": "Passed"
+   }
+  },
+  "23": {
+   "proposal_id": "98889951328992702889653461987621825257851718470562453684547824130828387112157",
+   "governor": "treasury",
+   "proposer_name": "SEED Gov",
+   "frozen": {
+    "proposal_title": "Experimental Delegates Incentive System",
+    "proposal_category": "DAO Operations",
+    "proposal_theme": "DAO Expansion Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-01-06 05:46:30",
+    "voting_end_time": "2024-01-23 09:52:11",
+    "outcome": "Passed"
+   }
+  },
+  "24": {
+   "proposal_id": "43616303506326656287362617487331059827021737444126158637397168372555259240241",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Establish the ArbitrumDAO Procurement Committee",
+    "proposal_category": "DAO Operations",
+    "proposal_theme": "DAO Development Services",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-01-18 18:00:44",
+    "voting_end_time": "2024-02-04 22:05:35",
+    "outcome": "Passed"
+   }
+  },
+  "25": {
+   "proposal_id": "110767177349707239820875764565747830009768307680609166467172874966002003291288",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Long Term Incentives Pilot Program",
+    "proposal_category": "Incentives",
+    "proposal_theme": "Structured Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-02-01 00:06:06",
+    "voting_end_time": "2024-02-18 04:27:11",
+    "outcome": "Passed"
+   }
+  },
+  "26": {
+   "proposal_id": "28300903567340237987946172947371304329455149918972967618773111648600015289785",
+   "governor": "core",
+   "proposer_name": "DK (Premia)",
+   "frozen": {
+    "proposal_title": "Changes to the Constitution and the Security Council Election Process",
+    "proposal_category": "DAO Amendments",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2024-02-07 17:49:29",
+    "voting_end_time": "2024-02-25 02:17:47",
+    "outcome": "Passed"
+   }
+  },
+  "27": {
+   "proposal_id": "46905320292877192134536823079608810426433248493109520384601548724615383601450",
+   "governor": "core",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "ArbOS 20 Atlas - Arbitrum Support for Dencun + Batch Poster Improvements",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2024-02-13 23:27:19",
+    "voting_end_time": "2024-03-02 03:16:23",
+    "outcome": "Passed"
+   }
+  },
+  "28": {
+   "proposal_id": "21881347407562908848280051025758535553780110598432331587570488445729767071232",
+   "governor": "treasury",
+   "proposer_name": "DK (Premia)",
+   "frozen": {
+    "proposal_title": "Proposal to fund Plurality Labs Milestone 1B(ridge)",
+    "proposal_category": "Grants",
+    "proposal_theme": "Structured Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-03-09 20:16:53",
+    "voting_end_time": "2024-03-27 00:54:23",
+    "outcome": "Passed"
+   }
+  },
+  "29": {
+   "proposal_id": "38070839538623347085766954167338451189998347523518753197890888828931691912919",
+   "governor": "treasury",
+   "proposer_name": "L2BEAT",
+   "frozen": {
+    "proposal_title": "Arbitrum Stable Treasury Endowment Program",
+    "proposal_category": "Financial Management",
+    "proposal_theme": "Treasury Management",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-03-20 12:37:09",
+    "voting_end_time": "2024-04-06 22:13:59",
+    "outcome": "Passed"
+   }
+  },
+  "30": {
+   "proposal_id": "7516302970844612385418101444853135774524286064427379173725195909617827683975",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Empowering Early Contributors: The Community Arbiter Proposal 2.0",
+    "proposal_category": "Grants",
+    "proposal_theme": "Retroactive Allocations",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-03-26 17:26:57",
+    "voting_end_time": "2024-04-12 22:23:47",
+    "outcome": "Passed"
+   }
+  },
+  "31": {
+   "proposal_id": "105661716969503353468484651547476341487744471176330694566006767279895911370354",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Expand Tally Support for the Arbitrum DAO",
+    "proposal_category": "Grants",
+    "proposal_theme": "Technology Development",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-03-26 22:32:21",
+    "voting_end_time": "2024-04-13 03:28:23",
+    "outcome": "Passed"
+   }
+  },
+  "32": {
+   "proposal_id": "98446466630612736687159241204141593794174501692677162686607521796118942563659",
+   "governor": "treasury",
+   "proposer_name": "SEED Gov",
+   "frozen": {
+    "proposal_title": "Request for Continuation of the Arbitrum DDA Program Request",
+    "proposal_category": "Grants",
+    "proposal_theme": "Structured Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-04-03 17:50:42",
+    "voting_end_time": "2024-04-20 21:15:11",
+    "outcome": "Passed"
+   }
+  },
+  "33": {
+   "proposal_id": "46550423530471344392834314743264512919726282073822921510880507756642229672784",
+   "governor": "treasury",
+   "proposer_name": "L2BEAT",
+   "frozen": {
+    "proposal_title": "Double-Down on STIP Successes (STIP-Bridge)",
+    "proposal_category": "Incentives",
+    "proposal_theme": "Structured Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-04-16 20:52:44",
+    "voting_end_time": "2024-05-05 11:35:23",
+    "outcome": "Passed"
+   }
+  },
+  "34": {
+   "proposal_id": "22498645709460639498013508413205734891453964526622655693207250687057651118730",
+   "governor": "treasury",
+   "proposer_name": "coinflipcanda",
+   "frozen": {
+    "proposal_title": "GovHack at ETH CC (Brussels)",
+    "proposal_category": "Grants",
+    "proposal_theme": "Event Sponsorships",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-05-02 02:58:53",
+    "voting_end_time": "2024-05-19 05:50:35",
+    "outcome": "Passed"
+   }
+  },
+  "35": {
+   "proposal_id": "38969105941610450745489426186100891274455985615095635354211489998123990654147",
+   "governor": "treasury",
+   "proposer_name": "coinflipcanda",
+   "frozen": {
+    "proposal_title": "Grant Request - Curve Finance",
+    "proposal_category": "Incentives",
+    "proposal_theme": "One-Off Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-05-11 04:54:26",
+    "voting_end_time": "2024-05-28 07:40:11",
+    "outcome": "Passed"
+   }
+  },
+  "36": {
+   "proposal_id": "64983391853593910864060724460578707035332594860232908902104228608865672626079",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "M&A for Arbitrum DAO (Pilot Phase)",
+    "proposal_category": "DAO Operations",
+    "proposal_theme": "Consulting Services",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-05-16 21:28:23",
+    "voting_end_time": "2024-06-03 00:08:47",
+    "outcome": "Passed"
+   }
+  },
+  "37": {
+   "proposal_id": "36935952286774715100281528276901040748078989679883088545641375212318446360822",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Front-end Interface to Force Transaction Inclusion During Sequencer Downtime",
+    "proposal_category": "Grants",
+    "proposal_theme": "Technology Development",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-05-17 17:01:18",
+    "voting_end_time": "2024-06-03 19:41:23",
+    "outcome": "Passed"
+   }
+  },
+  "38": {
+   "proposal_id": "53472400873981607449547539050199074000442490831067826984987297151333310022877",
+   "governor": "treasury",
+   "proposer_name": "coinflipcanda",
+   "frozen": {
+    "proposal_title": "Catalyze Gaming Ecosystem Growth on Arbitrum",
+    "proposal_category": "Investments",
+    "proposal_theme": "Ventures",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-05-21 15:26:08",
+    "voting_end_time": "2024-06-07 17:52:47",
+    "outcome": "Passed"
+   }
+  },
+  "39": {
+   "proposal_id": "108365944612843449282647711225577270624871742641825297712833904029381791489297",
+   "governor": "core",
+   "proposer_name": "L2BEAT",
+   "frozen": {
+    "proposal_title": "Security Council Improvement Proposal",
+    "proposal_category": "DAO Amendments",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2024-05-23 13:19:47",
+    "voting_end_time": "2024-06-09 15:44:11",
+    "outcome": "Passed"
+   }
+  },
+  "40": {
+   "proposal_id": "38701323908152171422214887490453506732497504710759730413296983575898180294585",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Safeguarding Software Developers' Rights",
+    "proposal_category": "Grants",
+    "proposal_theme": "Retroactive Allocations",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-05-23 17:51:53",
+    "voting_end_time": "2024-06-09 20:14:47",
+    "outcome": "Passed"
+   }
+  },
+  "41": {
+   "proposal_id": "79183200449169085571205208154003416944507585311666453826890708127615057369177",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Kwenta x Perennial: Arbitrum Onboarding Incentives",
+    "proposal_category": "Incentives",
+    "proposal_theme": "One-Off Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-06-07 22:07:24",
+    "voting_end_time": "2024-06-25 00:50:23",
+    "outcome": "Passed"
+   }
+  },
+  "42": {
+   "proposal_id": "3552942192106351362095426680857341385146921274641698065112264407057470303359",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Subsidy Fund Proposal from the ADPC",
+    "proposal_category": "Grants",
+    "proposal_theme": "Structured Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-07-04 14:38:23",
+    "voting_end_time": "2024-07-21 16:46:47",
+    "outcome": "Passed"
+   }
+  },
+  "43": {
+   "proposal_id": "16862129143470948068395175122563617380780349421262247459634070073165514405758",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Arbitrum Ventures Initiative (Pilot Phase)",
+    "proposal_category": "DAO Operations",
+    "proposal_theme": "Consulting Services",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-07-09 08:22:29",
+    "voting_end_time": "2024-07-26 10:25:59",
+    "outcome": "Passed"
+   }
+  },
+  "44": {
+   "proposal_id": "108288822474129076868455956066667369439381709547570289793612729242368710728616",
+   "governor": "core",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "ArbOS 31 \"Bianca\" (Stylus, RIP-7212 Support, Nova Fee Router)",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2024-07-29 13:43:38",
+    "voting_end_time": "2024-08-15 15:41:59",
+    "outcome": "Passed"
+   }
+  },
+  "45": {
+   "proposal_id": "47904929527582233304785161920776863155691990219898799848510210794906211250836",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Arbitrum Multi-sig Support Service (MSS)",
+    "proposal_category": "Financial Management",
+    "proposal_theme": "Finance Functions",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-07-29 23:40:43",
+    "voting_end_time": "2024-08-16 01:42:47",
+    "outcome": "Passed"
+   }
+  },
+  "46": {
+   "proposal_id": "22562217031893796518849144396978331510254494883851105730012486117405397295942",
+   "governor": "treasury",
+   "proposer_name": "coinflipcanda",
+   "frozen": {
+    "proposal_title": "Entropy Advisors: Exclusively Working With Arbitrum DAO",
+    "proposal_category": "DAO Operations",
+    "proposal_theme": "DAO Development Services",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-08-06 02:10:10",
+    "voting_end_time": "2024-08-23 04:14:23",
+    "outcome": "Passed"
+   }
+  },
+  "47": {
+   "proposal_id": "30828395120264250515588826110157291466999820796280987022346439005676672544691",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Funds to bootstrap the first BoLD validator",
+    "proposal_category": "Grants",
+    "proposal_theme": "Technology Development",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-08-20 00:20:35",
+    "voting_end_time": "2024-09-06 02:38:23",
+    "outcome": "Passed"
+   }
+  },
+  "48": {
+   "proposal_id": "52793687237294107439411688810483120161857085958258363826553939061522164665920",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "ARB Staking: Unlock ARB Utility and Align Governance",
+    "proposal_category": "Grants",
+    "proposal_theme": "Technology Development",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-08-20 04:53:18",
+    "voting_end_time": "2024-09-06 08:45:59",
+    "outcome": "Passed"
+   }
+  },
+  "49": {
+   "proposal_id": "109425185690543736048728494223916696230797128756558452562790432121529327921478",
+   "governor": "treasury",
+   "proposer_name": "L2BEAT",
+   "frozen": {
+    "proposal_title": "Delegate to Voter Enfranchisement Pool — Event Horizon",
+    "proposal_category": "Cancelled",
+    "proposal_theme": "",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-08-23 00:53:09",
+    "voting_end_time": "2024-09-09 03:05:23",
+    "outcome": "Cancelled"
+   }
+  },
+  "50": {
+   "proposal_id": "79529399410531589353911088395953830829384332193617716676855043534419270111970",
+   "governor": "treasury",
+   "proposer_name": "L2BEAT",
+   "frozen": {
+    "proposal_title": "Delegate to Voter Enfranchisement Pool — Event Horizon",
+    "proposal_category": "DAO Operations",
+    "proposal_theme": "DAO Expansion Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-08-27 01:51:11",
+    "voting_end_time": "2024-09-13 18:15:59",
+    "outcome": "Passed"
+   }
+  },
+  "51": {
+   "proposal_id": "112325874093084064493910714319140234408317576120604499542718372361020687891105",
+   "governor": "core",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Upgrade Governor Contracts by Transfering Timelock Roles to the New Governors",
+    "proposal_category": "Cancelled",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2024-09-10 01:27:15",
+    "voting_end_time": "2024-09-27 03:40:11",
+    "outcome": "Cancelled"
+   }
+  },
+  "52": {
+   "proposal_id": "104013508427929791254647754028304659752687979030673391997226897145800989991969",
+   "governor": "treasury",
+   "proposer_name": "coinflipcanda",
+   "frozen": {
+    "proposal_title": "Ethereum Protocol Attackathon Sponsorship",
+    "proposal_category": "Cancelled",
+    "proposal_theme": "",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-09-17 03:58:02",
+    "voting_end_time": "2024-10-04 05:54:35",
+    "outcome": "Cancelled"
+   }
+  },
+  "53": {
+   "proposal_id": "93496910583545921039254255671954964968329693484106479494661805749408858477569",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Arbitrum DAO Procurement Committee: Phase II Proposal",
+    "proposal_category": "DAO Operations",
+    "proposal_theme": "DAO Development Services",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-09-23 15:25:32",
+    "voting_end_time": "2024-10-11 17:10:59",
+    "outcome": "Passed"
+   }
+  },
+  "54": {
+   "proposal_id": "27888300053486667232765715922683646778055572080881341292116987136155397805421",
+   "governor": "core",
+   "proposer_name": "Blockworks Research",
+   "frozen": {
+    "proposal_title": "Extend Delay on L2Time Lock",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2024-09-24 03:04:17",
+    "voting_end_time": "2024-10-11 19:49:11",
+    "outcome": "Passed"
+   }
+  },
+  "55": {
+   "proposal_id": "70429238801539452185774644949439873171403711884919863798646613157877144482819",
+   "governor": "treasury",
+   "proposer_name": "Blockworks Research",
+   "frozen": {
+    "proposal_title": "Ethereum Protocol Attackathon Sponsorship",
+    "proposal_category": "Grants",
+    "proposal_theme": "Event Sponsorships",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-09-24 03:05:18",
+    "voting_end_time": "2024-10-11 19:47:11",
+    "outcome": "Passed"
+   }
+  },
+  "56": {
+   "proposal_id": "78608365328815179822381240433375943106975722017227920505592824878237374730465",
+   "governor": "treasury",
+   "proposer_name": "Blockworks Research",
+   "frozen": {
+    "proposal_title": "Funds to Bolster Foundation's Strategic Partnerships Budget",
+    "proposal_category": "Strategic Partnerships",
+    "proposal_theme": "Structured Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-09-30 16:43:53",
+    "voting_end_time": "2024-10-17 18:41:35",
+    "outcome": "Passed"
+   }
+  },
+  "57": {
+   "proposal_id": "96690486288059875871645030622562174419564010435288438848687174619767247452877",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "ArbitrumDAO Strategic Off-Site (Online)",
+    "proposal_category": "Grants",
+    "proposal_theme": "Event Sponsorships",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-10-01 17:39:13",
+    "voting_end_time": "2024-10-20 15:13:11",
+    "outcome": "Defeated"
+   }
+  },
+  "58": {
+   "proposal_id": "56768509231150680433760428191516666361790213029100482092064768634784370622764",
+   "governor": "core",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Enhancing Multichain Governance: Upgrading RARI Governance Token on Arbitrum",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2024-10-01 17:45:20",
+    "voting_end_time": "2024-10-19 15:41:23",
+    "outcome": "Passed"
+   }
+  },
+  "59": {
+   "proposal_id": "7979895167029508946638584765496434407327098393519089113101189960001594458109",
+   "governor": "treasury",
+   "proposer_name": "SEED Gov",
+   "frozen": {
+    "proposal_title": "Arbitrum DAO Delegate Incentive Program",
+    "proposal_category": "DAO Operations",
+    "proposal_theme": "DAO Expansion Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-10-07 17:26:11",
+    "voting_end_time": "2024-10-24 19:30:59",
+    "outcome": "Passed"
+   }
+  },
+  "60": {
+   "proposal_id": "24926593791565028016457688578136747185250074804329950986605484216603582190563",
+   "governor": "treasury",
+   "proposer_name": "Entropy Advisors",
+   "frozen": {
+    "proposal_title": "Fund the Stylus Sprint",
+    "proposal_category": "Grants",
+    "proposal_theme": "Structured Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-10-07 18:04:07",
+    "voting_end_time": "2024-10-24 20:09:11",
+    "outcome": "Passed"
+   }
+  },
+  "61": {
+   "proposal_id": "83546392681388778220788629004310255202561156229718364611160970131196959784333",
+   "governor": "treasury",
+   "proposer_name": "Entropy Advisors",
+   "frozen": {
+    "proposal_title": "Establishing a DAO Events Budget for 2025",
+    "proposal_category": "Grants",
+    "proposal_theme": "Event Sponsorships",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-10-28 21:21:21",
+    "voting_end_time": "2024-11-16 04:55:35",
+    "outcome": "Passed"
+   }
+  },
+  "62": {
+   "proposal_id": "36792157050667056852025000136263368859227883753318633087194112219909798752014",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Arbitrum Research & Development Collective V2",
+    "proposal_category": "DAO Operations",
+    "proposal_theme": "DAO Development Services",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-10-28 22:16:20",
+    "voting_end_time": "2024-11-16 01:59:59",
+    "outcome": "Passed"
+   }
+  },
+  "63": {
+   "proposal_id": "108658450973990931334575713480652794742647878863726354508911679874665321261959",
+   "governor": "treasury",
+   "proposer_name": "MaxLomu",
+   "frozen": {
+    "proposal_title": "Arbitrum Hackathon Builder Continuation Program",
+    "proposal_category": "Investments",
+    "proposal_theme": "Ventures",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-12-02 18:23:19",
+    "voting_end_time": "2024-12-21 13:02:23",
+    "outcome": "Passed"
+   }
+  },
+  "64": {
+   "proposal_id": "111105159609719390908725919603971316574753860587890014819515615630412225940809",
+   "governor": "treasury",
+   "proposer_name": "Entropy Advisors",
+   "frozen": {
+    "proposal_title": "Treasury Management V1.2",
+    "proposal_category": "Treasury Management",
+    "proposal_theme": "Treasury Management",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2024-12-03 05:02:59",
+    "voting_end_time": "2024-12-20 23:04:35",
+    "outcome": "Passed"
+   }
+  },
+  "65": {
+   "proposal_id": "101924107818180443784046677916233531742645798596604549673138282938475874935972",
+   "governor": "core",
+   "proposer_name": "Entropy Advisors",
+   "frozen": {
+    "proposal_title": "Activate Arbitrum BoLD + Infura Nova Validator Whitelist",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "Technology Development",
+    "proposal_type": "constitutional",
+    "creation_time": "2025-01-06 21:31:12",
+    "voting_end_time": "2025-01-24 22:11:59",
+    "outcome": "Passed"
+   }
+  },
+  "66": {
+   "proposal_id": "41351298371775353090222506531903916823291804644712693824312064183457809617851",
+   "governor": "treasury",
+   "proposer_name": "Entropy Advisors",
+   "frozen": {
+    "proposal_title": "OpCo: A DAO-adjacent Entity for Strategy Execution",
+    "proposal_category": "DAO Operations",
+    "proposal_theme": "DAO Development Services",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2025-01-27 17:25:49",
+    "voting_end_time": "2025-02-15 18:30:59",
+    "outcome": "Passed"
+   }
+  },
+  "67": {
+   "proposal_id": "13323456481927947871314500108227684550647495448005726995657704713229313956489",
+   "governor": "treasury",
+   "proposer_name": "L2BEAT",
+   "frozen": {
+    "proposal_title": "Stable Treasury Endowment Program 2.0",
+    "proposal_category": "Financial Management",
+    "proposal_theme": "Treasury Management",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2025-01-27 23:48:16",
+    "voting_end_time": "2025-02-14 22:23:35",
+    "outcome": "Passed"
+   }
+  },
+  "68": {
+   "proposal_id": "47215139570733026393508270943324710379923699871435188004224569883226292800465",
+   "governor": "treasury",
+   "proposer_name": "MaxLomu",
+   "frozen": {
+    "proposal_title": "Arbitrum D.A.O. (Domain Allocator Offerings) Grant Program - Season 3",
+    "proposal_category": "Grants",
+    "proposal_theme": "Structured Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2025-02-03 15:46:52",
+    "voting_end_time": "2025-02-21 20:31:11",
+    "outcome": "Passed"
+   }
+  },
+  "69": {
+   "proposal_id": "27831845498978337986467036886891836384283300266814708262424272663046958396151",
+   "governor": "treasury",
+   "proposer_name": "Entropy Advisors",
+   "frozen": {
+    "proposal_title": "Request to Increase the Stylus Sprint Committee's Budget",
+    "proposal_category": "Grants",
+    "proposal_theme": "Structured Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2025-02-17 14:42:56",
+    "voting_end_time": "2025-03-08 09:52:35",
+    "outcome": "Passed"
+   }
+  },
+  "70": {
+   "proposal_id": "14881197137069494959448952699217598923721993392617887469969318742509097999570",
+   "governor": "core",
+   "proposer_name": "Entropy Advisors",
+   "frozen": {
+    "proposal_title": "Adopt Timeboost + Nova Fee Sweep",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "Technology Development",
+    "proposal_type": "constitutional",
+    "creation_time": "2025-03-10 21:01:39",
+    "voting_end_time": "2025-03-29 14:44:35",
+    "outcome": "Passed"
+   }
+  },
+  "71": {
+   "proposal_id": "41764616447638715300612914863093416410063619332654034338488569044333128121381",
+   "governor": "treasury",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Arbitrum Onboarding V2: A Governance Bootcamp",
+    "proposal_category": "DAO Operations",
+    "proposal_theme": "DAO Expansion Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2025-03-10 22:42:26",
+    "voting_end_time": "2025-03-28 00:46:35",
+    "outcome": "Defeated"
+   }
+  },
+  "72": {
+   "proposal_id": "107606727309922720763027677505427395647796047780305505879344344641224024948240",
+   "governor": "treasury",
+   "proposer_name": "Entropy Advisors",
+   "frozen": {
+    "proposal_title": "Arbitrum Audit Program",
+    "proposal_category": "DAO Operations",
+    "proposal_theme": "DAO Development Services",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2025-03-17 15:21:51",
+    "voting_end_time": "2025-04-04 07:09:23",
+    "outcome": "Passed"
+   }
+  },
+  "73": {
+   "proposal_id": "28485587559812799913134094629469849411398475232393607771326861344548198896843",
+   "governor": "treasury",
+   "proposer_name": "Entropy Advisors",
+   "frozen": {
+    "proposal_title": "The Watchdog: Arbitrum DAO's Grant Misuse Bounty Program",
+    "proposal_category": "DAO Operations",
+    "proposal_theme": "DAO Development Services",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2025-05-05 21:47:07",
+    "voting_end_time": "2025-05-24 02:21:59",
+    "outcome": "Passed"
+   }
+  },
+  "74": {
+   "proposal_id": "13108804573775967668959825241666341617107666532012387058509418598838035461528",
+   "governor": "core",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "AIP: ArbOS Version 40 Callisto",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "Technology Development",
+    "proposal_type": "constitutional",
+    "creation_time": "2025-05-12 15:49:57",
+    "voting_end_time": "2025-05-31 10:18:11",
+    "outcome": "Passed"
+   }
+  },
+  "75": {
+   "proposal_id": "13050485773425645466153415888358064378805606653363056526521393182333458879398",
+   "governor": "treasury",
+   "proposer_name": "Entropy Advisors",
+   "frozen": {
+    "proposal_title": "DeFi Renaissance Incentive Program (DRIP)",
+    "proposal_category": "Incentives",
+    "proposal_theme": "Structured Programs",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2025-06-03 02:48:34",
+    "voting_end_time": "2025-06-20 05:37:11",
+    "outcome": "Passed"
+   }
+  },
+  "76": {
+   "proposal_id": "16288348195459185256236376597446433097934740027053618232242382845767010422421",
+   "governor": "core",
+   "proposer_name": "karpatkey",
+   "frozen": {
+    "proposal_title": "Register the Sky Custom Gateway contracts in the Router",
+    "proposal_category": "Cancelled",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2025-06-09 11:33:50",
+    "voting_end_time": "2025-06-26 14:15:23",
+    "outcome": "Cancelled"
+   }
+  },
+  "77": {
+   "proposal_id": "71020107401388505040510993373598301285550678565865201408741893567942851985019",
+   "governor": "core",
+   "proposer_name": "karpatkey",
+   "frozen": {
+    "proposal_title": "Register the Sky Custom Gateway contracts in the Router",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2025-06-16 22:18:03",
+    "voting_end_time": "2025-07-05 10:56:23",
+    "outcome": "Passed"
+   }
+  },
+  "78": {
+   "proposal_id": "94423886836435773843507976898262621297544156552971145658873213763398017341229",
+   "governor": "core",
+   "proposer_name": "Entropy Advisors",
+   "frozen": {
+    "proposal_title": "Constitutional Quorum Threshold Reduction",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2025-06-16 23:31:14",
+    "voting_end_time": "2025-07-05 02:50:11",
+    "outcome": "Passed"
+   }
+  },
+  "79": {
+   "proposal_id": "37638751032596392177176596241110468090299645534448966767963399982622616318705",
+   "governor": "treasury",
+   "proposer_name": "Entropy Advisors",
+   "frozen": {
+    "proposal_title": "Entropy Advisors: Exclusively Working with the Arbitrum DAO Y2-Y3",
+    "proposal_category": "DAO Operations",
+    "proposal_theme": "DAO Development Services",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2025-07-21 19:31:45",
+    "voting_end_time": "2025-08-07 22:09:35",
+    "outcome": "Passed"
+   }
+  },
+  "80": {
+   "proposal_id": "97685288731263391833044854304895851471157040105038894699042975271050068874277",
+   "governor": "core",
+   "proposer_name": "L2BEAT",
+   "frozen": {
+    "proposal_title": "Register BORING in the Arbitrum generic-custom gateway",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2025-07-28 21:52:27",
+    "voting_end_time": "2025-08-16 15:29:59",
+    "outcome": "Passed"
+   }
+  },
+  "81": {
+   "proposal_id": "51852039695020109312343918128899814224888993575448130385109956762385891284115",
+   "governor": "core",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "Remove Cost Cap - Update Executors - Disable Legacy USDT Bridge",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2025-08-18 21:19:36",
+    "voting_end_time": "2025-09-06 04:12:59",
+    "outcome": "Passed"
+   }
+  },
+  "82": {
+   "proposal_id": "57495998481040869152703890521939307107269690440073097268210566577740258992963",
+   "governor": "treasury",
+   "proposer_name": "Entropy Advisors",
+   "frozen": {
+    "proposal_title": "Transfer 8500 ETH from the Treasury to ATMC's ETH Treasury Strategies",
+    "proposal_category": "Treasury Management",
+    "proposal_theme": "Treasury Management",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2025-10-13 22:38:21",
+    "voting_end_time": "2025-11-01 12:23:35",
+    "outcome": "Passed"
+   }
+  },
+  "83": {
+   "proposal_id": "53154361738756237993090798888616593723057470462495169047773178676976253908001",
+   "governor": "core",
+   "proposer_name": "Entropy Advisors",
+   "frozen": {
+    "proposal_title": "Activate ArbOS 51 (Dia) and Gas Pricing Updates",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2025-12-01 21:46:59",
+    "voting_end_time": "2025-12-19 02:56:47",
+    "outcome": "Passed"
+   }
+  },
+  "84": {
+   "proposal_id": "112177996398925212273579485756315626637025938627124330171390356044681347897430",
+   "governor": "core",
+   "proposer_name": "Frisson",
+   "frozen": {
+    "proposal_title": "DVP Quorum & Proposal Cancellation",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2026-02-23 21:36:25",
+    "voting_end_time": "2026-03-12 23:38:35",
+    "outcome": "Passed"
+   }
+  },
+  "85": {
+   "proposal_id": "86654545843645364200491220873325841239317939837732580673532485559601859962180",
+   "governor": "treasury",
+   "proposer_name": "Entropy Advisors",
+   "frozen": {
+    "proposal_title": "Transfer 6000 ETH and Idle Stablecoins from the Treasury to the Treasury Management Portfolio",
+    "proposal_category": "Treasury Management",
+    "proposal_theme": "",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2026-04-20 16:02:02",
+    "voting_end_time": "2026-05-08 14:25:47",
+    "outcome": "Passed"
+   }
+  },
+  "86": {
+   "proposal_id": "71236395575275509514809232906539225896862899916501711888027988560774655719183",
+   "governor": "core",
+   "proposer_name": "Griff Green",
+   "frozen": {
+    "proposal_title": "Amended Release of Frozen ETH Pursuant to Court Order",
+    "proposal_category": "Incident Response",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2026-05-11 21:33:13",
+    "voting_end_time": "2026-05-28 22:55:59",
+    "outcome": "Passed"
+   }
+  },
+  "87": {
+   "proposal_id": "21861170607500194610699142421898826942478361357343425061227227766726035674989",
+   "governor": "treasury",
+   "proposer_name": "DZack23.eth",
+   "frozen": {
+    "proposal_title": "Continued Funding for the Arbitrum Foundation",
+    "proposal_category": "DAO Operations",
+    "proposal_theme": "",
+    "proposal_type": "non-constitutional",
+    "creation_time": "2026-06-08 16:52:17",
+    "voting_end_time": "2026-06-25 18:24:23",
+    "outcome": "Passed"
+   }
+  },
+  "88": {
+   "proposal_id": "7191014407719621170610709569285477750369874509305441081488686529382763374426",
+   "governor": "core",
+   "proposer_name": "Entropy Advisors",
+   "frozen": {
+    "proposal_title": "ArbOS61 Elara Upgrade",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2026-07-13 18:42:05",
+    "voting_end_time": "2026-08-01 11:31:59",
+    "outcome": "Passed"
+   }
+  },
+  "89": {
+   "proposal_id": "99505320587245662570748490045867467578602042886347829693486500764737017017943",
+   "governor": "core",
+   "proposer_name": "Entropy Advisors",
+   "frozen": {
+    "proposal_title": "Security Council Election Process Improvements",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2026-07-27 15:30:07",
+    "voting_end_time": "2026-08-14 09:36:11",
+    "outcome": "Passed"
+   }
+  },
+  "90": {
+   "proposal_id": "104933844856336554027758452704713321330340501652892001249184191934279866979282",
+   "governor": "core",
+   "proposer_name": "Entropy Advisors",
+   "frozen": {
+    "proposal_title": "Authorize Priority Gas Auctions and Establish the Fast Feed",
+    "proposal_category": "Network Changes",
+    "proposal_theme": "",
+    "proposal_type": "constitutional",
+    "creation_time": "2026-08-17 20:05:05",
+    "voting_end_time": "2026-09-04 07:57:47",
+    "outcome": "Passed"
+   }
+  }
+ }
+}

@@ -1,0 +1,209 @@
+{
+ "resultset_id": "0e75020f-0041-460a-ad87-8ad24a0561ae",
+ "created_at": "2026-10-19T11:44:57.341Z",
+ "columns": [
+  {
+   "name": "proposal_number",
+   "type": "UInt64"
+  },
+  {
+   "name": "proposal_title",
+   "type": "String"
+  },
+  {
+   "name": "proposal_url",
+   "type": "String"
+  },
+  {
+   "name": "proposal_type",
+   "type": "Nullable(String)"
+  },
+  {
+   "name": "proposal_category",
+   "type": "String"
+  },
+  {
+   "name": "proposal_theme",
+   "type": "String"
+  },
+  {
+   "name": "proposer_address",
+   "type": "String"
+  },
+  {
+   "name": "creation_time",
+   "type": "DateTime"
+  },
+  {
+   "name": "voting_end_time",
+   "type": "DateTime"
+  },
+  {
+   "name": "voters",
+   "type": "UInt64"
+  },
+  {
+   "name": "votes",
+   "type": "UInt64"
+  },
+  {
+   "name": "votes_total",
+   "type": "Decimal(76, 18)"
+  },
+  {
+   "name": "votes_for",
+   "type": "Decimal(76, 18)"
+  },
+  {
+   "name": "votes_against",
+   "type": "Decimal(76, 18)"
+  },
+  {
+   "name": "votes_abstain",
+   "type": "Decimal(76, 18)"
+  },
+  {
+   "name": "votable_tokens",
+   "type": "Decimal(76, 18)"
+  },
+  {
+   "name": "delegated_votes",
+   "type": "Decimal(76, 18)"
+  },
+  {
+   "name": "quorum",
+   "type": "Nullable(Decimal(76, 18))"
+  },
+  {
+   "name": "quorum_progress_pct",
+   "type": "Nullable(Float64)"
+  },
+  {
+   "name": "support_rate_pct",
+   "type": "Nullable(Float64)"
+  },
+  {
+   "name": "voter_participation_pct",
+   "type": "Nullable(Float64)"
+  },
+  {
+   "name": "vote_participation_pct",
+   "type": "Nullable(Float64)"
+  },
+  {
+   "name": "voting_power_utilisation_pct",
+   "type": "Nullable(Float64)"
+  },
+  {
+   "name": "arb_allocation",
+   "type": "Nullable(Decimal(76, 18))"
+  },
+  {
+   "name": "eth_allocation",
+   "type": "Nullable(Decimal(76, 18))"
+  },
+  {
+   "name": "usd_allocation",
+   "type": "Nullable(Decimal(76, 18))"
+  },
+  {
+   "name": "outcome",
+   "type": "String"
+  }
+ ],
+ "next_refresh_at": "2026-10-20T00:30:00.000Z",
+ "rows": [
+  [
+   90,
+   "Authorize Priority Gas Auctions and Establish the Fast Feed",
+   "/governance/authorize-priority-gas-auctions-and-establish-the-fast-feed/90",
+   "constitutional",
+   "Network Changes",
+   "",
+   "0xb4c064f466931b8d0f637654c916e3f203c46f13",
+   "2026-08-17 20:05:05",
+   "2026-09-04 07:57:47",
+   281,
+   281,
+   180599368.51735547,
+   180597558.0024262,
+   0,
+   1810.5149292568124,
+   4987725528.798615,
+   321784621.8334138,
+   160892310.9167069,
+   1.1224860124661324,
+   1,
+   0.0013378977389052092,
+   0.5612430062330662,
+   0.03620876238569931,
+   null,
+   null,
+   null,
+   "Passed"
+  ],
+  [
+   61,
+   "Establishing a DAO Events Budget for 2025",
+   "/governance/establishing-a-dao-events-budget-for-2025/61",
+   "non-constitutional",
+   "Grants",
+   "Event Sponsorships",
+   "0xb4c064f466931b8d0f637654c916e3f203c46f13",
+   "2024-10-28 21:21:21",
+   "2024-11-16 04:55:35",
+   4644,
+   4644,
+   149220827.5940974,
+   127914373.86845356,
+   4053499.8965929355,
+   17252953.8290509,
+   4000766150.1728406,
+   321188495.29708606,
+   120022984.50518522,
+   1.2094960669073593,
+   0.9692841918192172,
+   0.01862278042442616,
+   0.46458957832868303,
+   0.03729806291918631,
+   4000000,
+   0,
+   2814077.38259807,
+   "Passed"
+  ],
+  [
+   12,
+   "Building the Future of NFTs: The Rarible Protocol - Arbitrum Integration",
+   "/governance/building-the-future-of-nfts-the-rarible-protocol-arbitrum-integration/12",
+   "non-constitutional",
+   "Grants",
+   "Technology Development",
+   "0x1b686ee8e31c5959d9f5bbd8122a58682788eead",
+   "2023-09-15 18:45:32",
+   "2023-10-02 22:34:59",
+   34144,
+   34144,
+   160429849.89716956,
+   158799845.27774704,
+   248092.13147436432,
+   1381912.4879481494,
+   2359217521.541994,
+   305265376.9511194,
+   70776525.64625981,
+   2.263204590831169,
+   0.9984401424154528,
+   0.2312887383573243,
+   0.525542239671872,
+   0.06800129637572036,
+   127351,
+   0,
+   111277.3335447353,
+   "Passed"
+  ]
+ ],
+ "row_count": 3,
+ "page": {
+  "limit": 14814,
+  "offset": 0
+ }
+}
